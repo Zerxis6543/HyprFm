@@ -1,9 +1,9 @@
 $StdbUri     = "ws://127.0.0.1:3000"
 $StdbDb      = "fivem-game"
 $FxPort      = "30120"
-$SidecarPath = "G:\FIVEMSTDBPROJECT\stdb-sidecar"
-$FxServerExe = "G:\FIVEMSTDBPROJECT\fxserver\FXServer.exe"
-$ServerData  = "G:\FIVEMSTDBPROJECT\fivem-server-files"
+$SidecarPath = "G:\FIVEMSTDBPROJECT\STFM\stdb-sidecar"
+$FxServerExe = "G:\FIVEMSTDBPROJECT\STFM\fxserver\FXServer.exe"
+$ServerData  = "G:\FIVEMSTDBPROJECT\STFM\fivem-server-files"
 
 Write-Host "[Launch] Starting SpacetimeDB..." -ForegroundColor Cyan
 $stdb = Start-Process "spacetime" -ArgumentList "start" -PassThru -WindowStyle Normal
