@@ -1,0 +1,3 @@
+1. the utility ui does not allow me to quick swap items like I can in my normal inventory. What I mean is I cant just drag another item over another already in a slot and have them change positions. I cant even move an item from one slot to another in the hotkey slots for that matter.
+2. I need the relevant items, backpack, duffelbag, pistol, pistol ammo, parachute, body armor. I need them added to my inventory when I log in.
+3. I need a split stack function added to the context menu. Incase you don't know what I mean I need to be able to spolit a stack of items into however many I want. It should bring up a slider or an input that will allow players to split the stack.

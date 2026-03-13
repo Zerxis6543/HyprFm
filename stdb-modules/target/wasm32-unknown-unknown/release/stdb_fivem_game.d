@@ -1,0 +1,1 @@
+G:\FIVEMSTDBPROJECT\stdb-modules\target\wasm32-unknown-unknown\release\stdb_fivem_game.wasm: G:\FIVEMSTDBPROJECT\stdb-modules\fivem-game\spacetimedb\src\lib.rs G:\FIVEMSTDBPROJECT\stdb-modules\fivem-game\spacetimedb\src\reducers.rs G:\FIVEMSTDBPROJECT\stdb-modules\fivem-game\spacetimedb\src\tables.rs

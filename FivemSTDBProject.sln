@@ -1,0 +1,41 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "fivem-server-files", "fivem-server-files", "{0F0A60ED-2F9B-A0A0-C10F-59E6A0CF3AC3}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "resources", "resources", "{3E856BBD-AC77-C04F-C544-1140B79F2792}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "core", "core", "{7A080459-9321-6BBC-CEE7-B444E504B159}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "stdb-bridge", "stdb-bridge", "{5A6160CE-FF30-C81A-FD27-8AA9FA02069B}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "server", "server", "{4551F0E0-1AC7-D8D4-3E4B-E0C091FECA06}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "StdbBridge", "fivem-server-files\resources\core\stdb-bridge\server\StdbBridge.csproj", "{89CB3989-5589-2DB0-6D87-00DCFAB6F19D}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{89CB3989-5589-2DB0-6D87-00DCFAB6F19D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{89CB3989-5589-2DB0-6D87-00DCFAB6F19D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{89CB3989-5589-2DB0-6D87-00DCFAB6F19D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{89CB3989-5589-2DB0-6D87-00DCFAB6F19D}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{3E856BBD-AC77-C04F-C544-1140B79F2792} = {0F0A60ED-2F9B-A0A0-C10F-59E6A0CF3AC3}
+		{7A080459-9321-6BBC-CEE7-B444E504B159} = {3E856BBD-AC77-C04F-C544-1140B79F2792}
+		{5A6160CE-FF30-C81A-FD27-8AA9FA02069B} = {7A080459-9321-6BBC-CEE7-B444E504B159}
+		{4551F0E0-1AC7-D8D4-3E4B-E0C091FECA06} = {5A6160CE-FF30-C81A-FD27-8AA9FA02069B}
+		{89CB3989-5589-2DB0-6D87-00DCFAB6F19D} = {4551F0E0-1AC7-D8D4-3E4B-E0C091FECA06}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {0B182CC9-0A12-428C-A4A2-762088576872}
+	EndGlobalSection
+EndGlobal

@@ -1,0 +1,1 @@
+G:\FIVEMSTDBPROJECT\stdb-modules\target\wasm32-unknown-unknown\release\stdb_core.wasm: G:\FIVEMSTDBPROJECT\stdb-modules\core\spacetimedb\src\instruction.rs G:\FIVEMSTDBPROJECT\stdb-modules\core\spacetimedb\src\lib.rs

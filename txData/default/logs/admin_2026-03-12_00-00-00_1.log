@@ -1,0 +1,79 @@
+================================================================
+======== txAdmin v8.0.1 atop fxserver 25770 Starting - 2026/03/12, 09:23:12
+================================================================
+================================================================
+======== Log Rotated - 2026/03/12, 09:23:13                     
+================================================================
+[09:27:56][Zerxis654] logged in from 127.0.0.1 via cfxre
+[09:27:59][Zerxis654] [Zerxis654] executed "restart stdb-relay"
+[09:33:27][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[09:39:45][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[09:49:47][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[09:53:30][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[09:55:45][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[09:57:15][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[10:01:02][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[10:02:31][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[10:06:57][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[10:19:36][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[10:43:51][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[10:48:08][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[10:50:25][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[10:54:05][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[11:07:57][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[11:18:29][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[11:23:22][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[11:29:11][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[11:34:30][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+================================================================
+======== txAdmin v8.0.1 atop fxserver 25770 Starting - 2026/03/12, 13:51:38
+================================================================
+================================================================
+======== txAdmin v8.0.1 atop fxserver 25770 Starting - 2026/03/12, 13:54:18
+================================================================
+[14:03:37][Zerxis654] logged in from 127.0.0.1 via cfxre
+[14:03:52][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[14:08:04][Zerxis654] logged in from 127.0.0.1 via cfxre
+[14:08:08][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[14:08:45][Zerxis654] [Zerxis654] executed "restart stdb-relay"
+[14:13:07][Zerxis654] Config changes: whitelist.mode
+[19:41:52][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[19:54:25][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[19:58:44][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[20:07:23][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[20:12:17][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[20:15:40][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[20:19:03][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[20:22:26][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[20:30:01][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[20:32:00][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[20:38:52][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[20:42:55][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[20:44:37][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[20:46:07][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[20:47:11][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[20:58:11][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+================================================================
+======== txAdmin v8.0.1 atop fxserver 25770 Starting - 2026/03/12, 22:38:42
+================================================================
+[23:13:34][Zerxis654] logged in from 127.0.0.1 via cfxre
+[23:13:36][Zerxis654] [Zerxis654] executed "restart stdb-relay"
+[23:13:45][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[23:20:02][Zerxis654] [Zerxis654] executed "restart stdb-relay"
+[23:20:05][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[23:22:31][Zerxis654] [Zerxis654] executed "restart stdb-relay"
+[23:22:33][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[23:23:59][Zerxis654] [Zerxis654] executed "restart stdb-relay"
+[23:24:01][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[23:24:59][Zerxis654] [Zerxis654] executed "restart stdb-relay"
+[23:25:01][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[23:26:00][Zerxis654] [Zerxis654] executed "restart stdb-relay"
+[23:26:01][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[23:28:23][Zerxis654] [Zerxis654] executed "restart stdb-relay"
+[23:28:25][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[23:29:11][Zerxis654] [Zerxis654] executed "restart stdb-relay"
+[23:29:11][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[23:31:18][Zerxis654] [Zerxis654] executed "restart stdb-relay"
+[23:36:43][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[23:37:12][Zerxis654] [Zerxis654] executed "restart stdb-inventory"
+[23:40:12][Zerxis654] [Zerxis654] executed "restart stdb-inventory"

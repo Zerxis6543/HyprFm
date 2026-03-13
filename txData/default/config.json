@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "general": {
+    "serverName": "fivemstdb"
+  },
+  "server": {
+    "dataPath": "G:/FivemSTDBProject/fivem-server-files/"
+  },
+  "whitelist": {
+    "mode": "adminOnly"
+  }
+}
