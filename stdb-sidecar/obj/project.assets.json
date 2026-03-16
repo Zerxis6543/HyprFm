@@ -75,11 +75,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "G:\\FIVEMSTDBPROJECT\\stdb-sidecar\\StdbSidecar.csproj",
+      "projectUniqueName": "G:\\FIVEMSTDBPROJECT\\STFM\\stdb-sidecar\\StdbSidecar.csproj",
       "projectName": "StdbSidecar",
-      "projectPath": "G:\\FIVEMSTDBPROJECT\\stdb-sidecar\\StdbSidecar.csproj",
+      "projectPath": "G:\\FIVEMSTDBPROJECT\\STFM\\stdb-sidecar\\StdbSidecar.csproj",
       "packagesPath": "C:\\Users\\zerxi\\.nuget\\packages\\",
-      "outputPath": "G:\\FIVEMSTDBPROJECT\\stdb-sidecar\\obj\\",
+      "outputPath": "G:\\FIVEMSTDBPROJECT\\STFM\\stdb-sidecar\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\zerxi\\AppData\\Roaming\\NuGet\\NuGet.Config",

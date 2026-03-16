@@ -11,6 +11,7 @@ sets sv_projectDesc "Recipe for the base resources required to run a minimal Fiv
 sets tags "default, deployer"
 sets locale "root-AQ"
 
+
 ## You CAN edit the following:
 sv_enforceGameBuild 3258 #mp2024_01	- Bottom Dollar Bounties
 sv_licenseKey "cfxk_1NjQtfenDWEcWKDRhjmkt_3sON53"
@@ -19,6 +20,10 @@ endpoint_add_tcp "0.0.0.0:30120"
 endpoint_add_udp "0.0.0.0:30120"
 set steam_webApiKey "none"
 set resources_useSystemChat true
+## [txAdmin CFG validator]: onesync MUST only be set in the txAdmin settings page.
+# set onesync on
+set sv_filterRequestControl 0
+setr sv_enableClientScriptExecution 1
 
 ## These resources will start by default.
 ensure mapmanager
@@ -27,6 +32,9 @@ ensure spawnmanager
 ensure sessionmanager
 ensure basic-gamemode
 ensure hardcap
+ensure stdb-relay
+ensure stdb-inventory
+ensure core
 
 ## Add system admins
 add_ace group.admin command allow # allow all commands

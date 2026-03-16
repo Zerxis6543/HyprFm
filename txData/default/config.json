@@ -3,10 +3,10 @@
   "general": {
     "serverName": "fivemstdb"
   },
-  "server": {
-    "dataPath": "G:/FivemSTDBProject/fivem-server-files/"
-  },
   "whitelist": {
     "mode": "adminOnly"
+  },
+  "server": {
+    "dataPath": "G:/FivemSTDBProject/STFM/fivem-server-files"
   }
 }

@@ -1,0 +1,21 @@
+================================================================
+======== txAdmin v8.0.1 atop fxserver 25770 Starting - 2026/03/14, 12:19:14
+================================================================
+================================================================
+======== Log Rotated - 2026/03/14, 12:19:15                     
+================================================================
+[12:19:45][Zerxis654] logged in from 127.0.0.1 via cfxre
+[12:20:07][Zerxis654] Config changes: server.dataPath
+[12:20:07][Zerxis654] Resetting server data settings.
+[12:20:20][Zerxis654] Config changes: server.dataPath
+[12:20:22][Zerxis654] [Zerxis654] executed "START SERVER"
+[12:20:42][Zerxis654] Config changes: 
+[12:20:47][Zerxis654] [Zerxis654] executed "RESTART SERVER"
+[12:21:12][Zerxis654] [Zerxis654] executed "RESTART SERVER"
+[12:21:45][Zerxis654] Refreshed resources
+[12:21:50][Zerxis654] Ensured resource "stdb-bridge"
+[12:21:51][Zerxis654] Stopped resource "stdb-bridge"
+[12:21:52][Zerxis654] Ensured resource "stdb-inventory"
+[12:21:52][Zerxis654] Ensured resource "stdb-relay"
+[12:21:55][Zerxis654] Ensured resource "stdb-relay"
+[23:58:17][Zerxis654] Added f7695b9b3f98613d9cb244cd49caa0ba8606dc77 to the whitelist.

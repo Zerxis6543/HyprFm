@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "AZ0Wqz5YeWQ=",
+  "dgSpecHash": "wzcfvL4+6Es=",
   "success": true,
-  "projectFilePath": "G:\\FIVEMSTDBPROJECT\\stdb-sidecar\\StdbSidecar.csproj",
+  "projectFilePath": "G:\\FIVEMSTDBPROJECT\\STFM\\stdb-sidecar\\StdbSidecar.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\zerxi\\.nuget\\packages\\spacetimedb.bsatn.runtime\\2.0.3\\spacetimedb.bsatn.runtime.2.0.3.nupkg.sha512",
     "C:\\Users\\zerxi\\.nuget\\packages\\spacetimedb.clientsdk\\2.0.3\\spacetimedb.clientsdk.2.0.3.nupkg.sha512"

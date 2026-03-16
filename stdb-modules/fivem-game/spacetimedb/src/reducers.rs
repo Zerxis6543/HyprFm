@@ -1,6 +1,3 @@
-// G:\FIVEMSTDBPROJECT\stdb-modules\fivem-game\spacetimedb\src\reducers.rs
-// COMPLETE FILE — replace entire contents
-
 use spacetimedb::{ReducerContext, Table};
 use crate::tables::*;
 use serde_json::json;
