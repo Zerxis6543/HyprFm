@@ -304,9 +304,11 @@ class Program
                     // ── Data queries (return JSON directly) ────────────────────
                     case "get_player_inventory":
                     {
-                        uint serverId = args.GetProperty("server_id").GetUInt32();
-                        var slots     = new List<object>();
-                        var defs      = new Dictionary<string, object>();
+                        uint   serverId      = args.GetProperty("server_id").GetUInt32();
+                        var    slots         = new List<object>();
+                        var    equippedSlots = new List<object>();
+                        var    defs          = new Dictionary<string, object>();
+                        string ownerId       = "";
 
                         try
                         {
@@ -314,13 +316,14 @@ class Program
                                 .FirstOrDefault(a => a.ServerId == serverId);
 
                             if (session.ServerId != 0)
-{
-    var identityStr = session.Identity.ToString().ToLower();
-if (identityStr.StartsWith("0x")) identityStr = identityStr.Substring(2);
-Console.WriteLine($"[Sidecar] Looking for owner_id={identityStr}, slot count={_db.Db.InventorySlot.Iter().Count()}");
+                            {
+                                var identityStr = session.Identity.ToString().ToLower();
+                                if (identityStr.StartsWith("0x")) identityStr = identityStr.Substring(2);
+                                ownerId = identityStr;
+                                Console.WriteLine($"[Sidecar] Looking for owner_id={identityStr}, slot count={_db.Db.InventorySlot.Iter().Count()}");
 
-    foreach (var s in _db.Db.InventorySlot.Iter()
-        .Where(s => s.OwnerId == identityStr && s.OwnerType == "player"))
+                                foreach (var s in _db.Db.InventorySlot.Iter()
+                                    .Where(s => s.OwnerId == identityStr && s.OwnerType == "player"))
                                 {
                                     slots.Add(new {
                                         id         = s.Id,
@@ -330,6 +333,21 @@ Console.WriteLine($"[Sidecar] Looking for owner_id={identityStr}, slot count={_d
                                         quantity   = s.Quantity,
                                         metadata   = s.Metadata,
                                         slot_index = s.SlotIndex,
+                                    });
+                                }
+
+                                foreach (var s in _db.Db.InventorySlot.Iter()
+                                    .Where(s => s.OwnerId.StartsWith(identityStr + "_equip_") && s.OwnerType == "equip"))
+                                {
+                                    equippedSlots.Add(new {
+                                        id         = s.Id,
+                                        owner_id   = s.OwnerId,
+                                        owner_type = s.OwnerType,
+                                        item_id    = s.ItemId,
+                                        quantity   = s.Quantity,
+                                        metadata   = s.Metadata,
+                                        slot_index = s.SlotIndex,
+                                        equip_key  = s.OwnerId.Replace(identityStr + "_equip_", ""),
                                     });
                                 }
                             }
@@ -352,11 +370,46 @@ Console.WriteLine($"[Sidecar] Looking for owner_id={identityStr}, slot count={_d
                             Console.WriteLine($"[Sidecar] get_player_inventory error: {ex.Message}");
                         }
 
+                        // If backpack is equipped, include its inventory data inline
+                        object? backpackData = null;
+                        try
+                        {
+                            var bpSlot = _db!.Db.InventorySlot.Iter()
+                                .FirstOrDefault(s => s.OwnerId == ownerId + "_equip_backpack" && s.OwnerType == "equip");
+                            if (bpSlot != null && !string.IsNullOrEmpty(bpSlot.OwnerId))
+                            {
+                                string bpStashId = $"backpack_slot_{bpSlot.Id}";
+                                string bpItemId  = bpSlot.ItemId;
+                                uint   bpMaxSlots = bpItemId == "duffel_bag" ? 30u : 20u;
+                                float  bpWeight  = bpItemId == "duffel_bag" ? 50f  : 30f;
+                                string bpLabel   = bpItemId == "duffel_bag" ? "DUFFEL BAG" : "BACKPACK";
+                                try { _db!.Reducers.CreateStash(bpStashId, "backpack", bpLabel, bpMaxSlots, bpWeight, ownerId, 0f, 0f, 0f); } catch { }
+                                var bpSlotList = _db!.Db.InventorySlot.Iter()
+                                    .Where(s => s.OwnerId == bpStashId && s.OwnerType == "stash")
+                                    .Select(s => (object)new {
+                                        id = s.Id, owner_id = s.OwnerId, owner_type = s.OwnerType,
+                                        item_id = s.ItemId, quantity = s.Quantity,
+                                        metadata = s.Metadata, slot_index = s.SlotIndex,
+                                    }).ToList();
+                                backpackData = new {
+                                    stash_id   = bpStashId,
+                                    label      = bpLabel,
+                                    max_weight = bpWeight,
+                                    max_slots  = (int)bpMaxSlots,
+                                    slots      = bpSlotList,
+                                };
+                            }
+                        }
+                        catch (Exception ex) { Console.WriteLine($"[Sidecar] backpack inline error: {ex.Message}"); }
+
                         await WriteJson(ctx, new {
-                            server_id  = serverId,
+                            server_id      = serverId,
+                            owner_id       = ownerId,
                             slots,
-                            item_defs  = defs,
-                            max_weight = 85,   // player max carry weight
+                            equipped_slots = equippedSlots,
+                            backpack_data  = backpackData,
+                            item_defs      = defs,
+                            max_weight     = 85,
                         });
                         return;
                     }
@@ -409,6 +462,21 @@ Console.WriteLine($"[Sidecar] Looking for owner_id={identityStr}, slot count={_d
                         return;
                     }
 
+                    case "get_inventory_slots":
+                    {
+                        string gsOwnerType = args.GetProperty("owner_type").GetString() ?? "";
+                        string gsOwnerId   = args.GetProperty("owner_id").GetString() ?? "";
+                        var gsSlots = _db!.Db.InventorySlot.Iter()
+                            .Where(s => s.OwnerId == gsOwnerId && s.OwnerType == gsOwnerType)
+                            .Select(s => (object)new {
+                                id = s.Id, owner_id = s.OwnerId, owner_type = s.OwnerType,
+                                item_id = s.ItemId, quantity = s.Quantity,
+                                metadata = s.Metadata, slot_index = s.SlotIndex,
+                            }).ToList();
+                        await WriteJson(ctx, new { slots = gsSlots });
+                        return;
+                    }
+
                     case "merge_stacks":
                     {
                         ulong srcId = args.GetProperty("src_slot_id").GetUInt64();
@@ -422,7 +490,9 @@ Console.WriteLine($"[Sidecar] Looking for owner_id={identityStr}, slot count={_d
                     {
                         string bpIdentity = args.GetProperty("owner_identity").GetString() ?? "";
                         string bagItemId  = args.GetProperty("bag_item_id").GetString() ?? "backpack";
-                        string bpStashId  = $"backpack_{bpIdentity}";
+                        ulong  bagSlotId  = args.TryGetProperty("bag_slot_id", out var bsid) ? bsid.GetUInt64() : 0;
+                        // Use slot ID as stable stash key — survives ownership transfers
+                        string bpStashId  = bagSlotId > 0 ? $"backpack_slot_{bagSlotId}" : $"backpack_{bpIdentity}";
 
                         uint   bpSlots  = bagItemId == "duffel_bag" ? 30u : 20u;
                         float  bpWeight = bagItemId == "duffel_bag" ? 50f  : 30f;
@@ -492,16 +562,14 @@ Console.WriteLine($"[Sidecar] Looking for owner_id={identityStr}, slot count={_d
                             .FirstOrDefault();
 
                         string gStashId;
-                        if (!string.IsNullOrEmpty(nearby.StashId))
-                        {
-                            // Found existing stash — use it, don't create
-                            gStashId = nearby.StashId;
-                            Console.WriteLine($"[Sidecar] Found nearby ground stash {gStashId}");
-                        }
-                        else
-                        {
-                            // No stash nearby — create one at exact player position
-                            gStashId = $"ground_{Guid.NewGuid():N}";
+                          if (nearby != null && !string.IsNullOrEmpty(nearby.StashId))
+                          {
+                              gStashId = nearby.StashId;
+                              Console.WriteLine($"[Sidecar] Found nearby ground stash {gStashId}");
+                          }
+                          else
+                          {
+                              gStashId = $"ground_{Guid.NewGuid():N}";
                             Console.WriteLine($"[Sidecar] Creating new ground stash {gStashId} at {gx:F1},{gy:F1}");
                             try
                             {

@@ -1,5 +1,54 @@
 local SIDECAR_URL     = "http://127.0.0.1:27200/"
 local netIdToServerId = {}
+local openInventories = {}  -- tracks who has what open: source → { ownerType, ownerId }
+
+local function broadcastInventoryUpdate(ownerType, ownerId)
+    for src, info in pairs(openInventories) do
+        local primaryMatch   = info.primary   and info.primary.ownerType   == ownerType and info.primary.ownerId   == ownerId
+        local secondaryMatch = info.secondary and info.secondary.ownerType == ownerType and info.secondary.ownerId == ownerId
+        if primaryMatch or secondaryMatch then
+            local capturedSrc = src
+            if ownerType == "player" then
+                -- Player inventory: use get_player_inventory with server_id (handles identity lookup)
+                local serverId = tonumber(src)
+                PerformHttpRequest(SIDECAR_URL .. "reducer",
+                    function(status, body, _)
+                        if status ~= 200 or not body then return end
+                        local ok, result = pcall(json.decode, body)
+                        if ok and result and result.slots then
+                            TriggerClientEvent("stdb:syncSlots", capturedSrc, {
+                                ownerType = "player",
+                                ownerId   = ownerId,
+                                slots     = result.slots,
+                            })
+                        end
+                    end,
+                    "POST",
+                    json.encode({ name = "get_player_inventory", args = { server_id = serverId } }),
+                    { ["Content-Type"] = "application/json" }
+                )
+            else
+                -- Vehicle/stash inventory: use get_inventory_slots directly
+                PerformHttpRequest(SIDECAR_URL .. "reducer",
+                    function(status, body, _)
+                        if status ~= 200 or not body then return end
+                        local ok, result = pcall(json.decode, body)
+                        if ok and result and result.slots then
+                            TriggerClientEvent("stdb:syncSlots", capturedSrc, {
+                                ownerType = ownerType,
+                                ownerId   = ownerId,
+                                slots     = result.slots,
+                            })
+                        end
+                    end,
+                    "POST",
+                    json.encode({ name = "get_inventory_slots", args = { owner_type = ownerType, owner_id = ownerId } }),
+                    { ["Content-Type"] = "application/json" }
+                )
+            end
+        end
+    end
+end
 
 local clientSideNatives = {
     SET_ENTITY_COORDS      = true,
@@ -128,6 +177,10 @@ AddEventHandler("stdb:requestInventory", function(px, py, pz)
                         if gOk and gParsed then gData = gParsed end
                     end
 
+                    openInventories[player] = {
+                        primary   = { ownerType = "player", ownerId = tostring(player) },
+                        secondary = { ownerType = "stash",  ownerId = gData.stash_id or "" },
+                    }
                     TriggerClientEvent("stdb:openInventory", player,
                         pData.slots or {}, pData.item_defs or {}, pData.max_weight or 85, {
                             type      = "ground",
@@ -136,7 +189,7 @@ AddEventHandler("stdb:requestInventory", function(px, py, pz)
                             maxWeight = gData.max_weight or 999,
                             maxSlots  = gData.max_slots  or 20,
                             slots     = gData.slots       or {},
-                        }
+                        }, pData.equipped_slots or {}, pData.backpack_data
                     )
                 end,
                 "POST",
@@ -165,12 +218,21 @@ AddEventHandler("stdb:moveItem", function(slotId, newSlotIndex, targetOwnerType,
     end
 
     if targetOwnerType == "player" then
-        -- Moving into player pockets from any panel
+        -- Moving into player pockets from any panel — also sync the source secondary
         callSidecar("transfer_item_to_player", {
             slot_id        = slotId,
             server_id      = serverId,
             new_slot_index = newSlotIndex,
         })
+        -- Broadcast the secondary panel this player had open (they took from it)
+        local info = openInventories[player]
+        if info and info.secondary then
+            local capturedSecType = info.secondary.ownerType
+            local capturedSecId   = info.secondary.ownerId
+            Citizen.SetTimeout(150, function()
+                broadcastInventoryUpdate(capturedSecType, capturedSecId)
+            end)
+        end
     else
         -- Moving to vehicle or stash/ground
         local stdbOwnerType = "stash"
@@ -191,7 +253,16 @@ AddEventHandler("stdb:moveItem", function(slotId, newSlotIndex, targetOwnerType,
         if targetOwnerType == "ground" and px and px ~= 0 then
             TriggerClientEvent("stdb:spawnWorldDrop", player, slotId, px, py, pz)
         end
+        local capturedType = stdbOwnerType
+        local capturedId   = targetOwnerId
+        Citizen.SetTimeout(150, function()
+            broadcastInventoryUpdate(capturedType, capturedId)
+        end)
     end
+    local capturedPlayer = tostring(player)
+    Citizen.SetTimeout(150, function()
+        broadcastInventoryUpdate("player", capturedPlayer)
+    end)
 end)
 
 RegisterNetEvent("stdb:useItem")
@@ -230,10 +301,20 @@ AddEventHandler("stdb:requestGlovebox", function(vehicleId, modelName, vehicleCl
             PerformHttpRequest(SIDECAR_URL .. "reducer",
                 function(pStatus, pBody, _)
                     local pSlots = {}
+                    local pEquipped = {}
+                    local pBackpackData = nil
                     if pStatus == 200 and pBody then
                         local pOk, pData = pcall(json.decode, pBody)
-                        if pOk and pData then pSlots = pData.slots or {} end
+                        if pOk and pData then
+                            pSlots       = pData.slots          or {}
+                            pEquipped    = pData.equipped_slots  or {}
+                            pBackpackData = pData.backpack_data
+                        end
                     end
+                    openInventories[player] = {
+                        primary   = { ownerType = "player",           ownerId = tostring(player) },
+                        secondary = { ownerType = "vehicle_glovebox", ownerId = plate },
+                    }
                     TriggerClientEvent("stdb:openInventory", player,
                         pSlots, data.item_defs or {}, 85, {
                             type      = "glovebox",
@@ -242,7 +323,7 @@ AddEventHandler("stdb:requestGlovebox", function(vehicleId, modelName, vehicleCl
                             maxWeight = data.max_weight or 10,
                             maxSlots  = data.max_slots  or 5,
                             slots     = data.slots       or {},
-                        }
+                        }, pEquipped, pBackpackData
                     )
                 end,
                 "POST",
@@ -286,19 +367,29 @@ AddEventHandler("stdb:requestTrunk", function(vehicleId, modelName, vehicleClass
             PerformHttpRequest(SIDECAR_URL .. "reducer",
                 function(pStatus, pBody, _)
                     local pSlots = {}
+                    local pEquipped = {}
+                    local pBackpackData = nil
                     if pStatus == 200 and pBody then
                         local pOk, pData = pcall(json.decode, pBody)
-                        if pOk and pData then pSlots = pData.slots or {} end
+                        if pOk and pData then
+                            pSlots       = pData.slots          or {}
+                            pEquipped    = pData.equipped_slots  or {}
+                            pBackpackData = pData.backpack_data
+                        end
                     end
+                    openInventories[player] = {
+                        primary   = { ownerType = "player",       ownerId = tostring(player) },
+                        secondary = { ownerType = "vehicle_trunk", ownerId = plate },
+                    }
                     TriggerClientEvent("stdb:openInventory", player,
                         pSlots, data.item_defs or {}, 85, {
                             type      = "trunk",
-                            label     = (data.trunk_type == "front") and "FRUNK" or "TRUNK",
+                            label     = "TRUNK",
                             id        = plate,
                             maxWeight = data.max_weight or 0,
                             maxSlots  = data.max_slots  or 0,
                             slots     = data.slots       or {},
-                        }
+                        }, pEquipped, pBackpackData
                     )
                 end,
                 "POST",
@@ -327,10 +418,20 @@ AddEventHandler("stdb:requestStash", function(stashId)
             PerformHttpRequest(SIDECAR_URL .. "reducer",
                 function(pStatus, pBody, _)
                     local pSlots = {}
+                    local pEquipped = {}
+                    local pBackpackData = nil
                     if pStatus == 200 and pBody then
                         local pOk, pData = pcall(json.decode, pBody)
-                        if pOk and pData then pSlots = pData.slots or {} end
+                        if pOk and pData then
+                            pSlots        = pData.slots         or {}
+                            pEquipped     = pData.equipped_slots or {}
+                            pBackpackData = pData.backpack_data
+                        end
                     end
+                    openInventories[player] = {
+                        primary   = { ownerType = "player", ownerId = tostring(player) },
+                        secondary = { ownerType = "stash",  ownerId = stashId },
+                    }
                     TriggerClientEvent("stdb:openInventory", player,
                         pSlots, data.item_defs or {}, 85, {
                             type      = "stash",
@@ -338,8 +439,8 @@ AddEventHandler("stdb:requestStash", function(stashId)
                             id        = stashId,
                             maxWeight = data.max_weight or 100,
                             maxSlots  = data.max_slots  or 20,
-                            slots     = data.slots       or {},
-                        }
+                            slots     = data.slots      or {},
+                        }, pEquipped, pBackpackData
                     )
                 end,
                 "POST",
@@ -375,31 +476,104 @@ AddEventHandler("stdb:openBackpack", function(bagItemId)
     local player   = source
     local serverId = tonumber(player)
 
-    -- Look up identity from active session
-    local sessionResult = callSidecar("get_player_inventory", { server_id = serverId })
-    if not sessionResult or not sessionResult.owner_id then return end
-    local ownerIdentity = sessionResult.owner_id
+    PerformHttpRequest(SIDECAR_URL .. "reducer",
+        function(pStatus, pBody, _)
+            if pStatus ~= 200 or not pBody then return end
+            local pOk, pData = pcall(json.decode, pBody)
+            if not pOk or not pData or not pData.owner_id then return end
 
-    local result = callSidecar("open_backpack", {
-        owner_identity = ownerIdentity,
-        bag_item_id    = bagItemId,
-    })
-    if not result then return end
+            -- Find the equipped backpack slot ID
+            local bagSlotId = 0
+            if pData.equipped_slots then
+                for _, es in ipairs(pData.equipped_slots) do
+                    if es.equip_key == "backpack" then
+                        bagSlotId = es.id or 0
+                        break
+                    end
+                end
+            end
 
-    TriggerClientEvent("stdb:updateSecondary", player, {
-        type       = "stash",
-        label      = result.label,
-        id         = result.stash_id,
-        maxWeight  = result.max_weight,
-        maxSlots   = result.max_slots,
-        slots      = result.slots,
-        item_defs  = result.item_defs,
-    })
+            PerformHttpRequest(SIDECAR_URL .. "reducer",
+                function(bStatus, bBody, _)
+                    if bStatus ~= 200 or not bBody then return end
+                    local bOk, result = pcall(json.decode, bBody)
+                    if not bOk or not result then return end
+                    print("[stdb-relay] Sending openBackpackPanel to player " .. tostring(player) .. " stash=" .. tostring(result.stash_id))
+                    TriggerClientEvent("stdb:openBackpackPanel", player, {
+                        type      = "stash",
+                        label     = result.label     or "BACKPACK",
+                        id        = result.stash_id  or "",
+                        maxWeight = result.max_weight or 30,
+                        maxSlots  = result.max_slots  or 20,
+                        slots     = result.slots      or {},
+                        item_defs = result.item_defs  or {},
+                    })
+                end,
+                "POST",
+                json.encode({ name = "open_backpack", args = { owner_identity = pData.owner_id, bag_item_id = bagItemId, bag_slot_id = bagSlotId } }),
+                { ["Content-Type"] = "application/json" }
+            )
+        end,
+        "POST",
+        json.encode({ name = "get_player_inventory", args = { server_id = serverId } }),
+        { ["Content-Type"] = "application/json" }
+    )
 end)
 
 RegisterNetEvent("stdb:splitStack")
 AddEventHandler("stdb:splitStack", function(slotId, amount)
     callSidecar("split_stack", { slot_id = slotId, amount = amount })
+end)
+
+RegisterNetEvent("stdb:closeInventory")
+AddEventHandler("stdb:closeInventory", function()
+    openInventories[source] = nil
+end)
+
+RegisterNetEvent("stdb:equipItem")
+AddEventHandler("stdb:equipItem", function(slotId, equipKey)
+    local player   = source
+    local serverId = tonumber(player)
+    -- Get player identity to build equip owner_id
+    PerformHttpRequest(SIDECAR_URL .. "reducer",
+        function(status, body, _)
+            if status ~= 200 or not body then return end
+            local ok, data = pcall(json.decode, body)
+            if not ok or not data or not data.owner_id then return end
+            local equipOwnerId = data.owner_id .. "_equip_" .. equipKey
+            callSidecar("transfer_item", {
+                slot_id        = slotId,
+                new_owner_id   = equipOwnerId,
+                new_owner_type = "equip",
+                new_slot_index = 0,
+            })
+        end,
+        "POST",
+        json.encode({ name = "get_player_inventory", args = { server_id = serverId } }),
+        { ["Content-Type"] = "application/json" }
+    )
+end)
+
+RegisterNetEvent("stdb:unequipItem")
+AddEventHandler("stdb:unequipItem", function(slotId, equipKey, targetPanel, targetIndex)
+    local player   = source
+    local serverId = tonumber(player)
+    PerformHttpRequest(SIDECAR_URL .. "reducer",
+        function(status, body, _)
+            if status ~= 200 or not body then return end
+            local ok, data = pcall(json.decode, body)
+            if not ok or not data or not data.owner_id then return end
+            callSidecar("transfer_item", {
+                slot_id        = slotId,
+                new_owner_id   = data.owner_id,
+                new_owner_type = "player",
+                new_slot_index = targetIndex,
+            })
+        end,
+        "POST",
+        json.encode({ name = "get_player_inventory", args = { server_id = serverId } }),
+        { ["Content-Type"] = "application/json" }
+    )
 end)
 
 print("[stdb-relay] Server ready — polling sidecar.")

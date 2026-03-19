@@ -91,16 +91,18 @@ RegisterKeyMapping("+openInventory", "Open Inventory", "keyboard", "TAB")
 
 -- ── Unified open event (used for all inventory types now) ─────────────────────
 RegisterNetEvent("stdb:openInventory")
-AddEventHandler("stdb:openInventory", function(slots, itemDefs, maxWeight, context)
+AddEventHandler("stdb:openInventory", function(slots, itemDefs, maxWeight, context, equippedSlots, backpackData)
     isOpen = true
     SetNuiFocus(true, true)
     TriggerScreenblurFadeIn(500)
     SendNUIMessage({
-        action    = "openInventory",
-        slots     = slots,
-        itemDefs  = itemDefs,
-        maxWeight = maxWeight or 85,
-        context   = context,
+        action         = "openInventory",
+        slots          = slots,
+        itemDefs       = itemDefs,
+        maxWeight      = maxWeight or 85,
+        context        = context,
+        equippedSlots  = equippedSlots or {},
+        backpackData   = backpackData,
     })
 end)
 
@@ -206,6 +208,7 @@ RegisterNUICallback("mergeStacks", function(data, cb)
 end)
 
 RegisterNUICallback("openBackpack", function(data, cb)
+    print("[stdb-inventory] openBackpack NUI callback fired, bagItemId=" .. tostring(data.bagItemId))
     TriggerServerEvent("stdb:openBackpack", data.bagItemId)
     cb({ ok = true })
 end)
@@ -215,6 +218,7 @@ RegisterNUICallback("close", function(_, cb)
     isOpen = false
     SetNuiFocus(false, false)
     TriggerScreenblurFadeOut(500)
+    TriggerServerEvent("stdb:closeInventory")
     cb("ok")
 end)
 
@@ -242,6 +246,21 @@ RegisterNUICallback("dropItem", function(data, cb)
     cb("ok")
 end)
 
+RegisterNetEvent("stdb:openBackpackPanel")
+AddEventHandler("stdb:openBackpackPanel", function(ctx)
+    print("[stdb-inventory] openBackpackPanel received, label=" .. tostring(ctx.label))
+    SendNUIMessage({
+        action    = "openBackpackPanel",
+        type      = ctx.type,
+        label     = ctx.label,
+        id        = ctx.id,
+        maxWeight = ctx.maxWeight,
+        maxSlots  = ctx.maxSlots,
+        slots     = ctx.slots,
+        item_defs = ctx.item_defs,
+    })
+end)
+
 AddEventHandler("stdb:updateSecondary", function(ctx)
     SendNUIMessage({
         action     = "updateSecondary",
@@ -259,3 +278,24 @@ RegisterNUICallback("splitStack", function(data, cb)
     TriggerServerEvent("stdb:splitStack", data.slotId, data.amount)
     cb({ ok = true })
 end)
+
+RegisterNUICallback("equipItem", function(data, cb)
+    TriggerServerEvent("stdb:equipItem", data.slotId, data.equipKey)
+    cb({ ok = true })
+end)
+
+RegisterNUICallback("unequipItem", function(data, cb)
+    TriggerServerEvent("stdb:unequipItem", data.slotId, data.equipKey, data.targetPanel, data.targetIndex)
+    cb({ ok = true })
+end)
+
+RegisterNetEvent("stdb:syncSlots")
+AddEventHandler("stdb:syncSlots", function(data)
+    SendNUIMessage({
+        action    = "syncSlots",
+        ownerType = data.ownerType,
+        ownerId   = data.ownerId,
+        slots     = data.slots,
+    })
+end)
+

@@ -11,14 +11,41 @@ window.addEventListener('message', (e: MessageEvent) => {
   switch (d.action) {
 
     // ── Standard inventory open (pockets only)
-    case 'openInventory':
+    case 'openInventory': {
       store.openInventory(
         d.slots    ?? [],
         d.itemDefs ?? {},
         d.maxWeight ?? 85,
         d.context  ?? undefined,
       )
+      if (d.equippedSlots && Array.isArray(d.equippedSlots)) {
+        const equipSlots = useInventoryStore.getState().equipSlots.map(es => {
+          const found = (d.equippedSlots as any[]).find((e: any) => e.equip_key === es.key)
+          return found ? { ...es, slot: found } : es
+        })
+        useInventoryStore.setState({ equipSlots })
+        // Auto-open backpack panel if backpack is equipped and data is included
+        const bagSlot = d.equippedSlots.find((e: any) => e.equip_key === 'backpack')
+        if (bagSlot && d.backpackData) {
+          useInventoryStore.getState().openBackpackPanel({
+            type:      'stash',
+            label:     d.backpackData.label     ?? 'BACKPACK',
+            id:        d.backpackData.stash_id  ?? '',
+            maxWeight: d.backpackData.max_weight ?? 30,
+            maxSlots:  d.backpackData.max_slots  ?? 20,
+            slots:     d.backpackData.slots      ?? [],
+          })
+        } else if (bagSlot && !d.backpackData) {
+          // Fallback: fetch async
+          useInventoryStore.getState().openBackpack(bagSlot.item_id)
+        } else {
+          useInventoryStore.getState().closeBackpackPanel()
+        }
+      } else {
+        useInventoryStore.getState().closeBackpackPanel()
+      }
       break
+    }
 
     // ── Open with glovebox as the right-panel inventory
     case 'openGlovebox':
@@ -78,6 +105,32 @@ window.addEventListener('message', (e: MessageEvent) => {
     case 'updateSecondary':
       store.updateSecondary(d.slots ?? [])
       break
+
+    case 'openBackpackPanel':
+      store.openBackpackPanel({
+        type:      d.type      ?? 'stash',
+        label:     d.label     ?? 'BACKPACK',
+        id:        d.id        ?? '',
+        maxWeight: d.maxWeight ?? 30,
+        maxSlots:  d.maxSlots  ?? 20,
+        slots:     d.slots     ?? [],
+      })
+      if (d.item_defs) useInventoryStore.setState(s => ({ itemDefs: { ...s.itemDefs, ...d.item_defs } }))
+      break
+
+    case 'syncSlots': {
+      const state = useInventoryStore.getState()
+      if (d.ownerType === 'player') {
+        store.updateSlots(d.slots ?? [])
+      } else if (state.secondary.id === d.ownerId) {
+        store.updateSecondary(d.slots ?? [])
+      } else if (state.backpack && state.backpack.id === d.ownerId) {
+        useInventoryStore.setState(s => ({
+          backpack: s.backpack ? { ...s.backpack, slots: d.slots ?? [] } : null
+        }))
+      }
+      break
+    }
 
     case 'closeInventory':
       store.closeInventory()

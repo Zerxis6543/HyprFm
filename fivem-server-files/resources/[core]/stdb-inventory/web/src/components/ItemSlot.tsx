@@ -7,7 +7,7 @@ interface Props {
   slotIndex:    number
   slot:         InventorySlot | null
   itemDef:      ItemDefinition | null
-  panel:        'pockets' | 'secondary'
+  panel:        'pockets' | 'secondary' | 'backpack'
   isDropTarget?: boolean
 }
 

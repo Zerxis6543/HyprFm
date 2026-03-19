@@ -18,14 +18,14 @@ interface InventoryStore {
   slots:          InventorySlot[]
   itemDefs:       Record<string, ItemDefinition>
   maxWeight:      number
-  baseMaxWeight:  number
   maxSlots:       number
   secondary:      SecondaryContext
+  backpack:       SecondaryContext | null
   equipSlots:     EquipSlot[]
   health:         number
   contextMenu:    { slotId: number; x: number; y: number } | null
   draggingSlot:   InventorySlot | null
-  draggingSource: 'pockets' | 'secondary' | null
+  draggingSource: 'pockets' | 'secondary' | 'backpack' | null
   weightFlash:    'pockets' | 'secondary' | null
 
   openInventory:   (slots: InventorySlot[], itemDefs: Record<string, ItemDefinition>, maxWeight: number, secondary?: Partial<SecondaryContext>) => void
@@ -33,13 +33,15 @@ interface InventoryStore {
   closeInventory:  () => void
   updateSlots:     (slots: InventorySlot[]) => void
   updateSecondary: (slots: InventorySlot[]) => void
-  setSecondary:    (ctx: Partial<SecondaryContext>) => void
-  setTab:          (tab: ActiveTab) => void
+  setSecondary:       (ctx: Partial<SecondaryContext>) => void
+  openBackpackPanel:  (ctx: Partial<SecondaryContext>) => void
+  closeBackpackPanel: () => void
+  setTab:             (tab: ActiveTab) => void
   setHealth:       (health: number) => void
-  setDragging:     (slot: InventorySlot | null, source: 'pockets' | 'secondary' | null) => void
-  moveSlot:        (slotId: number, newIndex: number, sourcePanel?: 'pockets' | 'secondary', targetPanel?: 'pockets' | 'secondary') => void
-  equipItem:       (slotId: number, equipKey: EquipSlotKey, sourcePanel: 'pockets' | 'secondary') => void
-  unequipItem:     (equipKey: EquipSlotKey, targetPanel: 'pockets' | 'secondary', targetIndex: number) => void
+  setDragging:     (slot: InventorySlot | null, source: 'pockets' | 'secondary' | 'backpack' | null) => void
+  moveSlot:        (slotId: number, newIndex: number, sourcePanel?: 'pockets' | 'secondary' | 'backpack', targetPanel?: 'pockets' | 'secondary' | 'backpack') => void
+  equipItem:       (slotId: number, equipKey: EquipSlotKey, sourcePanel: 'pockets' | 'secondary' | 'backpack') => void
+  unequipItem:     (equipKey: EquipSlotKey, targetPanel: 'pockets' | 'secondary' | 'backpack', targetIndex: number) => void
   swapEquip:       (srcKey: EquipSlotKey, dstKey: EquipSlotKey) => void
   splitStack:      (slotId: number, amount: number) => void
   showContext:     (slotId: number, x: number, y: number) => void
@@ -70,9 +72,9 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
   slots:          [],
   itemDefs:       {},
   maxWeight:      85,
-  baseMaxWeight:  85,
   maxSlots:       24,
   secondary:      EMPTY_SECONDARY,
+  backpack:       null,
   equipSlots:     DEFAULT_EQUIP_SLOTS,
   health:         100,
   contextMenu:    null,
@@ -83,18 +85,19 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
   openInventory: (slots, itemDefs, maxWeight, secondary) => set({
     isOpen: true, slots, itemDefs,
     maxWeight:     maxWeight ?? 85,
-    baseMaxWeight: maxWeight ?? 85,
     secondary: secondary ? { ...EMPTY_SECONDARY, ...secondary } : EMPTY_SECONDARY,
   }),
 
   closeInventory: () => {
-    set({ isOpen: false, contextMenu: null, secondary: EMPTY_SECONDARY, draggingSlot: null, draggingSource: null })
+    set({ isOpen: false, contextMenu: null, secondary: EMPTY_SECONDARY, draggingSlot: null, draggingSource: null, backpack: null })
     fetch(`https://${GetParentResourceName()}/close`, { method: 'POST', body: JSON.stringify({}) })
   },
 
   updateSlots:     (slots) => set({ slots }),
   updateSecondary: (slots) => set(s => ({ secondary: { ...s.secondary, slots } })),
   setSecondary:    (ctx)   => set(s => ({ secondary: { ...s.secondary, ...ctx } })),
+  openBackpackPanel: (ctx) => set({ backpack: { ...EMPTY_SECONDARY, ...ctx } }),
+  closeBackpackPanel: () => set({ backpack: null }),
   setTab:          (tab)   => set({ activeTab: tab }),
   setHealth:       (h)     => set({ health: h }),
   setDragging:     (slot, source) => set({ draggingSlot: slot, draggingSource: source }),
@@ -106,8 +109,28 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
 
   moveSlot: (slotId, newIndex, sourcePanel = 'pockets', targetPanel = 'pockets') => {
     const state = get()
-    const srcSlots = sourcePanel === 'pockets' ? state.slots : state.secondary.slots
-    const tgtSlots = targetPanel === 'pockets' ? state.slots : state.secondary.slots
+    const getSlotsForPanel = (p: string) => {
+      if (p === 'pockets')   return state.slots
+      if (p === 'backpack')  return state.backpack?.slots ?? []
+      return state.secondary.slots
+    }
+    const setSlotsForPanel = (p: string, updated: typeof state.slots) => {
+      if (p === 'pockets')  set({ slots: updated })
+      else if (p === 'backpack') set(s => ({ backpack: s.backpack ? { ...s.backpack, slots: updated } : null }))
+      else set(s => ({ secondary: { ...s.secondary, slots: updated } }))
+    }
+    const getOwnerForPanel = (p: string) => {
+      if (p === 'pockets')  return { ownerType: 'player', ownerId: '' }
+      if (p === 'backpack') return { ownerType: 'stash',  ownerId: state.backpack?.id ?? '' }
+      return { ownerType: state.secondary.type, ownerId: state.secondary.id }
+    }
+    const getMaxWeightForPanel = (p: string) => {
+      if (p === 'pockets')  return state.maxWeight
+      if (p === 'backpack') return state.backpack?.maxWeight ?? 30
+      return state.secondary.maxWeight
+    }
+    const srcSlots = getSlotsForPanel(sourcePanel)
+    const tgtSlots = getSlotsForPanel(targetPanel)
 
     const moving = srcSlots.find(s => s.id === slotId)
     if (!moving) return
@@ -120,7 +143,7 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
       const displacedDef = displaced ? state.itemDefs[displaced.item_id] : null
       const displacedWeight = (displacedDef && displaced) ? displacedDef.weight * displaced.quantity : 0
 
-      const tgtMaxWeight = targetPanel === 'pockets' ? state.maxWeight : state.secondary.maxWeight
+      const tgtMaxWeight = getMaxWeightForPanel(targetPanel)
       const tgtCurrentWeight = tgtSlots.reduce((acc, s) => {
         const d = state.itemDefs[s.item_id]
         return acc + (d ? d.weight * s.quantity : 0)
@@ -156,15 +179,14 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
             if (s.id === stackTarget.id) return mergedTgt
             return s
           })
-        if (sourcePanel === 'pockets') set({ slots: updated })
-        else set(s => ({ secondary: { ...s.secondary, slots: updated } }))
+        setSlotsForPanel(sourcePanel, updated)
       } else {
         const newSrc = remainder === 0
           ? srcSlots.filter(s => s.id !== slotId)
           : srcSlots.map(s => s.id === slotId ? { ...s, quantity: remainder } : s)
         const newTgt = tgtSlots.map(s => s.id === stackTarget.id ? mergedTgt : s)
-        if (sourcePanel === 'pockets') set(s => ({ slots: newSrc, secondary: { ...s.secondary, slots: newTgt } }))
-        else set(s => ({ slots: newTgt, secondary: { ...s.secondary, slots: newSrc } }))
+        setSlotsForPanel(sourcePanel, newSrc)
+        setSlotsForPanel(targetPanel, newTgt)
       }
       fetch(`https://${GetParentResourceName()}/mergeStacks`, {
         method: 'POST', body: JSON.stringify({ srcSlotId: slotId, dstSlotId: stackTarget.id })
@@ -181,8 +203,7 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
         if (displaced && s.id === displaced.id) return { ...s, slot_index: oldIndex }
         return s
       })
-      if (sourcePanel === 'pockets') set({ slots: updated })
-      else set(s => ({ secondary: { ...s.secondary, slots: updated } }))
+      setSlotsForPanel(sourcePanel, updated)
       fetch(`https://${GetParentResourceName()}/moveItem`, {
         method: 'POST', body: JSON.stringify({ slotId, newSlotIndex: newIndex })
       })
@@ -197,21 +218,14 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
         ...tgtSlots.filter(s => !displaced ? s.slot_index !== newIndex : s.id !== displaced.id),
         { ...moving, slot_index: newIndex },
       ]
-      if (sourcePanel === 'pockets') {
-        set(s => ({ slots: newSrcSlots, secondary: { ...s.secondary, slots: newTgtSlots } }))
-      } else {
-        set(s => ({ slots: newTgtSlots, secondary: { ...s.secondary, slots: newSrcSlots } }))
-      }
-      const tgtOwner = targetPanel === 'secondary'
-        ? { ownerType: state.secondary.type, ownerId: state.secondary.id }
-        : { ownerType: 'player', ownerId: '' }
+      setSlotsForPanel(sourcePanel, newSrcSlots)
+      setSlotsForPanel(targetPanel, newTgtSlots)
+      const tgtOwner = getOwnerForPanel(targetPanel)
       fetch(`https://${GetParentResourceName()}/moveItem`, {
         method: 'POST', body: JSON.stringify({ slotId, newSlotIndex: newIndex, ...tgtOwner })
       })
       if (displaced) {
-        const srcOwner = sourcePanel === 'secondary'
-          ? { ownerType: state.secondary.type, ownerId: state.secondary.id }
-          : { ownerType: 'player', ownerId: '' }
+        const srcOwner = getOwnerForPanel(sourcePanel)
         fetch(`https://${GetParentResourceName()}/moveItem`, {
           method: 'POST', body: JSON.stringify({ slotId: displaced.id, newSlotIndex: oldIndex, ...srcOwner })
         })
@@ -226,11 +240,8 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
     if (!moving) return
     const newSrcSlots   = srcSlots.filter(s => s.id !== slotId)
     const newEquipSlots = state.equipSlots.map(s => s.key === equipKey ? { ...s, slot: moving } : s)
-    const BAG_BONUS: Record<string, number> = { backpack: 30, duffel_bag: 50 }
-    const bonus = equipKey === 'backpack' ? (BAG_BONUS[moving.item_id] ?? 0) : 0
-    const newMaxWeight = bonus > 0 ? state.baseMaxWeight + bonus : state.maxWeight
-    if (sourcePanel === 'pockets') set({ slots: newSrcSlots, equipSlots: newEquipSlots, maxWeight: newMaxWeight })
-    else set(s => ({ secondary: { ...s.secondary, slots: newSrcSlots }, equipSlots: newEquipSlots, maxWeight: newMaxWeight }))
+    if (sourcePanel === 'pockets') set({ slots: newSrcSlots, equipSlots: newEquipSlots })
+    else set(s => ({ secondary: { ...s.secondary, slots: newSrcSlots }, equipSlots: newEquipSlots }))
     fetch(`https://${GetParentResourceName()}/equipItem`, {
       method: 'POST', body: JSON.stringify({ slotId, equipKey })
     })
@@ -243,11 +254,11 @@ unequipItem: (equipKey, targetPanel, targetIndex) => {
     const slot = equip.slot
     const newEquipSlots = state.equipSlots.map(s => s.key === equipKey ? { ...s, slot: null } : s)
     const updatedSlot = { ...slot, slot_index: targetIndex }
-    const newMaxWeight = equipKey === 'backpack' ? state.baseMaxWeight : state.maxWeight
+    const closeBackpack = equipKey === 'backpack' ? { backpack: null } : {}
     if (targetPanel === 'pockets') {
-      set({ equipSlots: newEquipSlots, slots: [...state.slots, updatedSlot], maxWeight: newMaxWeight })
+      set({ equipSlots: newEquipSlots, slots: [...state.slots, updatedSlot], ...closeBackpack })
     } else {
-      set(s => ({ equipSlots: newEquipSlots, secondary: { ...s.secondary, slots: [...s.secondary.slots, updatedSlot] }, maxWeight: newMaxWeight }))
+      set(s => ({ equipSlots: newEquipSlots, secondary: { ...s.secondary, slots: [...s.secondary.slots, updatedSlot] }, ...closeBackpack }))
     }
     fetch(`https://${GetParentResourceName()}/unequipItem`, {
       method: 'POST', body: JSON.stringify({ slotId: slot.id, equipKey, targetPanel, targetIndex })

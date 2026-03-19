@@ -101,6 +101,7 @@ export default function App() {
     isOpen, activeTab, closeInventory, setTab,
     setDragging, draggingSlot, draggingSource,
     moveSlot, equipItem, unequipItem, swapEquip,
+    backpack,
   } = useInventoryStore()
   const z = useZoom()
 
@@ -125,7 +126,21 @@ export default function App() {
     return () => window.removeEventListener('keydown', handler)
   }, [isOpen, closeInventory, activeTab, setTab])
 
-  if (!isOpen) return null
+  const [rendered, setRendered] = useState(false)
+  const [opacity, setOpacity]   = useState(0)
+
+  useEffect(() => {
+    if (isOpen) {
+      setRendered(true)
+      requestAnimationFrame(() => requestAnimationFrame(() => setOpacity(1)))
+    } else {
+      setOpacity(0)
+      const t = setTimeout(() => setRendered(false), 220)
+      return () => clearTimeout(t)
+    }
+  }, [isOpen])
+
+  if (!rendered) return null
 
   const PANEL_W  = 520
   const panelZoom = { zoom: z } as React.CSSProperties
@@ -138,8 +153,10 @@ export default function App() {
       const slotId        = parseInt(id.replace('slot-', ''))
       const fromPockets   = state.slots.find(s => s.id === slotId)
       const fromSecondary = state.secondary.slots.find(s => s.id === slotId)
-      if (fromPockets)   setDragging(fromPockets,   'pockets')
-      if (fromSecondary) setDragging(fromSecondary, 'secondary')
+      const fromBackpack  = state.backpack?.slots.find(s => s.id === slotId)
+      if (fromPockets)        setDragging(fromPockets,   'pockets')
+      else if (fromBackpack)  setDragging(fromBackpack,  'backpack' as any)
+      else if (fromSecondary) setDragging(fromSecondary, 'secondary')
     } else if (id.startsWith('equip-')) {
       const equipKey = id.replace('equip-', '') as EquipSlotKey
       const equip    = state.equipSlots.find(s => s.key === equipKey)
@@ -194,6 +211,7 @@ export default function App() {
   }
 
   return (
+    <div style={{ opacity, transition: 'opacity 0.2s ease', pointerEvents: isOpen ? 'all' : 'none' }}>
     <DndContext
       sensors={sensors}
       collisionDetection={pointerWithin}
@@ -221,7 +239,7 @@ export default function App() {
           </button>
         </div>
 
-        {/* Left — POCKETS */}
+        {/* Left — POCKETS + BACKPACK */}
         <div style={{
           position: 'fixed', top: '50%', left: 20,
           ...panelZoom,
@@ -232,6 +250,16 @@ export default function App() {
           width: PANEL_W,
         }}>
           <InventoryPanel title="POCKETS" panel="pockets" />
+          {backpack && (
+            <div style={{ animation: 'slideDown 0.2s ease' }}>
+              <InventoryPanel
+                title={backpack.label}
+                panel="backpack"
+                secondary
+                contextOverride={backpack}
+              />
+            </div>
+          )}
         </div>
 
         {/* Right — GROUND/GLOVEBOX/UTILITY */}
@@ -270,6 +298,10 @@ export default function App() {
             background: rgba(0,0,0,0.3); padding: 1px 6px;
             border-radius: 2px; font-size: 9px; font-family: var(--font-mono);
           }
+          @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-12px); }
+            to   { opacity: 1; transform: translateY(0); }
+          }
         `}</style>
       </div>
 
@@ -278,5 +310,6 @@ export default function App() {
         document.body
       )}
     </DndContext>
+    </div>
   )
 }

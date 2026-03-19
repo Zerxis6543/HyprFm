@@ -59,13 +59,30 @@ function ESlot({ slotKey, label }: { slotKey: EquipSlotKey; label: string }) {
         data-equip-key={slotKey}
         className={`e-slot ${slot ? 'occupied' : ''} ${isDragging ? 'dragging' : ''} ${slot && (slot.item_id === 'backpack' || slot.item_id === 'duffel_bag') ? 'bag-slot' : ''}`}
         style={{ opacity: isDragging ? 0.3 : 1 }}
-        onDoubleClick={() => {
-          if (slot && (slot.item_id === 'backpack' || slot.item_id === 'duffel_bag')) {
-            useInventoryStore.getState().openBackpack(String(slot.id))
-          }
-        }}
         {...(slot ? { ...attributes, ...listeners } : {})}
       >
+        {slot && (slot.item_id === 'backpack' || slot.item_id === 'duffel_bag') && (
+          <button
+            onPointerDown={e => e.stopPropagation()}
+            onClick={e => {
+              e.stopPropagation()
+              useInventoryStore.getState().openBackpack(slot.item_id)
+            }}
+            style={{
+              position: 'absolute', bottom: 4, left: '50%',
+              transform: 'translateX(-50%)',
+              background: 'rgba(74,222,128,0.15)',
+              border: '1px solid var(--accent)',
+              borderRadius: 3, color: 'var(--accent)',
+              fontSize: 7, fontWeight: 700,
+              letterSpacing: '0.08em',
+              padding: '2px 6px', cursor: 'pointer',
+              zIndex: 10, whiteSpace: 'nowrap',
+            }}
+          >
+            OPEN
+          </button>
+        )}
         {!slot && (
           <div className="e-slot-empty-hint">{label[0]}</div>
         )}

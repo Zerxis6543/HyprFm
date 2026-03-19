@@ -11,18 +11,23 @@ import { InventorySlot } from '../types'
 
 interface Props {
   title:      string
-  panel:      'pockets' | 'secondary'
+  panel:      'pockets' | 'secondary' | 'backpack'
   secondary?: boolean
+  contextOverride?: import('../store').SecondaryContext
 }
 
-export function InventoryPanel({ title, panel, secondary = false }: Props) {
+export function InventoryPanel({ title, panel, secondary = false, contextOverride }: Props) {
   const { slots, secondary: ctx, itemDefs, maxWeight, maxSlots, draggingSlot, weightFlash } = useInventoryStore()
   const isFlashing = weightFlash === panel
+  const [collapsed, setCollapsed] = useState(false)
 
-  const activeSlots = secondary ? ctx.slots     : slots
-  const panelTitle  = secondary ? ctx.label     : title
-  const panelWeight = secondary ? ctx.maxWeight : maxWeight
-  const panelSlots  = secondary ? ctx.maxSlots  : maxSlots
+  const effectiveCtx = contextOverride ?? ctx
+  const activeSlots  = (secondary || panel === 'backpack') ? effectiveCtx.slots : slots
+  const panelWeight2 = panel === 'backpack' ? effectiveCtx.maxWeight : (secondary ? effectiveCtx.maxWeight : maxWeight)
+  const panelSlots2  = panel === 'backpack' ? effectiveCtx.maxSlots  : (secondary ? effectiveCtx.maxSlots  : maxSlots)
+  const panelTitle   = contextOverride ? contextOverride.label : (secondary ? ctx.label : title)
+  const panelWeight  = panelWeight2
+  const panelSlots   = panelSlots2
 
   const [activeDropIndex, setActiveDropIndex] = useState<number | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -72,12 +77,23 @@ export function InventoryPanel({ title, panel, secondary = false }: Props) {
       <div className="inv-header">
         <div className="inv-title-row">
           <span className="inv-title">{panelTitle}</span>
-          <span className="inv-weight-badge">
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ marginRight: 3 }}>
-              <path d="M5 1L6.5 3.5H9L7 5.5L7.5 8.5L5 7L2.5 8.5L3 5.5L1 3.5H3.5L5 1Z" fill="currentColor" opacity="0.6"/>
-            </svg>
-            {totalWeight.toFixed(2)}/{panelWeight}kg
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span className="inv-weight-badge">
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ marginRight: 3 }}>
+                <path d="M5 1L6.5 3.5H9L7 5.5L7.5 8.5L5 7L2.5 8.5L3 5.5L1 3.5H3.5L5 1Z" fill="currentColor" opacity="0.6"/>
+              </svg>
+              {totalWeight.toFixed(2)}/{panelWeight}kg
+            </span>
+            <button
+              onClick={() => setCollapsed(c => !c)}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: 'var(--text-muted)', fontSize: 14, lineHeight: 1,
+                padding: '0 2px',
+                transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+                transition: 'transform 0.2s ease',
+              }}>∨</button>
+          </div>
         </div>
         <div className="inv-weight-bar">
           <div className="inv-weight-fill" style={{
@@ -89,7 +105,11 @@ export function InventoryPanel({ title, panel, secondary = false }: Props) {
         </div>
       </div>
 
-      <div className="inv-grid-wrap" ref={scrollRef}>
+      <div className="inv-grid-wrap" ref={scrollRef} style={{
+        maxHeight:  collapsed ? '0px' : '420px',
+        overflow:   'hidden',
+        transition: 'max-height 0.25s ease',
+      }}>
         <div className="inv-grid">
           {Array.from({ length: panelSlots }, (_, i) => {
             const slot = slotMap.get(i) ?? null
@@ -100,7 +120,7 @@ export function InventoryPanel({ title, panel, secondary = false }: Props) {
                 slotIndex={i}
                 slot={slot}
                 itemDef={def}
-                panel={panel}
+                panel={panel as 'pockets' | 'secondary' | 'backpack'}
                 isDropTarget={activeDropIndex === i}
               />
             )
@@ -129,7 +149,7 @@ export function InventoryPanel({ title, panel, secondary = false }: Props) {
         }
         .inv-weight-bar { height: 3px; background: rgba(255,255,255,0.06); border-radius: 2px; overflow: hidden; }
         .inv-weight-fill { height: 100%; border-radius: 2px; transition: width 0.3s ease, background 0.3s ease; }
-        .inv-grid-wrap { max-height: 420px; overflow-y: scroll; overflow-x: hidden; }
+        .inv-grid-wrap { overflow-y: scroll; overflow-x: hidden; }
         .inv-grid-wrap::-webkit-scrollbar { width: 4px; }
         .inv-grid-wrap::-webkit-scrollbar-track { background: transparent; }
         .inv-grid-wrap::-webkit-scrollbar-thumb { background: rgba(74,222,128,0.25); border-radius: 2px; }
