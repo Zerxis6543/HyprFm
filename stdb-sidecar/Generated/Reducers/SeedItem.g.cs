@@ -12,12 +12,12 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void SeedItemHandler(ReducerEventContext ctx, string itemId, string label, float weight, bool stackable, bool usable, uint maxStack, string category);
+        public delegate void SeedItemHandler(ReducerEventContext ctx, string itemId, string label, float weight, bool stackable, bool usable, uint maxStack, string category, string propModel);
         public event SeedItemHandler? OnSeedItem;
 
-        public void SeedItem(string itemId, string label, float weight, bool stackable, bool usable, uint maxStack, string category)
+        public void SeedItem(string itemId, string label, float weight, bool stackable, bool usable, uint maxStack, string category, string propModel)
         {
-            conn.InternalCallReducer(new Reducer.SeedItem(itemId, label, weight, stackable, usable, maxStack, category));
+            conn.InternalCallReducer(new Reducer.SeedItem(itemId, label, weight, stackable, usable, maxStack, category, propModel));
         }
 
         public bool InvokeSeedItem(ReducerEventContext ctx, Reducer.SeedItem args)
@@ -42,7 +42,8 @@ namespace SpacetimeDB.Types
                 args.Stackable,
                 args.Usable,
                 args.MaxStack,
-                args.Category
+                args.Category,
+                args.PropModel
             );
             return true;
         }
@@ -68,6 +69,8 @@ namespace SpacetimeDB.Types
             public uint MaxStack;
             [DataMember(Name = "category")]
             public string Category;
+            [DataMember(Name = "prop_model")]
+            public string PropModel;
 
             public SeedItem(
                 string ItemId,
@@ -76,7 +79,8 @@ namespace SpacetimeDB.Types
                 bool Stackable,
                 bool Usable,
                 uint MaxStack,
-                string Category
+                string Category,
+                string PropModel
             )
             {
                 this.ItemId = ItemId;
@@ -86,6 +90,7 @@ namespace SpacetimeDB.Types
                 this.Usable = Usable;
                 this.MaxStack = MaxStack;
                 this.Category = Category;
+                this.PropModel = PropModel;
             }
 
             public SeedItem()
@@ -93,6 +98,7 @@ namespace SpacetimeDB.Types
                 this.ItemId = "";
                 this.Label = "";
                 this.Category = "";
+                this.PropModel = "";
             }
 
             string IReducerArgs.ReducerName => "seed_item";

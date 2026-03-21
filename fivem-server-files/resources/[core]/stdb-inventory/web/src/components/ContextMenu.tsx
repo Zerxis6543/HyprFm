@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useInventoryStore } from '../store'
 import { itemIcon } from '../types'
 
+
 function GetParentResourceName(): string {
   if (typeof window !== 'undefined' && (window as any).GetParentResourceName) {
     return (window as any).GetParentResourceName()
@@ -11,6 +12,7 @@ function GetParentResourceName(): string {
 
 export function ContextMenu() {
   const { contextMenu, slots, secondary, itemDefs, hideContext, splitStack } = useInventoryStore()
+  const backpack = useInventoryStore(s => s.backpack)
   const ref = useRef<HTMLDivElement>(null)
   const [dropQty, setDropQty]     = useState<number | null>(null)
   const [inspecting, setInspecting] = useState(false)
@@ -34,6 +36,7 @@ export function ContextMenu() {
   // Search both panels
   const slot    = slots.find(s => s.id === contextMenu.slotId)
              ?? secondary.slots.find(s => s.id === contextMenu.slotId)
+             ?? backpack?.slots.find(s => s.id === contextMenu.slotId)
   const itemDef = slot ? itemDefs[slot.item_id] : null
   if (!slot || !itemDef) return null
 
@@ -45,7 +48,9 @@ export function ContextMenu() {
   const y = Math.min(contextMenu.y, window.innerHeight - menuH)
 
   return (
-    <div ref={ref} className="ctx-menu" style={{ left: x, top: y }}>
+    <div ref={ref} className="ctx-menu" style={{ left: x, top: y }}
+      onPointerDown={e => e.stopPropagation()}
+    >
 
       {/* Header */}
       <div className="ctx-header">
@@ -127,7 +132,7 @@ export function ContextMenu() {
             <button className="ctx-action" style={{ color: '#f87171', flex: 1 }} onClick={() => {
               fetch(`https://${GetParentResourceName()}/dropItem`, {
                 method: 'POST',
-                body: JSON.stringify({ slotId: slot.id, quantity: dropQty }),
+                body: JSON.stringify({ slotId: slot.id, quantity: dropQty, itemId: slot.item_id, propModel: itemDef.prop_model ?? '' }),
               })
               hideContext()
             }}>CONFIRM DROP</button>
@@ -148,7 +153,14 @@ export function ContextMenu() {
           }}>USE</button>
         )}
 
-        <button className="ctx-action" onClick={() => setInspecting(true)}>INSPECT</button>
+        <button className="ctx-action" onClick={() => {
+          useInventoryStore.getState().startInspect(slot)
+          fetch(`https://${GetParentResourceName()}/inspectItem`, {
+            method: 'POST',
+            body: JSON.stringify({ slotId: slot.id, itemId: slot.item_id }),
+          })
+          hideContext()
+        }}>INSPECT</button>
 
         {slot.quantity > 1 && !splitting && (
           <button className="ctx-action" style={{ color: '#facc15' }} onClick={() => {
@@ -161,7 +173,7 @@ export function ContextMenu() {
           if (slot.quantity === 1) {
             fetch(`https://${GetParentResourceName()}/dropItem`, {
               method: 'POST',
-              body: JSON.stringify({ slotId: slot.id, quantity: 1 }),
+              body: JSON.stringify({ slotId: slot.id, quantity: 1, itemId: slot.item_id, propModel: itemDef.prop_model ?? '' }),
             })
             hideContext()
           } else {

@@ -130,11 +130,10 @@ export function InventoryPanel({ title, panel, secondary = false, contextOverrid
 
       <style>{`
         .inv-panel {
-          background: var(--bg-panel);
+          background: rgba(8, 10, 14, 0.97);
           border: 1px solid var(--border);
           border-radius: var(--radius);
           overflow: hidden;
-          backdrop-filter: blur(12px);
           width: 520px;
         }
         .inv-header { padding: 12px 14px 8px; border-bottom: 1px solid var(--border); }
@@ -149,7 +148,7 @@ export function InventoryPanel({ title, panel, secondary = false, contextOverrid
         }
         .inv-weight-bar { height: 3px; background: rgba(255,255,255,0.06); border-radius: 2px; overflow: hidden; }
         .inv-weight-fill { height: 100%; border-radius: 2px; transition: width 0.3s ease, background 0.3s ease; }
-        .inv-grid-wrap { overflow-y: scroll; overflow-x: hidden; }
+        .inv-grid-wrap { overflow-y: scroll; overflow-x: hidden; border-bottom: 2px solid var(--border); }
         .inv-grid-wrap::-webkit-scrollbar { width: 4px; }
         .inv-grid-wrap::-webkit-scrollbar-track { background: transparent; }
         .inv-grid-wrap::-webkit-scrollbar-thumb { background: rgba(74,222,128,0.25); border-radius: 2px; }

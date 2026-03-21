@@ -233,6 +233,11 @@ AddEventHandler("stdb:moveItem", function(slotId, newSlotIndex, targetOwnerType,
                 broadcastInventoryUpdate(capturedSecType, capturedSecId)
             end)
         end
+        -- Delete world prop by position (position-based matching)
+        local info = openInventories[player]
+        if info and info.secondary and info.secondary.ownerType == "stash" then
+            TriggerClientEvent("stdb:deleteWorldProp", -1, info.secondary.ownerId)
+        end
     else
         -- Moving to vehicle or stash/ground
         local stdbOwnerType = "stash"
@@ -250,9 +255,6 @@ AddEventHandler("stdb:moveItem", function(slotId, newSlotIndex, targetOwnerType,
         })
 
         -- Spawn a world prop for the player when dropping to ground
-        if targetOwnerType == "ground" and px and px ~= 0 then
-            TriggerClientEvent("stdb:spawnWorldDrop", player, slotId, px, py, pz)
-        end
         local capturedType = stdbOwnerType
         local capturedId   = targetOwnerId
         Citizen.SetTimeout(150, function()
@@ -572,6 +574,107 @@ AddEventHandler("stdb:unequipItem", function(slotId, equipKey, targetPanel, targ
         end,
         "POST",
         json.encode({ name = "get_player_inventory", args = { server_id = serverId } }),
+        { ["Content-Type"] = "application/json" }
+    )
+end)
+
+RegisterNetEvent("stdb:dropItem")
+AddEventHandler("stdb:dropItem", function(slotId, quantity, itemId, propModel, skipPropSpawn)
+    local player = source
+    local pos    = GetEntityCoords(GetPlayerPed(player))
+
+    PerformHttpRequest(SIDECAR_URL .. "reducer",
+        function(status, body, _)
+            if status ~= 200 or not body then return end
+            local ok, result = pcall(json.decode, body)
+            if not ok or not result then return end
+            if result.stash_id and result.stash_id ~= "" then
+                Citizen.SetTimeout(150, function()
+                    broadcastInventoryUpdate("stash", result.stash_id)
+                end)
+                if propModel and propModel ~= "" and not skipPropSpawn then
+                    -- Delay slightly to let SpacetimeDB commit and return real slot ID
+                    Citizen.SetTimeout(300, function()
+                        PerformHttpRequest(SIDECAR_URL .. "reducer",
+                            function(s2, b2, _)
+                                local ok2, slots = pcall(json.decode, b2)
+                                if ok2 and slots and slots.slots then
+                                    local newSlotId = slotId
+                                    for _, sl in ipairs(slots.slots) do
+                                        newSlotId = sl.id
+                                        break
+                                    end
+                                    TriggerClientEvent("stdb:spawnWorldDrop", -1,
+                                        newSlotId,
+                                        result.stash_id,
+                                        propModel,
+                                        pos.x, pos.y, pos.z)
+                                end
+                            end,
+                            "POST",
+                            json.encode({ name = "get_inventory_slots", args = {
+                                owner_type = "stash",
+                                owner_id   = result.stash_id
+                            }}),
+                            { ["Content-Type"] = "application/json" }
+                        )
+                    end)
+                end
+            end
+            broadcastInventoryUpdate("player", tostring(player))
+        end,
+        "POST",
+        json.encode({ name = "drop_item_to_ground", args = {
+            slot_id  = slotId,
+            quantity = quantity or 0,
+            x = pos.x, y = pos.y, z = pos.z,
+        }}),
+        { ["Content-Type"] = "application/json" }
+    )
+end)
+
+RegisterNetEvent("stdb:giveItem")
+AddEventHandler("stdb:giveItem", function(slotId, targetServerId)
+    local player   = source
+    local serverId = tonumber(player)
+
+    callSidecar("transfer_item_to_player", {
+        slot_id        = slotId,
+        server_id      = targetServerId,
+        new_slot_index = 0, -- sidecar finds next free
+    })
+
+    Citizen.SetTimeout(150, function()
+        broadcastInventoryUpdate("player", tostring(player))
+        broadcastInventoryUpdate("player", tostring(targetServerId))
+    end)
+end)
+
+RegisterNetEvent("stdb:finalizeThrow")
+AddEventHandler("stdb:finalizeThrow", function(slotId, itemId, propModel, x, y, z)
+    local player = source
+    -- Spawn permanent world prop at final resting position for all clients
+    TriggerClientEvent("stdb:spawnWorldDrop", -1, slotId, "finalized_" .. tostring(slotId), propModel, x, y, z)
+    -- Drop item to ground stash at final position
+    local pos = vector3(x, y, z)
+    PerformHttpRequest(SIDECAR_URL .. "reducer",
+        function(status, body, _)
+            if status ~= 200 or not body then return end
+            local ok, result = pcall(json.decode, body)
+            if not ok or not result then return end
+            if result.stash_id and result.stash_id ~= "" then
+                Citizen.SetTimeout(150, function()
+                    broadcastInventoryUpdate("stash", result.stash_id)
+                end)
+            end
+            broadcastInventoryUpdate("player", tostring(player))
+        end,
+        "POST",
+        json.encode({ name = "drop_item_to_ground", args = {
+            slot_id  = slotId,
+            quantity = 0,
+            x = x, y = y, z = z,
+        }}),
         { ["Content-Type"] = "application/json" }
     )
 end)

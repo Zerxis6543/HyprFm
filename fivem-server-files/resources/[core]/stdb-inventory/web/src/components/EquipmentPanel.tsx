@@ -61,28 +61,7 @@ function ESlot({ slotKey, label }: { slotKey: EquipSlotKey; label: string }) {
         style={{ opacity: isDragging ? 0.3 : 1 }}
         {...(slot ? { ...attributes, ...listeners } : {})}
       >
-        {slot && (slot.item_id === 'backpack' || slot.item_id === 'duffel_bag') && (
-          <button
-            onPointerDown={e => e.stopPropagation()}
-            onClick={e => {
-              e.stopPropagation()
-              useInventoryStore.getState().openBackpack(slot.item_id)
-            }}
-            style={{
-              position: 'absolute', bottom: 4, left: '50%',
-              transform: 'translateX(-50%)',
-              background: 'rgba(74,222,128,0.15)',
-              border: '1px solid var(--accent)',
-              borderRadius: 3, color: 'var(--accent)',
-              fontSize: 7, fontWeight: 700,
-              letterSpacing: '0.08em',
-              padding: '2px 6px', cursor: 'pointer',
-              zIndex: 10, whiteSpace: 'nowrap',
-            }}
-          >
-            OPEN
-          </button>
-        )}
+        
         {!slot && (
           <div className="e-slot-empty-hint">{label[0]}</div>
         )}
@@ -149,10 +128,9 @@ export function EquipmentPanel() {
           flex-direction: column;
           gap: 10px;
           padding: 14px;
-          background: var(--bg-panel);
+          background: rgba(8, 10, 14, 0.97);
           border: 1px solid var(--border);
           border-radius: var(--radius);
-          backdrop-filter: blur(12px);
           width: 520px;
         }
 
@@ -243,18 +221,19 @@ export function EquipmentPanel() {
           position: absolute; top: 4px; left: 5px;
           font-family: var(--font-mono); font-size: 9px; color: var(--text-muted);
         }
-        .e-icon { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; }
-        .e-icon img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 0 5px rgba(74,222,128,0.25)); }
+        .e-icon { width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; }
+        .e-icon img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 0 6px rgba(74,222,128,0.15)); transition: filter var(--transition); }
+        .e-slot.occupied:hover .e-icon img { filter: drop-shadow(0 0 8px rgba(74,222,128,0.35)); }
         .e-name {
-          font-size: 8px; font-weight: 600; letter-spacing: 0.05em;
+          font-size: 9px; font-weight: 600; letter-spacing: 0.06em;
           color: var(--text-secondary); text-align: center;
-          padding: 0 4px; margin-top: 2px;
+          padding: 0 4px; margin-top: 2px; line-height: 1.2;
         }
         .e-weight {
-          position: absolute; bottom: 4px; right: 5px;
+          position: absolute; bottom: 3px; right: 4px;
           font-family: var(--font-mono); font-size: 7px; color: var(--text-muted);
         }
-        .e-hotkeys .e-icon { width: 30px; height: 30px; }
+        .e-hotkeys .e-icon { width: 42px; height: 42px; }
       `}</style>
     </div>
   )

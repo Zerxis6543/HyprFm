@@ -27,6 +27,8 @@ interface InventoryStore {
   draggingSlot:   InventorySlot | null
   draggingSource: 'pockets' | 'secondary' | 'backpack' | null
   weightFlash:    'pockets' | 'secondary' | null
+  inspectMode:    boolean
+  inspectSlot:    InventorySlot | null
 
   openInventory:   (slots: InventorySlot[], itemDefs: Record<string, ItemDefinition>, maxWeight: number, secondary?: Partial<SecondaryContext>) => void
   openBackpack:    (bagItemId: string) => void
@@ -44,8 +46,10 @@ interface InventoryStore {
   unequipItem:     (equipKey: EquipSlotKey, targetPanel: 'pockets' | 'secondary' | 'backpack', targetIndex: number) => void
   swapEquip:       (srcKey: EquipSlotKey, dstKey: EquipSlotKey) => void
   splitStack:      (slotId: number, amount: number) => void
-  showContext:     (slotId: number, x: number, y: number) => void
-  hideContext:     () => void
+  showContext:        (slotId: number, x: number, y: number) => void
+  hideContext:        () => void
+  startInspect:       (slot: InventorySlot) => void
+  stopInspect:        () => void
 }
 
 const EMPTY_SECONDARY: SecondaryContext = {
@@ -81,6 +85,8 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
   draggingSlot:   null,
   draggingSource: null,
   weightFlash:    null,
+  inspectMode:    false,
+  inspectSlot:    null,
 
   openInventory: (slots, itemDefs, maxWeight, secondary) => set({
     isOpen: true, slots, itemDefs,
@@ -89,7 +95,7 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
   }),
 
   closeInventory: () => {
-    set({ isOpen: false, contextMenu: null, secondary: EMPTY_SECONDARY, draggingSlot: null, draggingSource: null, backpack: null })
+    set({ isOpen: false, contextMenu: null, secondary: EMPTY_SECONDARY, draggingSlot: null, draggingSource: null, backpack: null, inspectMode: false, inspectSlot: null })
     fetch(`https://${GetParentResourceName()}/close`, { method: 'POST', body: JSON.stringify({}) })
   },
 
@@ -245,6 +251,20 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
     fetch(`https://${GetParentResourceName()}/equipItem`, {
       method: 'POST', body: JSON.stringify({ slotId, equipKey })
     })
+    // Auto-open backpack panel when equipping a bag
+    if (equipKey === 'backpack' && (moving.item_id === 'backpack' || moving.item_id === 'duffel_bag')) {
+      // Use slot ID directly — no server round trip needed
+      const bpStashId = `backpack_slot_${moving.id}`
+      const bpMaxSlots = moving.item_id === 'duffel_bag' ? 30 : 20
+      const bpMaxWeight = moving.item_id === 'duffel_bag' ? 50 : 30
+      const bpLabel = moving.item_id === 'duffel_bag' ? 'DUFFEL BAG' : 'BACKPACK'
+      get().openBackpackPanel({
+        type: 'stash', label: bpLabel, id: bpStashId,
+        maxWeight: bpMaxWeight, maxSlots: bpMaxSlots, slots: [],
+      })
+      // Fetch actual slots async and update
+      get().openBackpack(moving.item_id)
+    }
   },
 
 unequipItem: (equipKey, targetPanel, targetIndex) => {
@@ -329,6 +349,8 @@ splitStack: (slotId, amount) => {
   },
   
   showContext: (slotId, x, y) => set({ contextMenu: { slotId, x, y } }),
+  startInspect: (slot) => set({ inspectMode: true, inspectSlot: slot }),
+  stopInspect:  () => set({ inspectMode: false, inspectSlot: null }),
   hideContext: () => set({ contextMenu: null }),
 }))
 

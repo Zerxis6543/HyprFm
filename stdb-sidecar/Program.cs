@@ -98,7 +98,7 @@ class Program
                 _db!.Reducers.SeedItem(
                     item.Id, item.Label, item.Weight,
                     item.Stackable, item.Usable, item.MaxStack,
-                    item.Category);
+                    item.Category, item.PropModel);
             }
             catch (Exception ex)
             {
@@ -236,6 +236,14 @@ class Program
                         {
                             var tIdentity = tSession.Identity.ToString().ToLower();
                             if (tIdentity.StartsWith("0x")) tIdentity = tIdentity.Substring(2);
+                            // Find next free slot for target player
+                            if (tSlotIndex == 0)
+                            {
+                                var usedTgt = _db.Db.InventorySlot.Iter()
+                                    .Where(s => s.OwnerId == tIdentity && s.OwnerType == "player")
+                                    .Select(s => s.SlotIndex).ToHashSet();
+                                while (usedTgt.Contains(tSlotIndex)) tSlotIndex++;
+                            }
                             _db.Reducers.TransferItem(tSlotId, tIdentity, "player", tSlotIndex);
                         }
                         break;
@@ -361,7 +369,8 @@ class Program
                                     stackable = d.Stackable,
                                     usable    = d.Usable,
                                     max_stack = d.MaxStack,
-                                    category  = d.Category,
+                                    category   = d.Category,
+                                    prop_model = d.PropModel,
                                 };
                             }
                         }
@@ -532,12 +541,101 @@ class Program
                         return;
                     }
 
+                    case "drop_item_to_ground":
+                    {
+                        ulong dropSlotId = args.GetProperty("slot_id").GetUInt64();
+                        uint  dropQty    = args.TryGetProperty("quantity", out var dqEl) ? dqEl.GetUInt32() : 0;
+                        float dx = (float)args.GetProperty("x").GetDouble();
+                        float dy = (float)args.GetProperty("y").GetDouble();
+                        float dz = (float)args.GetProperty("z").GetDouble();
+
+                        float searchRadius = 5f;
+                        var nearbyDrop = _db!.Db.StashDefinition.Iter()
+                            .Where(s => s.StashType == "ground")
+                            .Where(s => {
+                                float ddx = s.PosX - dx, ddy = s.PosY - dy;
+                                return (ddx*ddx + ddy*ddy) <= (searchRadius * searchRadius);
+                            })
+                            .OrderBy(s => {
+                                float ddx = s.PosX - dx, ddy = s.PosY - dy;
+                                return ddx*ddx + ddy*ddy;
+                            })
+                            .FirstOrDefault();
+
+                        string dropStashId;
+                        if (nearbyDrop != null && !string.IsNullOrEmpty(nearbyDrop.StashId))
+                        {
+                            dropStashId = nearbyDrop.StashId;
+                        }
+                        else
+                        {
+                            dropStashId = $"ground_{Guid.NewGuid():N}";
+                            try { _db!.Reducers.CreateStash(dropStashId, "ground", "GROUND", 50u, 999f, "", dx, dy, dz); } catch { }
+                        }
+
+                        var dropSlot = _db!.Db.InventorySlot.Iter().FirstOrDefault(s => s.Id == dropSlotId);
+                        if (dropSlot == null || string.IsNullOrEmpty(dropSlot.OwnerId))
+                        {
+                            await WriteJson(ctx, new { ok = false, error = "slot not found" });
+                            return;
+                        }
+
+                        var usedDropIndices = _db!.Db.InventorySlot.Iter()
+                            .Where(s => s.OwnerId == dropStashId)
+                            .Select(s => s.SlotIndex).ToHashSet();
+                        uint newDropIndex = 0;
+                        while (usedDropIndices.Contains(newDropIndex)) newDropIndex++;
+
+                        uint actualDropQty = (dropQty > 0 && dropQty < dropSlot.Quantity) ? dropQty : dropSlot.Quantity;
+
+                        if (actualDropQty == dropSlot.Quantity)
+                        {
+                            _db!.Reducers.TransferItem(dropSlotId, dropStashId, "stash", newDropIndex);
+                        }
+                        else
+                        {
+                            _db!.Reducers.RemoveItem(dropSlot.OwnerId, dropSlot.ItemId, actualDropQty);
+                            _db!.Reducers.AddItem(dropStashId, "stash", dropSlot.ItemId, actualDropQty, dropSlot.Metadata);
+                        }
+
+                        // Find the slot we just created/moved
+                        var newSlot = _db!.Db.InventorySlot.Iter()
+                            .Where(s => s.OwnerId == dropStashId && s.OwnerType == "stash" && s.SlotIndex == newDropIndex)
+                            .FirstOrDefault();
+                        await WriteJson(ctx, new {
+                            ok = true,
+                            stash_id = dropStashId,
+                            new_slot_id = newSlot?.Id ?? 0,
+                        });
+                        return;
+                    }
+
                     case "split_stack":
                     {
                         ulong splitId  = args.GetProperty("slot_id").GetUInt64();
                         uint  splitAmt = args.GetProperty("amount").GetUInt32();
                         _db!.Reducers.SplitStack(splitId, splitAmt);
                         await WriteJson(ctx, new { ok = true });
+                        return;
+                    }
+
+                    case "get_stash_pos":
+                    {
+                        string spStashId = args.GetProperty("stash_id").GetString() ?? "";
+                        var spDef = _db!.Db.StashDefinition.Iter()
+                            .FirstOrDefault(s => s.StashId == spStashId);
+                        if (spDef != null)
+                        {
+                            await WriteJson(ctx, new {
+                                pos_x = spDef.PosX,
+                                pos_y = spDef.PosY,
+                                pos_z = spDef.PosZ,
+                            });
+                        }
+                        else
+                        {
+                            await WriteJson(ctx, new { pos_x = 0f, pos_y = 0f, pos_z = 0f });
+                        }
                         return;
                     }
 
@@ -598,6 +696,7 @@ class Program
                                 weight    = d.Weight, stackable = d.Stackable,
                                 usable    = d.Usable, max_stack = d.MaxStack,
                                 category  = d.Category,
+                                prop_model = d.PropModel,
                             });
 
                         Console.WriteLine($"[Sidecar] Ground stash {gStashId} has {gSlots.Count} slots");

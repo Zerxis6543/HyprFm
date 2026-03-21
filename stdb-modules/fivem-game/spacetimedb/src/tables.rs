@@ -66,13 +66,14 @@ pub struct SpawnRequest {
 #[derive(Clone, Debug)]
 pub struct ItemDefinition {
     #[primary_key]
-    pub item_id:   String,
-    pub label:     String,
-    pub weight:    f32,
-    pub stackable: bool,
-    pub usable:    bool,
-    pub max_stack: u32,
-    pub category:  String,  // bag, armor, phone, parachute, weapon, misc
+    pub item_id:    String,
+    pub label:      String,
+    pub weight:     f32,
+    pub stackable:  bool,
+    pub usable:     bool,
+    pub max_stack:  u32,
+    pub category:   String,
+    pub prop_model: String,
 }
 
 /// One row per stack of items in any inventory.

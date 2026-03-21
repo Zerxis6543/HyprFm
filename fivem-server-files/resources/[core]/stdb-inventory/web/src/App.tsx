@@ -9,6 +9,7 @@ import { InventoryPanel } from './components/InventoryPanel'
 import { EquipmentPanel } from './components/EquipmentPanel'
 import { ContextMenu } from './components/ContextMenu'
 import { InventorySlot, itemIcon, EquipSlotKey } from './types'
+import { InspectHint } from './components/InspectHint'
 
 const EQUIP_ALLOWED: Record<string, string[]> = {
   backpack:         ['bag'],
@@ -101,7 +102,7 @@ export default function App() {
     isOpen, activeTab, closeInventory, setTab,
     setDragging, draggingSlot, draggingSource,
     moveSlot, equipItem, unequipItem, swapEquip,
-    backpack,
+    backpack, inspectMode,
   } = useInventoryStore()
   const z = useZoom()
 
@@ -140,7 +141,7 @@ export default function App() {
     }
   }, [isOpen])
 
-  if (!rendered) return null
+  if (!rendered && !inspectMode) return null
 
   const PANEL_W  = 520
   const panelZoom = { zoom: z } as React.CSSProperties
@@ -226,7 +227,7 @@ export default function App() {
           position: 'fixed', top: 20, right: 20,
           ...panelZoom,
           pointerEvents: 'all', zIndex: 200,
-          display: 'flex', gap: 2,
+          display: inspectMode ? 'none' : 'flex', gap: 2,
           transformOrigin: 'top right',
         }}>
           <button className={`tab-btn ${activeTab === 'inventories' ? 'active' : ''}`}
@@ -246,7 +247,7 @@ export default function App() {
           transform: `translateY(-${50 / z}%) perspective(1200px) rotateY(6deg)`,
           transformOrigin: 'top left',
           pointerEvents: 'all', zIndex: 10,
-          display: 'flex', flexDirection: 'column', gap: 8,
+          display: inspectMode ? 'none' : 'flex', flexDirection: 'column', gap: 8,
           width: PANEL_W,
         }}>
           <InventoryPanel title="POCKETS" panel="pockets" />
@@ -269,14 +270,14 @@ export default function App() {
           transform: `translateY(-${50 / z}%) perspective(1200px) rotateY(-6deg)`,
           transformOrigin: 'top right',
           pointerEvents: 'all', zIndex: 10,
+          display: inspectMode ? 'none' : undefined,
           width: PANEL_W,
         }}>
           {activeTab === 'inventories' && <InventoryPanel title="GROUND" panel="secondary" secondary />}
           {activeTab === 'utility'     && <EquipmentPanel />}
         </div>
 
-        <ContextMenu />
-
+        
         <style>{`
           * { box-sizing: border-box; }
           .tab-btn {
@@ -310,6 +311,7 @@ export default function App() {
         document.body
       )}
     </DndContext>
+    {createPortal(<><ContextMenu /><InspectHint /></>, document.body)}
     </div>
   )
 }

@@ -27,6 +27,8 @@ namespace SpacetimeDB.Types
         public uint MaxStack;
         [DataMember(Name = "category")]
         public string Category;
+        [DataMember(Name = "prop_model")]
+        public string PropModel;
 
         public ItemDefinition(
             string ItemId,
@@ -35,7 +37,8 @@ namespace SpacetimeDB.Types
             bool Stackable,
             bool Usable,
             uint MaxStack,
-            string Category
+            string Category,
+            string PropModel
         )
         {
             this.ItemId = ItemId;
@@ -45,6 +48,7 @@ namespace SpacetimeDB.Types
             this.Usable = Usable;
             this.MaxStack = MaxStack;
             this.Category = Category;
+            this.PropModel = PropModel;
         }
 
         public ItemDefinition()
@@ -52,6 +56,7 @@ namespace SpacetimeDB.Types
             this.ItemId = "";
             this.Label = "";
             this.Category = "";
+            this.PropModel = "";
         }
     }
 }

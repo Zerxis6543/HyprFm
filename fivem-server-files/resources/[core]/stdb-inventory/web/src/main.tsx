@@ -18,6 +18,7 @@ window.addEventListener('message', (e: MessageEvent) => {
         d.maxWeight ?? 85,
         d.context  ?? undefined,
       )
+      console.log('[inventory] openInventory equippedSlots:', JSON.stringify(d.equippedSlots), 'backpackData:', JSON.stringify(d.backpackData))
       if (d.equippedSlots && Array.isArray(d.equippedSlots)) {
         const equipSlots = useInventoryStore.getState().equipSlots.map(es => {
           const found = (d.equippedSlots as any[]).find((e: any) => e.equip_key === es.key)
@@ -138,6 +139,17 @@ window.addEventListener('message', (e: MessageEvent) => {
 
     case 'setHealth':
       store.setHealth(d.health ?? 100)
+      break
+      case 'cancelInspect':
+      store.stopInspect()
+      break
+
+      case 'hideForInspect':
+      useInventoryStore.setState({ inspectMode: true, isOpen: false })
+      break
+
+    case 'updateStats':
+      // Stats are display-only for now — extend HUD here when ready
       break
   }
 })

@@ -46,6 +46,7 @@ namespace SpacetimeDB.Types
         public global::SpacetimeDB.Col<ItemDefinition, bool> Usable { get; }
         public global::SpacetimeDB.Col<ItemDefinition, uint> MaxStack { get; }
         public global::SpacetimeDB.Col<ItemDefinition, string> Category { get; }
+        public global::SpacetimeDB.Col<ItemDefinition, string> PropModel { get; }
 
         public ItemDefinitionCols(string tableName)
         {
@@ -56,6 +57,7 @@ namespace SpacetimeDB.Types
             Usable = new global::SpacetimeDB.Col<ItemDefinition, bool>(tableName, "usable");
             MaxStack = new global::SpacetimeDB.Col<ItemDefinition, uint>(tableName, "max_stack");
             Category = new global::SpacetimeDB.Col<ItemDefinition, string>(tableName, "category");
+            PropModel = new global::SpacetimeDB.Col<ItemDefinition, string>(tableName, "prop_model");
         }
     }
 

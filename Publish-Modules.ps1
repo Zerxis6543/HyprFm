@@ -4,10 +4,7 @@ $SidecarDir = "G:\FIVEMSTDBPROJECT\STFM\stdb-sidecar"
 $GeneratedDir = "$SidecarDir\Generated"
 
 $Modules = @(
-    @{ Path = "fivem-game/spacetimedb"; Db = "fivem-game";       Wasm = "stdb_fivem_game.wasm" },
-    @{ Path = "core/spacetimedb";       Db = "core-jzzxp";       Wasm = "stdb_core.wasm"       },
-    @{ Path = "inventory/spacetimedb";  Db = "inventory-55buo";  Wasm = "stdb_inventory.wasm"  },
-    @{ Path = "player/spacetimedb";     Db = "player-qouxn";     Wasm = "stdb_player.wasm"     }
+    @{ Path = "fivem-game/spacetimedb"; Db = "fivem-game"; Wasm = "stdb_fivem_game.wasm" }
 )
 
 Write-Host "[Publish] Building all modules..." -ForegroundColor Cyan
@@ -22,12 +19,10 @@ foreach ($m in $Modules) {
 }
 
 Write-Host "[Publish] Generating C# bindings..." -ForegroundColor Cyan
-foreach ($m in $Modules) {
-    $wasm = "$ModulesDir\target\wasm32-unknown-unknown\release\$($m.Wasm)"
-    Write-Host "  -> $($m.Wasm)" -ForegroundColor Gray
-    spacetime generate -l csharp -b $wasm -o $GeneratedDir
-    if ($LASTEXITCODE -ne 0) { Write-Host "[Publish] Generate failed for $($m.Wasm)." -ForegroundColor Red; exit 1 }
-}
+$mainWasm = "$ModulesDir\target\wasm32-unknown-unknown\release\stdb_fivem_game.wasm"
+Write-Host "  -> stdb_fivem_game.wasm" -ForegroundColor Gray
+spacetime generate -l csharp -b $mainWasm -o $GeneratedDir
+if ($LASTEXITCODE -ne 0) { Write-Host "[Publish] Generate failed." -ForegroundColor Red; exit 1 }
 
 Write-Host "[Publish] Rebuilding sidecar..." -ForegroundColor Cyan
 cd $SidecarDir
@@ -35,7 +30,7 @@ dotnet build
 if ($LASTEXITCODE -ne 0) { Write-Host "[Publish] Sidecar build failed." -ForegroundColor Red; exit 1 }
 
 Write-Host "[Publish] Building NUI..." -ForegroundColor Cyan
-cd "G:\FIVEMSTDBPROJECT\STFM\fivem-server-files\resources\[core]\stdb-inventory"
+cd "Directory: G:\FivemSTDBProject\STFM\fivem-server-files\resources\[core]\stdb-inventory\web"
 npm run build
 if ($LASTEXITCODE -ne 0) { Write-Host "[Publish] NUI build failed." -ForegroundColor Red; exit 1 }
 

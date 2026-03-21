@@ -1,6 +1,6 @@
 is_global = true
 build_property.RootNamespace = StdbBridge
-build_property.ProjectDir = G:\FivemSTDBProject\fivem-server-files\resources\core\stdb-bridge\server\
+build_property.ProjectDir = G:\FivemSTDBProject\STFM\fivem-server-files\resources\[core]\stdb-bridge\server\
 build_property.EnableComHosting = 
 build_property.EnableGeneratedComInterfaceComImportInterop = 
 build_property.CsWinRTUseWindowsUIXamlProjections = false

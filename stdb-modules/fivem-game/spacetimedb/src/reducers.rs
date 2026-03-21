@@ -139,10 +139,11 @@ pub fn seed_item(
     stackable: bool,
     usable: bool,
     max_stack: u32,
-    category: String
+    category: String,
+    prop_model: String,
 ) {
     if ctx.db.item_definition().item_id().find(&item_id).is_some() { return; }
-    ctx.db.item_definition().insert(ItemDefinition { item_id, label, weight, stackable, usable, max_stack, category });
+    ctx.db.item_definition().insert(ItemDefinition { item_id, label, weight, stackable, usable, max_stack, category, prop_model });
 }
 
 /// Add items to any inventory (player/vehicle/stash) by owner_id.
@@ -300,18 +301,51 @@ pub fn use_item(ctx: &ReducerContext, slot_id: u64, net_id: u32) {
     };
     if !def.usable { log::warn!("[inventory] use_item: {} not usable", slot.item_id); return; }
 
+    let consume = |ctx: &ReducerContext, slot_id: u64| {
+        if let Some(mut s) = ctx.db.inventory_slot().id().find(slot_id) {
+            if s.quantity <= 1 { ctx.db.inventory_slot().id().delete(slot_id); }
+            else { s.quantity -= 1; ctx.db.inventory_slot().id().update(s); }
+        }
+    };
+
     match slot.item_id.as_str() {
         "bandage" => {
+            // Restore 40 HP (GTA health 100-200, 200 = full)
             ctx.db.instruction_queue().insert(InstructionQueue {
                 id: 0, target_entity_net_id: net_id,
-                native_key: "SET_ENTITY_HEALTH".to_string(),
-                payload: json!([200]).to_string(),
+                native_key: "TRIGGER_CLIENT_EVENT".to_string(),
+                payload: json!(["stdb:applyEffect", net_id, {"effect": "heal", "amount": 40}]).to_string(),
                 queued_at: ctx.timestamp, consumed: false,
             });
-            if let Some(mut s) = ctx.db.inventory_slot().id().find(slot_id) {
-                if s.quantity <= 1 { ctx.db.inventory_slot().id().delete(slot_id); }
-                else { s.quantity -= 1; ctx.db.inventory_slot().id().update(s); }
-            }
+            consume(ctx, slot_id);
+        }
+        "medkit" => {
+            // Full heal
+            ctx.db.instruction_queue().insert(InstructionQueue {
+                id: 0, target_entity_net_id: net_id,
+                native_key: "TRIGGER_CLIENT_EVENT".to_string(),
+                payload: json!(["stdb:applyEffect", net_id, {"effect": "heal", "amount": 100}]).to_string(),
+                queued_at: ctx.timestamp, consumed: false,
+            });
+            consume(ctx, slot_id);
+        }
+        "food_burger" => {
+            ctx.db.instruction_queue().insert(InstructionQueue {
+                id: 0, target_entity_net_id: net_id,
+                native_key: "TRIGGER_CLIENT_EVENT".to_string(),
+                payload: json!(["stdb:applyEffect", net_id, {"effect": "hunger", "amount": 30}]).to_string(),
+                queued_at: ctx.timestamp, consumed: false,
+            });
+            consume(ctx, slot_id);
+        }
+        "water_bottle" => {
+            ctx.db.instruction_queue().insert(InstructionQueue {
+                id: 0, target_entity_net_id: net_id,
+                native_key: "TRIGGER_CLIENT_EVENT".to_string(),
+                payload: json!(["stdb:applyEffect", net_id, {"effect": "thirst", "amount": 30}]).to_string(),
+                queued_at: ctx.timestamp, consumed: false,
+            });
+            consume(ctx, slot_id);
         }
         _ => { log::info!("[inventory] use_item: no handler for {}", slot.item_id); }
     }
