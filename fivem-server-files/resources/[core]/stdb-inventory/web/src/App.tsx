@@ -25,10 +25,28 @@ const EQUIP_ALLOWED: Record<string, string[]> = {
   hotkey_5:         ['any'],
 }
 
+// Direct item-to-slot mapping as reliable fallback
+const ITEM_EQUIP_MAP: Record<string, string> = {
+  backpack:       'backpack',
+  duffel_bag:     'backpack',
+  body_armour:    'body_armour',
+  phone:          'phone',
+  parachute:      'parachute',
+  weapon_pistol:  'weapon_primary',
+  weapon_knife:   'weapon_secondary',
+  assault_rifle:  'weapon_primary',
+}
+
 function canEquip(itemId: string, equipKey: string): boolean {
   const allowed = EQUIP_ALLOWED[equipKey]
   if (!allowed) return false
   if (allowed.includes('any')) return true
+
+  // Check direct item mapping first
+  const directSlot = ITEM_EQUIP_MAP[itemId]
+  if (directSlot === equipKey) return true
+
+  // Fall back to category check
   const state = useInventoryStore.getState()
   const cat   = state.itemDefs[itemId]?.category ?? 'misc'
   return allowed.includes(cat)
@@ -188,7 +206,7 @@ export default function App() {
       const slotEl = el?.closest('[data-slot-index]')
       if (slotEl) {
         const toIndex     = parseInt(slotEl.getAttribute('data-slot-index') ?? '-1')
-        const targetPanel = (slotEl.getAttribute('data-panel') ?? 'pockets') as 'pockets' | 'secondary'
+        const targetPanel = (slotEl.getAttribute('data-panel') ?? 'pockets') as 'pockets' | 'secondary' | 'backpack'
         if (toIndex >= 0) unequipItem(equipSrcKey, targetPanel, toIndex)
       }
       return
@@ -207,7 +225,9 @@ export default function App() {
     const equipEl = el?.closest('[data-equip-key]')
     if (equipEl && source) {
       const equipKey = equipEl.getAttribute('data-equip-key') as EquipSlotKey | null
-      if (equipKey && canEquip(slot.item_id, equipKey)) equipItem(slot.id, equipKey, source)
+      if (equipKey && canEquip(slot.item_id, equipKey)) {
+        equipItem(slot.id, equipKey, source as 'pockets' | 'secondary' | 'backpack')
+      }
     }
   }
 

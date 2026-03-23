@@ -29,6 +29,12 @@ namespace SpacetimeDB.Types
         public string Category;
         [DataMember(Name = "prop_model")]
         public string PropModel;
+        [DataMember(Name = "mag_capacity")]
+        public int MagCapacity;
+        [DataMember(Name = "stored_capacity")]
+        public int StoredCapacity;
+        [DataMember(Name = "ammo_type")]
+        public string AmmoType;
 
         public ItemDefinition(
             string ItemId,
@@ -38,7 +44,10 @@ namespace SpacetimeDB.Types
             bool Usable,
             uint MaxStack,
             string Category,
-            string PropModel
+            string PropModel,
+            int MagCapacity,
+            int StoredCapacity,
+            string AmmoType
         )
         {
             this.ItemId = ItemId;
@@ -49,6 +58,9 @@ namespace SpacetimeDB.Types
             this.MaxStack = MaxStack;
             this.Category = Category;
             this.PropModel = PropModel;
+            this.MagCapacity = MagCapacity;
+            this.StoredCapacity = StoredCapacity;
+            this.AmmoType = AmmoType;
         }
 
         public ItemDefinition()
@@ -57,6 +69,7 @@ namespace SpacetimeDB.Types
             this.Label = "";
             this.Category = "";
             this.PropModel = "";
+            this.AmmoType = "";
         }
     }
 }

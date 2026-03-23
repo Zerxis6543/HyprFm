@@ -1,12 +1,15 @@
 export interface ItemDefinition {
-  item_id:    string
-  label:      string
-  weight:     number
-  stackable:  boolean
-  usable:     boolean
-  max_stack:  number
-  category:   string
-  prop_model: string
+  item_id:         string
+  label:           string
+  weight:          number
+  stackable:       boolean
+  usable:          boolean
+  max_stack:       number
+  category:        string
+  prop_model:      string
+  mag_capacity:    number
+  stored_capacity: number
+  ammo_type:       string
 }
 
 export interface InventorySlot {

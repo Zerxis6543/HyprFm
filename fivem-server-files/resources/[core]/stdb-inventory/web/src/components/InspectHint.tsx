@@ -6,6 +6,9 @@ export function InspectHint() {
   const inspectSlot = useInventoryStore(s => s.inspectSlot)
   const itemDefs    = useInventoryStore(s => s.itemDefs)
 
+  const NON_THROWABLE = ['backpack','duffel_bag','body_armour','parachute','assault_rifle']
+  const isThrowable   = inspectSlot ? !NON_THROWABLE.includes(inspectSlot.item_id) : false
+
   if (!inspectMode || !inspectSlot) return null
   const def = itemDefs[inspectSlot.item_id]
 
@@ -32,7 +35,10 @@ export function InspectHint() {
       {[
         { key: 'E', label: 'PLACE' },
         { key: 'G', label: 'GIVE' },
-        { key: 'RMB', label: 'HOLD TO CHARGE' },
+        ...(isThrowable ? [
+          { key: 'RMB', label: 'AIM' },
+          { key: 'LMB', label: 'THROW' },
+        ] : []),
         { key: 'BKSP', label: 'CANCEL' },
       ].map(({ key, label }) => (
         <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

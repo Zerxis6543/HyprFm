@@ -42,6 +42,20 @@ export function ContextMenu() {
 
   const qty = dropQty ?? slot.quantity
 
+  // Parse weapon metadata
+  const weaponMeta = (() => {
+    try { return slot.metadata ? JSON.parse(slot.metadata) : null } catch { return null }
+  })()
+  const isWeapon = itemDef.category === 'weapon' && weaponMeta?.serial
+
+  // Durability color
+  const durabilityColor = (d: number) => {
+    if (d >= 75) return '#4ade80'
+    if (d >= 50) return '#facc15'
+    if (d >= 25) return '#fb923c'
+    return '#f87171'
+  }
+
   // Clamp to viewport
   const menuH = inspecting ? 220 : (dropQty !== null ? 180 : (itemDef.usable ? 180 : 150))
   const x = Math.min(contextMenu.x, window.innerWidth  - 200)
@@ -62,14 +76,50 @@ export function ContextMenu() {
             onError={(e) => { (e.target as HTMLImageElement).style.opacity = '0' }}
           />
         </div>
-        <div>
+        <div style={{ flex: 1 }}>
           <div className="ctx-name">{itemDef.label.toUpperCase()}</div>
           <div className="ctx-meta">
             {slot.quantity}x &middot; {(itemDef.weight * slot.quantity).toFixed(2)}kg
             &nbsp;&middot;&nbsp;<span style={{ color: 'var(--accent)', textTransform: 'uppercase' }}>{itemDef.category}</span>
           </div>
+          {isWeapon && (
+            <div className="ctx-meta" style={{ marginTop: 2, color: 'var(--text-muted)', letterSpacing: '0.06em' }}>
+              S/N: <span style={{ color: 'var(--text-secondary)' }}>{weaponMeta.serial}</span>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Weapon metadata block */}
+      {isWeapon && (<>
+        <div className="ctx-divider" />
+        <div style={{ padding: '6px 12px 4px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-muted)' }}>
+              MAG {weaponMeta.mag_ammo ?? 0}/{weaponMeta.mag_capacity ?? 0}
+            </span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-muted)' }}>
+              STORED {weaponMeta.stored_ammo ?? 0}/{weaponMeta.stored_capacity ?? 0}
+            </span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-muted)' }}>DURABILITY</span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: durabilityColor(weaponMeta.durability ?? 100) }}>
+              {weaponMeta.durability ?? 100}%
+            </span>
+          </div>
+          <div style={{ height: 3, background: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden' }}>
+            <div style={{
+              height: '100%',
+              width: `${weaponMeta.durability ?? 100}%`,
+              background: durabilityColor(weaponMeta.durability ?? 100),
+              borderRadius: 2,
+              transition: 'width 0.3s ease, background 0.3s ease',
+            }} />
+          </div>
+        </div>
+      </>)}
+
       <div className="ctx-divider" />
 
       {/* Inspect panel */}

@@ -47,6 +47,9 @@ namespace SpacetimeDB.Types
         public global::SpacetimeDB.Col<ItemDefinition, uint> MaxStack { get; }
         public global::SpacetimeDB.Col<ItemDefinition, string> Category { get; }
         public global::SpacetimeDB.Col<ItemDefinition, string> PropModel { get; }
+        public global::SpacetimeDB.Col<ItemDefinition, int> MagCapacity { get; }
+        public global::SpacetimeDB.Col<ItemDefinition, int> StoredCapacity { get; }
+        public global::SpacetimeDB.Col<ItemDefinition, string> AmmoType { get; }
 
         public ItemDefinitionCols(string tableName)
         {
@@ -58,6 +61,9 @@ namespace SpacetimeDB.Types
             MaxStack = new global::SpacetimeDB.Col<ItemDefinition, uint>(tableName, "max_stack");
             Category = new global::SpacetimeDB.Col<ItemDefinition, string>(tableName, "category");
             PropModel = new global::SpacetimeDB.Col<ItemDefinition, string>(tableName, "prop_model");
+            MagCapacity = new global::SpacetimeDB.Col<ItemDefinition, int>(tableName, "mag_capacity");
+            StoredCapacity = new global::SpacetimeDB.Col<ItemDefinition, int>(tableName, "stored_capacity");
+            AmmoType = new global::SpacetimeDB.Col<ItemDefinition, string>(tableName, "ammo_type");
         }
     }
 

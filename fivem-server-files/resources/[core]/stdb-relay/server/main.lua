@@ -207,7 +207,7 @@ end)
 -- targetOwnerType: nil/"" = same panel, "player" = to pockets,
 --   "ground"/"stash"/"glovebox"/"trunk" = to secondary
 RegisterNetEvent("stdb:moveItem")
-AddEventHandler("stdb:moveItem", function(slotId, newSlotIndex, targetOwnerType, targetOwnerId, px, py, pz)
+AddEventHandler("stdb:moveItem", function(slotId, newSlotIndex, targetOwnerType, targetOwnerId, px, py, pz, itemPropModel)
     local player   = source
     local serverId = tonumber(player)
 
@@ -218,28 +218,24 @@ AddEventHandler("stdb:moveItem", function(slotId, newSlotIndex, targetOwnerType,
     end
 
     if targetOwnerType == "player" then
-        -- Moving into player pockets from any panel — also sync the source secondary
         callSidecar("transfer_item_to_player", {
             slot_id        = slotId,
             server_id      = serverId,
             new_slot_index = newSlotIndex,
         })
-        -- Broadcast the secondary panel this player had open (they took from it)
         local info = openInventories[player]
         if info and info.secondary then
             local capturedSecType = info.secondary.ownerType
             local capturedSecId   = info.secondary.ownerId
+            -- Delete world prop when item picked up from ground stash
+            if capturedSecType == "stash" then
+                TriggerClientEvent("stdb:deleteWorldProp", -1, capturedSecId)
+            end
             Citizen.SetTimeout(150, function()
                 broadcastInventoryUpdate(capturedSecType, capturedSecId)
             end)
         end
-        -- Delete world prop by position (position-based matching)
-        local info = openInventories[player]
-        if info and info.secondary and info.secondary.ownerType == "stash" then
-            TriggerClientEvent("stdb:deleteWorldProp", -1, info.secondary.ownerId)
-        end
     else
-        -- Moving to vehicle or stash/ground
         local stdbOwnerType = "stash"
         if targetOwnerType == "glovebox" then
             stdbOwnerType = "vehicle_glovebox"
@@ -254,7 +250,32 @@ AddEventHandler("stdb:moveItem", function(slotId, newSlotIndex, targetOwnerType,
             new_slot_index = newSlotIndex,
         })
 
-        -- Spawn a world prop for the player when dropping to ground
+        -- Spawn world prop when dragging to ground
+        if targetOwnerType == "ground" and px and px ~= 0 then
+            Citizen.SetTimeout(400, function()
+                PerformHttpRequest(SIDECAR_URL .. "reducer",
+                    function(s2, b2, _)
+                        local ok2, slots2 = pcall(json.decode, b2)
+                        if ok2 and slots2 and slots2.slots then
+                            for _, sl in ipairs(slots2.slots) do
+                                TriggerClientEvent("stdb:spawnWorldDrop", -1,
+                                    sl.id, targetOwnerId,
+                                    itemPropModel or "prop_cs_cardbox_01",
+                                    px, py, pz)
+                                break
+                            end
+                        end
+                    end,
+                    "POST",
+                    json.encode({ name = "get_inventory_slots", args = {
+                        owner_type = "stash",
+                        owner_id   = targetOwnerId,
+                    }}),
+                    { ["Content-Type"] = "application/json" }
+                )
+            end)
+        end
+
         local capturedType = stdbOwnerType
         local capturedId   = targetOwnerId
         Citizen.SetTimeout(150, function()
@@ -305,20 +326,25 @@ AddEventHandler("stdb:requestGlovebox", function(vehicleId, modelName, vehicleCl
                     local pSlots = {}
                     local pEquipped = {}
                     local pBackpackData = nil
+                    local pItemDefs = {}
                     if pStatus == 200 and pBody then
                         local pOk, pData = pcall(json.decode, pBody)
                         if pOk and pData then
-                            pSlots       = pData.slots          or {}
-                            pEquipped    = pData.equipped_slots  or {}
+                            pSlots        = pData.slots          or {}
+                            pEquipped     = pData.equipped_slots  or {}
                             pBackpackData = pData.backpack_data
+                            pItemDefs     = pData.item_defs      or {}
                         end
                     end
                     openInventories[player] = {
                         primary   = { ownerType = "player",           ownerId = tostring(player) },
                         secondary = { ownerType = "vehicle_glovebox", ownerId = plate },
                     }
+                    local mergedDefs = {}
+                    for k, v in pairs(pItemDefs) do mergedDefs[k] = v end
+                    for k, v in pairs(data.item_defs or {}) do mergedDefs[k] = v end
                     TriggerClientEvent("stdb:openInventory", player,
-                        pSlots, data.item_defs or {}, 85, {
+                        pSlots, mergedDefs, 85, {
                             type      = "glovebox",
                             label     = "GLOVEBOX",
                             id        = plate,
@@ -383,8 +409,11 @@ AddEventHandler("stdb:requestTrunk", function(vehicleId, modelName, vehicleClass
                         primary   = { ownerType = "player",       ownerId = tostring(player) },
                         secondary = { ownerType = "vehicle_trunk", ownerId = plate },
                     }
+                    local mergedDefs = {}
+                    for k, v in pairs(pItemDefs) do mergedDefs[k] = v end
+                    for k, v in pairs(data.item_defs or {}) do mergedDefs[k] = v end
                     TriggerClientEvent("stdb:openInventory", player,
-                        pSlots, data.item_defs or {}, 85, {
+                        pSlots, mergedDefs, 85, {
                             type      = "trunk",
                             label     = "TRUNK",
                             id        = plate,
@@ -474,7 +503,7 @@ AddEventHandler("stdb:mergeStacks", function(srcSlotId, dstSlotId)
 end)
 
 RegisterNetEvent("stdb:openBackpack")
-AddEventHandler("stdb:openBackpack", function(bagItemId)
+AddEventHandler("stdb:openBackpack", function(bagItemId, bagSlotId)
     local player   = source
     local serverId = tonumber(player)
 
@@ -485,8 +514,8 @@ AddEventHandler("stdb:openBackpack", function(bagItemId)
             if not pOk or not pData or not pData.owner_id then return end
 
             -- Find the equipped backpack slot ID
-            local bagSlotId = 0
-            if pData.equipped_slots then
+            local bagSlotId = tonumber(bagSlotId) or 0
+            if bagSlotId == 0 and pData.equipped_slots then
                 for _, es in ipairs(pData.equipped_slots) do
                     if es.equip_key == "backpack" then
                         bagSlotId = es.id or 0
@@ -653,10 +682,6 @@ end)
 RegisterNetEvent("stdb:finalizeThrow")
 AddEventHandler("stdb:finalizeThrow", function(slotId, itemId, propModel, x, y, z)
     local player = source
-    -- Spawn permanent world prop at final resting position for all clients
-    TriggerClientEvent("stdb:spawnWorldDrop", -1, slotId, "finalized_" .. tostring(slotId), propModel, x, y, z)
-    -- Drop item to ground stash at final position
-    local pos = vector3(x, y, z)
     PerformHttpRequest(SIDECAR_URL .. "reducer",
         function(status, body, _)
             if status ~= 200 or not body then return end
@@ -665,6 +690,32 @@ AddEventHandler("stdb:finalizeThrow", function(slotId, itemId, propModel, x, y, 
             if result.stash_id and result.stash_id ~= "" then
                 Citizen.SetTimeout(150, function()
                     broadcastInventoryUpdate("stash", result.stash_id)
+                end)
+                -- Spawn permanent prop with REAL stash ID so deletion works on pickup
+                Citizen.SetTimeout(400, function()
+                    PerformHttpRequest(SIDECAR_URL .. "reducer",
+                        function(s2, b2, _)
+                            local ok2, slots2 = pcall(json.decode, b2)
+                            if ok2 and slots2 and slots2.slots then
+                                local newSlotId = slotId
+                                for _, sl in ipairs(slots2.slots) do
+                                    newSlotId = sl.id
+                                    break
+                                end
+                                TriggerClientEvent("stdb:spawnWorldDrop", -1,
+                                    newSlotId,
+                                    result.stash_id,
+                                    propModel,
+                                    x, y, z)
+                            end
+                        end,
+                        "POST",
+                        json.encode({ name = "get_inventory_slots", args = {
+                            owner_type = "stash",
+                            owner_id   = result.stash_id,
+                        }}),
+                        { ["Content-Type"] = "application/json" }
+                    )
                 end)
             end
             broadcastInventoryUpdate("player", tostring(player))
@@ -678,5 +729,72 @@ AddEventHandler("stdb:finalizeThrow", function(slotId, itemId, propModel, x, y, 
         { ["Content-Type"] = "application/json" }
     )
 end)
+
+RegisterNetEvent("stdb:dropItemAt")
+AddEventHandler("stdb:dropItemAt", function(slotId, quantity, itemId, propModel, x, y, z)
+    local player = source
+    PerformHttpRequest(SIDECAR_URL .. "reducer",
+        function(status, body, _)
+            if status ~= 200 or not body then return end
+            local ok, result = pcall(json.decode, body)
+            if not ok or not result then return end
+            if result.stash_id and result.stash_id ~= "" then
+                Citizen.SetTimeout(150, function()
+                    broadcastInventoryUpdate("stash", result.stash_id)
+                end)
+                Citizen.SetTimeout(400, function()
+                    PerformHttpRequest(SIDECAR_URL .. "reducer",
+                        function(s2, b2, _)
+                            local ok2, slots2 = pcall(json.decode, b2)
+                            if ok2 and slots2 and slots2.slots then
+                                for _, sl in ipairs(slots2.slots) do
+                                    TriggerClientEvent("stdb:spawnWorldDrop", -1,
+                                        sl.id, result.stash_id,
+                                        propModel, x, y, z)
+                                    break
+                                end
+                            end
+                        end,
+                        "POST",
+                        json.encode({ name = "get_inventory_slots", args = {
+                            owner_type = "stash",
+                            owner_id   = result.stash_id,
+                        }}),
+                        { ["Content-Type"] = "application/json" }
+                    )
+                end)
+            end
+            broadcastInventoryUpdate("player", tostring(player))
+        end,
+        "POST",
+        json.encode({ name = "drop_item_to_ground", args = {
+            slot_id  = slotId,
+            quantity = quantity or 0,
+            x = x, y = y, z = z,
+        }}),
+        { ["Content-Type"] = "application/json" }
+    )
+end)
+
+RegisterCommand("stdbgive", function(source, args)
+    local targetId = tonumber(args[1]) or source
+    local itemId   = args[2] or "weapon_pistol"
+    local qty      = tonumber(args[3]) or 1
+    PerformHttpRequest(SIDECAR_URL .. "reducer",
+        function(status, body, _)
+            print("[stdbgive] " .. tostring(body))
+            Citizen.SetTimeout(300, function()
+                broadcastInventoryUpdate("player", tostring(targetId))
+            end)
+        end,
+        "POST",
+        json.encode({ name = "give_item_to_player", args = {
+            server_id = targetId,
+            item_id   = itemId,
+            quantity  = qty,
+        }}),
+        { ["Content-Type"] = "application/json" }
+    )
+end, true)
 
 print("[stdb-relay] Server ready — polling sidecar.")

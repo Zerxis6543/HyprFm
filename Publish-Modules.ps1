@@ -30,7 +30,7 @@ dotnet build
 if ($LASTEXITCODE -ne 0) { Write-Host "[Publish] Sidecar build failed." -ForegroundColor Red; exit 1 }
 
 Write-Host "[Publish] Building NUI..." -ForegroundColor Cyan
-cd "Directory: G:\FivemSTDBProject\STFM\fivem-server-files\resources\[core]\stdb-inventory\web"
+Set-Location -LiteralPath "G:\FivemSTDBProject\STFM\fivem-server-files\resources\[core]\stdb-inventory\web"
 npm run build
 if ($LASTEXITCODE -ne 0) { Write-Host "[Publish] NUI build failed." -ForegroundColor Red; exit 1 }
 

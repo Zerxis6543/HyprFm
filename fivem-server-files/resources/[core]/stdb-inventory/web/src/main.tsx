@@ -28,16 +28,21 @@ window.addEventListener('message', (e: MessageEvent) => {
         // Auto-open backpack panel if backpack is equipped and data is included
         const bagSlot = d.equippedSlots.find((e: any) => e.equip_key === 'backpack')
         if (bagSlot && d.backpackData) {
-          useInventoryStore.getState().openBackpackPanel({
-            type:      'stash',
+          const bpData = {
+            type:      'stash' as const,
             label:     d.backpackData.label     ?? 'BACKPACK',
             id:        d.backpackData.stash_id  ?? '',
             maxWeight: d.backpackData.max_weight ?? 30,
             maxSlots:  d.backpackData.max_slots  ?? 20,
             slots:     d.backpackData.slots      ?? [],
-          })
+          }
+          useInventoryStore.getState().openBackpackPanel(bpData)
+          // Re-apply after short delay to ensure render cycle picks it up
+          setTimeout(() => {
+            useInventoryStore.getState().openBackpackPanel(bpData)
+          }, 100)
+                    
         } else if (bagSlot && !d.backpackData) {
-          // Fallback: fetch async
           useInventoryStore.getState().openBackpack(bagSlot.item_id)
         } else {
           useInventoryStore.getState().closeBackpackPanel()
@@ -148,11 +153,25 @@ window.addEventListener('message', (e: MessageEvent) => {
       useInventoryStore.setState({ inspectMode: true, isOpen: false })
       break
 
+    case 'activateSlot': {
+      const equipKey = d.equipKey as string
+      const state    = useInventoryStore.getState()
+      const equip    = state.equipSlots.find(s => s.key === equipKey)
+      const itemId   = equip?.slot?.item_id ?? null
+      fetch(`https://${(window as any).GetParentResourceName()}/activateSlot`, {
+        method: 'POST',
+        body: JSON.stringify({ equipKey, itemId }),
+      })
+      break
+    }
+    
     case 'updateStats':
       // Stats are display-only for now — extend HUD here when ready
       break
+    
   }
 })
+
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
