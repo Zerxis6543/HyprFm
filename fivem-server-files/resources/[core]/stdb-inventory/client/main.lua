@@ -6,6 +6,25 @@ local currentClass = nil
 local playerStats = { hunger = 100, thirst = 100, health = 200 }
 local worldProps = {}  -- list of { prop, stashId }
 
+-- Force-stream throwing dictionaries at resource start
+Citizen.CreateThread(function()
+    Citizen.Wait(5000)  -- wait for player to fully spawn
+    local ped = PlayerPedId()
+    local hash = GetHashKey("WEAPON_SMOKEGRENADE")
+    GiveWeaponToPed(ped, hash, 1, false, false)
+    
+    local dicts = {"weapons@projectiles@", "melee@unarmed@streamed_core_fps"}
+    for _, dict in ipairs(dicts) do
+        RequestAnimDict(dict)
+        local t = 0
+        while not HasAnimDictLoaded(dict) and t < 60 do
+            Citizen.Wait(50); t = t + 1
+        end
+    end
+    
+    RemoveWeaponFromPed(ped, hash)
+end)
+
 local function deleteNearestWorldProp(x, y, z)
     local bestKey  = nil
     local bestDist = 5.0  -- max 5m
@@ -58,6 +77,197 @@ local function generateVehicleId()
         math.random(0, 0xFFFF), math.random(0, 0xFFFF))
 end
 
+-- ── Weapon system ─────────────────────────────────────────────────────────────
+local WEAPON_HASHES = {
+    weapon_pistol = GetHashKey("WEAPON_PISTOL"),
+    weapon_knife  = GetHashKey("WEAPON_KNIFE"),
+    assault_rifle = GetHashKey("WEAPON_ASSAULTRIFLE"),
+}
+
+local equippedWeapons = {}
+
+local isWeaponAnimating = false
+
+local function equipWeapon(itemId, equipKey)
+    local hash = WEAPON_HASHES[itemId]
+    if not hash then return end
+    if isWeaponAnimating then return end
+    local ped = PlayerPedId()
+    Citizen.CreateThread(function()
+        isWeaponAnimating = true
+
+        -- Give with 0 ammo so weapon is visible but can't fire
+        GiveWeaponToPed(ped, hash, 0, false, true)
+        SetCurrentPedWeapon(ped, hash, true)
+
+        RequestAnimDict("reaction@intimidation@1h")
+        local t = 0
+        while not HasAnimDictLoaded("reaction@intimidation@1h") and t < 20 do
+            Citizen.Wait(50); t = t + 1
+        end
+        TaskPlayAnim(ped, "reaction@intimidation@1h", "intro",
+            8.0, -8.0, -1, 48, 0, false, false, false)
+
+         local animStart = GetGameTimer()
+        while not IsEntityPlayingAnim(ped, "reaction@intimidation@1h", "intro", 3)
+              and (GetGameTimer() - animStart) < 500 do
+            Citizen.Wait(0)
+        end
+        animStart = GetGameTimer()
+        while IsEntityPlayingAnim(ped, "reaction@intimidation@1h", "intro", 3)
+              and (GetGameTimer() - animStart) < 2500 do
+            Citizen.Wait(0)
+            DisableControlAction(0, 24, true)
+            DisableControlAction(0, 25, true)
+        end
+        ClearPedTasks(ped)
+        SetPedAmmo(ped, hash, 9999)
+        equippedWeapons[equipKey] = hash
+        isWeaponAnimating = false
+    end)
+end
+
+local function unequipWeapon(equipKey)
+    local hash = equippedWeapons[equipKey]
+    if not hash then return end
+    if isWeaponAnimating then return end
+    local ped = PlayerPedId()
+    equippedWeapons[equipKey] = nil
+    Citizen.CreateThread(function()
+        isWeaponAnimating = true
+
+        -- Zero ammo so can't fire during holster
+        SetPedAmmo(ped, hash, 0)
+
+        RequestAnimDict("reaction@intimidation@1h")
+        local t = 0
+        while not HasAnimDictLoaded("reaction@intimidation@1h") and t < 20 do
+            Citizen.Wait(50); t = t + 1
+        end
+        TaskPlayAnim(ped, "reaction@intimidation@1h", "outro",
+            8.0, -8.0, -1, 48, 0, false, false, false)
+
+        local animStart = GetGameTimer()
+        while not IsEntityPlayingAnim(ped, "reaction@intimidation@1h", "outro", 3)
+              and (GetGameTimer() - animStart) < 500 do
+            Citizen.Wait(0)
+        end
+        animStart = GetGameTimer()
+        while IsEntityPlayingAnim(ped, "reaction@intimidation@1h", "outro", 3)
+              and (GetGameTimer() - animStart) < 2000 do
+            Citizen.Wait(0)
+            DisableControlAction(0, 24, true)
+            DisableControlAction(0, 25, true)
+        end
+        ClearPedTasks(ped)
+        RemoveWeaponFromPed(ped, hash)
+        isWeaponAnimating = false
+    end)
+end
+
+-- Active weapon slot (currently equipped to ped)
+local activeWeaponSlot = nil
+
+local function activateSlot(equipKey)
+    -- Get equipped slots from NUI store via a fetch
+    fetch = fetch or function() end  -- no-op guard
+    -- Use SendNUIMessage to request slot info back
+    -- Instead, track locally via equippedWeapons table
+    -- If this slot has a weapon active, remove it (toggle off)
+    if activeWeaponSlot == equipKey then
+        unequipWeapon(equipKey)
+        activeWeaponSlot = nil
+        return
+    end
+    -- Deactivate previous active slot
+    if activeWeaponSlot then
+        unequipWeapon(activeWeaponSlot)
+        activeWeaponSlot = nil
+    end
+    -- We need item info from the store — request via NUI message
+    SendNUIMessage({ action = "activateSlot", equipKey = equipKey })
+end
+
+-- Listen for slot activation response from NUI
+RegisterNUICallback("activateSlot", function(data, cb)
+    local equipKey = data.equipKey
+    local itemId   = data.itemId
+    if not itemId then cb({ ok = true }); return end
+
+    if WEAPON_HASHES[itemId] then
+        equipWeapon(itemId, equipKey)
+        activeWeaponSlot = equipKey
+    else
+        -- Non-weapon: trigger use via server
+        TriggerServerEvent("stdb:useItemByKey", equipKey)
+    end
+    cb({ ok = true })
+end)
+
+-- ── Hotkey thread ─────────────────────────────────────────────────────────────
+local SLOT_KEYS = {
+    [0x71] = "weapon_primary",   -- key 1 (INPUT_SELECT_WEAPON_UNARMED)
+    [0x72] = "weapon_secondary", -- key 2
+    [0x73] = "hotkey_1",         -- key 3
+    [0x74] = "hotkey_2",         -- key 4
+    [0x75] = "hotkey_3",         -- key 5
+}
+
+Citizen.CreateThread(function()
+    while true do
+        Citizen.Wait(0)
+        if isOpen or isInspecting then goto continueHotkeys end
+
+        if IsControlJustPressed(0, 157) then activateSlot("weapon_primary")   end  -- 1
+        if IsControlJustPressed(0, 158) then activateSlot("weapon_secondary") end  -- 2
+        if IsControlJustPressed(0, 159) then activateSlot("hotkey_1")         end  -- 3
+        if IsControlJustPressed(0, 160) then activateSlot("hotkey_2")         end  -- 4
+        if IsControlJustPressed(0, 161) then activateSlot("hotkey_3")         end  -- 5
+
+        ::continueHotkeys::
+    end
+end)
+
+-- ── Consume animations ────────────────────────────────────────────────────────
+local isConsuming = false
+
+local function playConsumeAnimation(animDict, animClip, duration, onComplete)
+    if isConsuming then return end
+    isConsuming = true
+    RequestAnimDict(animDict)
+    local t = 0
+    while not HasAnimDictLoaded(animDict) and t < 40 do
+        Citizen.Wait(50); t = t + 1
+    end
+    local ped = PlayerPedId()
+    TaskPlayAnim(ped, animDict, animClip, 8.0, -8.0, duration, 49, 0, false, false, false)
+    Citizen.CreateThread(function()
+        local elapsed = 0
+        while elapsed < duration and isConsuming do
+            Citizen.Wait(0)
+            SetTextFont(4)
+            SetTextScale(0.0, 0.28)
+            SetTextColour(255, 255, 255, 200)
+            SetTextCentre(true)
+            SetTextEntry("STRING")
+            AddTextComponentString("BKSP TO CANCEL")
+            DrawText(0.5, 0.93)
+            if IsControlJustPressed(0, 177) then
+                isConsuming = false
+                ClearPedTasks(ped)
+                return
+            end
+            elapsed = elapsed + 0
+            Citizen.Wait(0)
+        end
+        if isConsuming then
+            isConsuming = false
+            if onComplete then onComplete() end
+        end
+    end)
+end
+
+
 -- ── Vehicle tracking ──────────────────────────────────────────────────────────
 Citizen.CreateThread(function()
     while true do
@@ -91,6 +301,30 @@ Citizen.CreateThread(function()
         end
     end
 end)
+
+-- ── Disable GTA default TAB UI ────────────────────────────────────────────────
+Citizen.CreateThread(function()
+    while true do
+        Citizen.Wait(0)
+        -- Hide weapon wheel (TAB)
+        DisableControlAction(0, 37, true)   -- INPUT_SELECT_WEAPON
+        DisableControlAction(0, 157, true)  -- INPUT_SELECT_WEAPON (on foot alt)
+        DisableControlAction(0, 158, true)  -- INPUT_SELECT_WEAPON (vehicle)
+        -- Hide vehicle tab switching (TAB in vehicle)
+        DisableControlAction(27, 37, true)
+        DisableControlAction(27, 157, true)
+        DisableControlAction(27, 158, true)
+        -- Hide the radio wheel that can appear on TAB in vehicles
+        DisableControlAction(0, 96, true)   -- INPUT_VEH_RADIO_WHEEL
+        -- Disable number keys from switching GTA weapon slots
+        if IsDisabledControlJustPressed(0, 157) then activateSlot("weapon_primary")   end
+        if IsDisabledControlJustPressed(0, 158) then activateSlot("weapon_secondary") end
+        if IsDisabledControlJustPressed(0, 159) then activateSlot("hotkey_1")         end
+        if IsDisabledControlJustPressed(0, 160) then activateSlot("hotkey_2")         end
+        if IsDisabledControlJustPressed(0, 161) then activateSlot("hotkey_3")         end
+    end
+end)
+
 -- ── TAB — open inventory ──────────────────────────────────────────────────────
 RegisterCommand("+openInventory", function()
     if isOpen then return end
@@ -247,8 +481,7 @@ RegisterNUICallback("mergeStacks", function(data, cb)
 end)
 
 RegisterNUICallback("openBackpack", function(data, cb)
-    print("[stdb-inventory] openBackpack NUI callback fired, bagItemId=" .. tostring(data.bagItemId))
-    TriggerServerEvent("stdb:openBackpack", data.bagItemId)
+    TriggerServerEvent("stdb:openBackpack", data.bagItemId, data.bagSlotId)
     cb({ ok = true })
 end)
 
@@ -271,7 +504,8 @@ RegisterNUICallback("moveItem", function(data, cb)
         data.newSlotIndex,
         data.ownerType or "",
         data.ownerId   or "",
-        pos.x, pos.y, pos.z
+        pos.x, pos.y, pos.z,
+        data.propModel or ""
     )
     cb("ok")
 end)
@@ -288,7 +522,6 @@ end)
 
 RegisterNetEvent("stdb:openBackpackPanel")
 AddEventHandler("stdb:openBackpackPanel", function(ctx)
-    print("[stdb-inventory] openBackpackPanel received, label=" .. tostring(ctx.label))
     SendNUIMessage({
         action    = "openBackpackPanel",
         type      = ctx.type,
@@ -326,6 +559,10 @@ end)
 
 RegisterNUICallback("unequipItem", function(data, cb)
     TriggerServerEvent("stdb:unequipItem", data.slotId, data.equipKey, data.targetPanel, data.targetIndex)
+    -- If a weapon was active in this slot, remove it from ped
+    if equippedWeapons[data.equipKey] then
+        unequipWeapon(data.equipKey)
+    end
     cb({ ok = true })
 end)
 
@@ -342,16 +579,30 @@ end)
 RegisterNetEvent("stdb:applyEffect")
 AddEventHandler("stdb:applyEffect", function(data)
     local ped = PlayerPedId()
+
     if data.effect == "heal" then
-        local current = GetEntityHealth(ped)
-        SetEntityHealth(ped, math.min(200, current + data.amount))
-        playerStats.health = GetEntityHealth(ped)
+        -- Bandage animation: applying bandage
+        playConsumeAnimation("anim@heists@ornate_bank@hack", "hack_loop", 3000, function()
+            local current = GetEntityHealth(ped)
+            SetEntityHealth(ped, math.min(200, current + data.amount))
+            playerStats.health = GetEntityHealth(ped)
+            updateStatsNUI()
+        end)
+
     elseif data.effect == "hunger" then
-        playerStats.hunger = math.min(100, playerStats.hunger + data.amount)
+        -- Eating animation
+        playConsumeAnimation("mp_player_inteat@burger", "loop", 3000, function()
+            playerStats.hunger = math.min(100, playerStats.hunger + data.amount)
+            updateStatsNUI()
+        end)
+
     elseif data.effect == "thirst" then
-        playerStats.thirst = math.min(100, playerStats.thirst + data.amount)
+        -- Drinking animation
+        playConsumeAnimation("mp_player_intdrink", "loop_bottle", 3000, function()
+            playerStats.thirst = math.min(100, playerStats.thirst + data.amount)
+            updateStatsNUI()
+        end)
     end
-    updateStatsNUI()
 end)
 
 -- ── Inspect mode ─────────────────────────────────────────────────────────────
@@ -363,12 +614,14 @@ local isThrowingAnim   = false  -- flag to pause coord setter during throw
 local placementProp    = nil
 local placementPropHash = nil
 
-local THROWABLE_ITEMS = {
-    water_bottle = true,
-    food_burger  = true,
-    weed         = true,
-    cocaine      = true,
-    lockpick     = true,
+local NON_THROWABLE_ITEMS = {
+    backpack    = true,
+    duffel_bag  = true,
+    body_armour = true,
+    parachute   = true,
+    weapon_pistol = true,
+    assault_rifle = true,
+    weapon_knife  = true,
 }
 
 local function cleanupInspect()
@@ -460,11 +713,14 @@ end)
 
 RegisterCommand("+placeItem", function()
     if not isInspecting then return end
+    local slotToDrop   = inspectSlotId
+    local itemIdToDrop = inspectItemId
+    local propModel    = getItemProp(itemIdToDrop)
+
+    local placePos = nil
     if placementProp and DoesEntityExist(placementProp) then
-        SetEntityAlpha(placementProp, 255, false)
-        SetEntityCollision(placementProp, true, true)
-        FreezeEntityPosition(placementProp, true)
-        SetEntityAsMissionEntity(placementProp, true, true)
+        placePos = GetEntityCoords(placementProp)
+        DeleteObject(placementProp)
         placementProp = nil
     end
     if inspectProp and DoesEntityExist(inspectProp) then
@@ -472,10 +728,16 @@ RegisterCommand("+placeItem", function()
         DeleteObject(inspectProp)
         inspectProp = nil
     end
-    local slotToDrop   = inspectSlotId
-    local itemIdToDrop = inspectItemId
+
     cleanupInspect()
-    TriggerServerEvent("stdb:dropItem", slotToDrop, 0, itemIdToDrop, getItemProp(itemIdToDrop), true)
+
+    if placePos then
+        TriggerServerEvent("stdb:dropItemAt", slotToDrop, 0, itemIdToDrop, propModel,
+            placePos.x, placePos.y, placePos.z)
+    else
+        local pos = GetEntityCoords(PlayerPedId())
+        TriggerServerEvent("stdb:dropItem", slotToDrop, 0, itemIdToDrop, propModel, false)
+    end
     SendNUIMessage({ action = "cancelInspect" })
 end, false)
 RegisterKeyMapping("+placeItem", "Place Inspected Item", "keyboard", "e")
@@ -490,6 +752,7 @@ Citizen.CreateThread(function()
 
         DisableControlAction(0, 24, true)
         DisableControlAction(0, 25, true)
+        DisableControlAction(0, 37, true)  -- INPUT_SELECT_WEAPON (weapon wheel)
 
         -- G: Give to nearby player
         if IsControlJustPressed(0, 47) then
@@ -516,104 +779,92 @@ Citizen.CreateThread(function()
             goto continueInspect
         end
 
-        -- RMB hold to charge, release to throw
-        if IsDisabledControlJustPressed(0, 25) and THROWABLE_ITEMS[inspectItemId] then
+        -- RMB: enter native grenade aim/throw mode
+        if IsDisabledControlJustPressed(0, 25) and not NON_THROWABLE_ITEMS[inspectItemId] then
             local throwSlot   = inspectSlotId
             local throwItemId = inspectItemId
             local throwProp   = inspectProp
             inspectProp       = nil
-            isThrowingAnim    = true  -- stop coord-setter immediately
+            isThrowingAnim    = true
 
-            local power    = 10.0
-            local maxPower = 30.0
+            local inVeh       = IsPedInAnyVehicle(ped, false)
+            local grenadeHash = GetHashKey("WEAPON_SMOKEGRENADE")
+            local prevWeapon  = GetSelectedPedWeapon(ped)
+
+            -- Show our prop at hand bone, hide grenade object each frame
+            if throwProp and DoesEntityExist(throwProp) then
+                SetEntityVisible(throwProp, true, false)
+            end
+
+            GiveWeaponToPed(ped, grenadeHash, 1, false, true)
+            SetCurrentPedWeapon(ped, grenadeHash, true)
+
+            -- Hide grenade, show our prop at hand bone each frame
+            Citizen.CreateThread(function()
+                while GetSelectedPedWeapon(ped) == grenadeHash do
+                    Citizen.Wait(0)
+                    local obj = GetCurrentPedWeaponEntityIndex(ped)
+                    if obj and obj ~= 0 then
+                        SetEntityVisible(obj, false, false)
+                    end
+                     if throwProp and DoesEntityExist(throwProp) then
+                        local bx, by, bz = GetPedBoneCoords(ped, 28422, 0.0, 0.0, 0.0)
+                        SetEntityCoords(throwProp, bx, by, bz, false, false, false, false)
+                    end
+                end
+            end)
+
+            local thrown    = false
             local cancelled = false
-            local inVeh     = IsPedInAnyVehicle(ped, false)
 
-            -- ── Charge phase: hold RMB ────────────────────────────────────
-            while IsDisabledControlPressed(0, 25) do
+            -- Wait for player to throw (IsPedShooting) or cancel (Backspace)
+            while not thrown and not cancelled do
                 Citizen.Wait(0)
-                DisableControlAction(0, 24, true)
-                DisableControlAction(0, 25, true)
-                power = math.min(power + 0.2, maxPower)
-
-                local pct = power / maxPower
-                SetTextFont(4)
-                SetTextScale(0.0, 0.25)
-                SetTextColour(255, 255, 255, 180)
-                SetTextCentre(true)
-                SetTextEntry("STRING")
-                AddTextComponentString("THROW POWER")
-                DrawText(0.5, 0.855)
-                DrawRect(0.5, 0.875, 0.26, 0.016, 0, 0, 0, 180)
-                local r = math.floor(255 * math.min(pct * 2, 1))
-                local g = math.floor(255 * math.min((1 - pct) * 2, 1))
-                DrawRect(0.5 - 0.13 + (pct * 0.13), 0.875, pct * 0.26, 0.016, r, g, 0, 220)
-
+                DisableControlAction(0, 37, true)  -- hide weapon wheel during aim
+                -- Don't disable controls — let GTA handle RMB aim and LMB throw natively
+                if IsPedShooting(ped) then
+                    thrown = true
+                end
                 if IsControlJustPressed(0, 177) then
                     cancelled = true
-                    break
                 end
             end
 
+            -- Remove grenade weapon immediately
+            RemoveWeaponFromPed(ped, grenadeHash)
+            SetCurrentPedWeapon(ped, prevWeapon, true)
+
             if cancelled then
+                if throwProp and DoesEntityExist(throwProp) then
+                    SetEntityVisible(throwProp, true, false)
+                end
                 isThrowingAnim = false
                 inspectProp    = throwProp
                 goto continueInspect
             end
 
-            -- Capture camera direction at exact release moment
+            -- Aggressively clear smoke grenade projectile for 1 second
+            local pedPos = GetEntityCoords(ped)
+            Citizen.CreateThread(function()
+                for i = 1, 20 do
+                    Citizen.Wait(50)
+                    ClearAreaOfProjectiles(pedPos.x, pedPos.y, pedPos.z, 20.0, 0)
+                    RemoveParticleFxInRange(pedPos.x, pedPos.y, pedPos.z, 20.0)
+                end
+            end)
+
+            -- Capture throw direction from camera
             local camRot = GetGameplayCamRot(2)
             local pitch  = math.rad(camRot.x)
             local yaw    = math.rad(camRot.z)
             local fwdX   = -math.sin(yaw) * math.cos(pitch)
             local fwdY   =  math.cos(yaw) * math.cos(pitch)
             local fwdZ   =  math.sin(pitch)
-            local pedPos = GetEntityCoords(ped)
+            local power  = 40.0
 
-            -- ── Detach prop from coord-setter before anim ─────────────────
+            -- Launch our prop
             if throwProp and DoesEntityExist(throwProp) then
-                DetachEntity(throwProp, true, true)
-                SetEntityCollision(throwProp, false, false)
-                -- Re-attach to hand bone for the animation
-                AttachEntityToEntity(throwProp, ped,
-                    GetPedBoneIndex(ped, 28422),
-                    0.12, 0.0, 0.0, 0.0, 0.0, 0.0,
-                    true, true, false, true, 1, true)
-            end
-            Citizen.Wait(0)
-
-            -- ── Task override: vehicle-aware ──────────────────────────────
-            local animFlag = 48
-            if inVeh then
-                -- Upper body only so player stays seated
-                animFlag = 49
-            else
-                ClearPedTasks(ped)
-                Citizen.Wait(0)
-            end
-
-            -- ── Load and play toss animation ──────────────────────────────
-            local animDict = nil
-            local animClip = nil
-            if HasAnimDictLoaded("melee@unarmed@streamed_core_fps") then
-                animDict = "melee@unarmed@streamed_core_fps"
-                animClip = "throw"
-            elseif HasAnimDictLoaded("melee@large_wpn@streamed_core") then
-                animDict = "melee@large_wpn@streamed_core"
-                animClip = "ground_attack_on_spot"
-            end
-
-            if animDict then
-                TaskPlayAnim(ped, animDict, animClip,
-                    8.0, -8.0, 800, animFlag, 0, false, false, false)
-            end
-
-            -- ── Release point: 250ms — the "flick" moment ─────────────────
-            Citizen.Wait(250)
-
-            -- ── Physics release with arc ──────────────────────────────────
-            if throwProp and DoesEntityExist(throwProp) then
-                DetachEntity(throwProp, true, true)
+                SetEntityVisible(throwProp, true, false)
                 SetEntityCollision(throwProp, true, true)
                 SetEntityAsMissionEntity(throwProp, true, true)
                 SetEntityDynamic(throwProp, true)
@@ -624,62 +875,36 @@ Citizen.CreateThread(function()
                     false, false, false, false)
                 Citizen.Wait(0)
                 Citizen.Wait(0)
-                -- Horizontal velocity from power + 5.0 Z arc boost
                 ApplyForceToEntity(throwProp, 1,
                     fwdX * power,
                     fwdY * power,
-                    fwdZ * power + 5.0,
-                    0.0, 0.0, 0.0,
-                    0, false, true, true, false, true)
+                    (fwdZ * power) + 5.0,
+                    0.0, 0.0, 0.0, 0, false, true, true, false, true)
             end
 
-            -- ── Settle monitor: watch velocity, finalize when stopped ─────
+            -- Settle monitor
             local capturedSlot   = throwSlot
             local capturedItemId = throwItemId
             local capturedProp   = throwProp
 
             Citizen.CreateThread(function()
-                Citizen.Wait(500)  -- let it fly first
-
-                local settleTimer  = 0
-                local maxWait      = 10000
-                local settleThresh = 0.05
-
-                while settleTimer < maxWait do
-                    Citizen.Wait(100)
-                    settleTimer = settleTimer + 100
-
+                Citizen.Wait(1000)
+                local moving = true
+                while moving do
+                    Citizen.Wait(200)
                     if not capturedProp or not DoesEntityExist(capturedProp) then return end
-
-                    local vel   = GetEntityVelocity(capturedProp)
-                    local speed = math.sqrt(vel.x*vel.x + vel.y*vel.y + vel.z*vel.z)
-
-                    if speed < settleThresh then
+                    local vel = GetEntityVelocity(capturedProp)
+                    if #(vel) < 0.2 then
+                        moving = false
                         local finalPos = GetEntityCoords(capturedProp)
-                        -- Fire server event FIRST — permanent prop spawns for all clients
                         TriggerServerEvent("stdb:finalizeThrow",
                             capturedSlot, capturedItemId,
                             getItemProp(capturedItemId),
                             finalPos.x, finalPos.y, finalPos.z)
-                        -- Wait for network round-trip before removing local prop
                         Citizen.Wait(500)
                         if DoesEntityExist(capturedProp) then
                             DeleteObject(capturedProp)
                         end
-                        return
-                    end
-                end
-
-                -- Timeout fallback
-                if capturedProp and DoesEntityExist(capturedProp) then
-                    local finalPos = GetEntityCoords(capturedProp)
-                    TriggerServerEvent("stdb:finalizeThrow",
-                        capturedSlot, capturedItemId,
-                        getItemProp(capturedItemId),
-                        finalPos.x, finalPos.y, finalPos.z)
-                    Citizen.Wait(500)
-                    if DoesEntityExist(capturedProp) then
-                        DeleteObject(capturedProp)
                     end
                 end
             end)
@@ -704,7 +929,6 @@ end)
 
 -- ── Placement preview ─────────────────────────────────────────────────────────
 Citizen.CreateThread(function()
-    local pendingRay = nil
     while true do
         Citizen.Wait(0)
         if not isInspecting then
@@ -713,39 +937,26 @@ Citizen.CreateThread(function()
                 placementProp     = nil
                 placementPropHash = nil
             end
-            pendingRay = nil
             goto continuePlacement
         end
 
         local ped    = PlayerPedId()
-        local camPos = GetGameplayCamCoord()
+        local pedPos = GetEntityCoords(ped)
         local camRot = GetGameplayCamRot(2)
         local pitch  = math.rad(camRot.x)
         local yaw    = math.rad(camRot.z)
         local fwdX   = -math.sin(yaw) * math.cos(pitch)
         local fwdY   =  math.cos(yaw) * math.cos(pitch)
-        local fwdZ   =  math.sin(pitch)
-        local endX   = camPos.x + fwdX * 5.0
-        local endY   = camPos.y + fwdY * 5.0
-        local endZ   = camPos.z + fwdZ * 5.0
+        local endX   = pedPos.x + fwdX * 3.0
+        local endY   = pedPos.y + fwdY * 3.0
 
-        local hit       = false
-        local hitCoords = vector3(endX, endY, endZ)
-        if pendingRay then
-            local retval, h, hc = GetShapeTestResult(pendingRay)
-            if retval == 2 and h == 1 then
-                hit       = true
-                hitCoords = hc
-            end
-        end
-        pendingRay = StartShapeTestRay(
-            camPos.x, camPos.y, camPos.z,
-            endX, endY, endZ, 1 + 16, ped, 0)
+        local groundZ = 0.0
+        local found, gz = GetGroundZFor_3dCoord(endX, endY, pedPos.z + 5.0, groundZ, false)
+        if not found then goto continuePlacement end
 
-        if not hit then goto continuePlacement end
-
-        local propName = getItemProp(inspectItemId)
-        local propHash = GetHashKey(propName)
+        local hitCoords = vector3(endX, endY, gz)
+        local propName  = getItemProp(inspectItemId)
+        local propHash  = GetHashKey(propName)
 
         if not placementProp or not DoesEntityExist(placementProp) or placementPropHash ~= propHash then
             if placementProp and DoesEntityExist(placementProp) then
@@ -784,4 +995,14 @@ AddEventHandler("stdb:deleteWorldProp", function(stashId)
         end
     end
     worldProps = remaining
+end)
+
+RegisterNUICallback("requestInventory", function(_, cb)
+    local pos = GetEntityCoords(PlayerPedId())
+    if inVehicle and currentVehicleId then
+        TriggerServerEvent("stdb:requestGlovebox", currentVehicleId, currentModel, currentClass)
+    else
+        TriggerServerEvent("stdb:requestInventory", pos.x, pos.y, pos.z)
+    end
+    cb({ ok = true })
 end)

@@ -12,17 +12,17 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void SeedItemHandler(ReducerEventContext ctx, string itemId, string label, float weight, bool stackable, bool usable, uint maxStack, string category, string propModel, int magCapacity, int storedCapacity, string ammoType);
-        public event SeedItemHandler? OnSeedItem;
+        public delegate void UpdateItemHandler(ReducerEventContext ctx, string itemId, string label, float weight, bool stackable, bool usable, uint maxStack, string category, string propModel, int magCapacity, int storedCapacity, string ammoType);
+        public event UpdateItemHandler? OnUpdateItem;
 
-        public void SeedItem(string itemId, string label, float weight, bool stackable, bool usable, uint maxStack, string category, string propModel, int magCapacity, int storedCapacity, string ammoType)
+        public void UpdateItem(string itemId, string label, float weight, bool stackable, bool usable, uint maxStack, string category, string propModel, int magCapacity, int storedCapacity, string ammoType)
         {
-            conn.InternalCallReducer(new Reducer.SeedItem(itemId, label, weight, stackable, usable, maxStack, category, propModel, magCapacity, storedCapacity, ammoType));
+            conn.InternalCallReducer(new Reducer.UpdateItem(itemId, label, weight, stackable, usable, maxStack, category, propModel, magCapacity, storedCapacity, ammoType));
         }
 
-        public bool InvokeSeedItem(ReducerEventContext ctx, Reducer.SeedItem args)
+        public bool InvokeUpdateItem(ReducerEventContext ctx, Reducer.UpdateItem args)
         {
-            if (OnSeedItem == null)
+            if (OnUpdateItem == null)
             {
                 if (InternalOnUnhandledReducerError != null)
                 {
@@ -34,7 +34,7 @@ namespace SpacetimeDB.Types
                 }
                 return false;
             }
-            OnSeedItem(
+            OnUpdateItem(
                 ctx,
                 args.ItemId,
                 args.Label,
@@ -56,7 +56,7 @@ namespace SpacetimeDB.Types
     {
         [SpacetimeDB.Type]
         [DataContract]
-        public sealed partial class SeedItem : Reducer, IReducerArgs
+        public sealed partial class UpdateItem : Reducer, IReducerArgs
         {
             [DataMember(Name = "item_id")]
             public string ItemId;
@@ -81,7 +81,7 @@ namespace SpacetimeDB.Types
             [DataMember(Name = "ammo_type")]
             public string AmmoType;
 
-            public SeedItem(
+            public UpdateItem(
                 string ItemId,
                 string Label,
                 float Weight,
@@ -108,7 +108,7 @@ namespace SpacetimeDB.Types
                 this.AmmoType = AmmoType;
             }
 
-            public SeedItem()
+            public UpdateItem()
             {
                 this.ItemId = "";
                 this.Label = "";
@@ -117,7 +117,7 @@ namespace SpacetimeDB.Types
                 this.AmmoType = "";
             }
 
-            string IReducerArgs.ReducerName => "seed_item";
+            string IReducerArgs.ReducerName => "update_item";
         }
     }
 }

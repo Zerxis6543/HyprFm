@@ -227,7 +227,7 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
       setSlotsForPanel(sourcePanel, newSrcSlots)
       setSlotsForPanel(targetPanel, newTgtSlots)
       const tgtOwner = getOwnerForPanel(targetPanel)
-      fetch(`https://${GetParentResourceName()}/moveItem`, {
+        fetch(`https://${GetParentResourceName()}/moveItem`, {
         method: 'POST', body: JSON.stringify({ slotId, newSlotIndex: newIndex, ...tgtOwner })
       })
       if (displaced) {
@@ -241,29 +241,40 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
 
   equipItem: (slotId, equipKey, sourcePanel) => {
     const state = get()
-    const srcSlots = sourcePanel === 'pockets' ? state.slots : state.secondary.slots
-    const moving   = srcSlots.find(s => s.id === slotId)
+    const srcSlots = sourcePanel === 'pockets'
+      ? state.slots
+      : sourcePanel === 'backpack'
+        ? (state.backpack?.slots ?? [])
+        : state.secondary.slots
+    const moving = srcSlots.find(s => s.id === slotId)
     if (!moving) return
     const newSrcSlots   = srcSlots.filter(s => s.id !== slotId)
     const newEquipSlots = state.equipSlots.map(s => s.key === equipKey ? { ...s, slot: moving } : s)
-    if (sourcePanel === 'pockets') set({ slots: newSrcSlots, equipSlots: newEquipSlots })
-    else set(s => ({ secondary: { ...s.secondary, slots: newSrcSlots }, equipSlots: newEquipSlots }))
+    if (sourcePanel === 'pockets') {
+      set({ slots: newSrcSlots, equipSlots: newEquipSlots })
+    } else if (sourcePanel === 'backpack') {
+      set(s => ({ backpack: s.backpack ? { ...s.backpack, slots: newSrcSlots } : null, equipSlots: newEquipSlots }))
+    } else {
+      set(s => ({ secondary: { ...s.secondary, slots: newSrcSlots }, equipSlots: newEquipSlots }))
+    }
     fetch(`https://${GetParentResourceName()}/equipItem`, {
-      method: 'POST', body: JSON.stringify({ slotId, equipKey })
+      method: 'POST', body: JSON.stringify({ slotId, equipKey, itemId: moving.item_id })
     })
     // Auto-open backpack panel when equipping a bag
     if (equipKey === 'backpack' && (moving.item_id === 'backpack' || moving.item_id === 'duffel_bag')) {
-      // Use slot ID directly — no server round trip needed
-      const bpStashId = `backpack_slot_${moving.id}`
-      const bpMaxSlots = moving.item_id === 'duffel_bag' ? 30 : 20
+      const bpStashId   = `backpack_slot_${moving.id}`
+      const bpMaxSlots  = moving.item_id === 'duffel_bag' ? 30 : 20
       const bpMaxWeight = moving.item_id === 'duffel_bag' ? 50 : 30
-      const bpLabel = moving.item_id === 'duffel_bag' ? 'DUFFEL BAG' : 'BACKPACK'
+      const bpLabel     = moving.item_id === 'duffel_bag' ? 'DUFFEL BAG' : 'BACKPACK'
+      // Open panel immediately with known stash ID, slots will sync via server broadcast
       get().openBackpackPanel({
         type: 'stash', label: bpLabel, id: bpStashId,
         maxWeight: bpMaxWeight, maxSlots: bpMaxSlots, slots: [],
       })
-      // Fetch actual slots async and update
-      get().openBackpack(moving.item_id)
+      // Fetch slots async via server — use slot-based stash ID path
+      fetch(`https://${GetParentResourceName()}/openBackpack`, {
+        method: 'POST', body: JSON.stringify({ bagItemId: moving.item_id, bagSlotId: moving.id })
+      })
     }
   },
 
@@ -277,6 +288,8 @@ unequipItem: (equipKey, targetPanel, targetIndex) => {
     const closeBackpack = equipKey === 'backpack' ? { backpack: null } : {}
     if (targetPanel === 'pockets') {
       set({ equipSlots: newEquipSlots, slots: [...state.slots, updatedSlot], ...closeBackpack })
+    } else if (targetPanel === 'backpack') {
+      set(s => ({ equipSlots: newEquipSlots, backpack: s.backpack ? { ...s.backpack, slots: [...s.backpack.slots, updatedSlot] } : null, ...closeBackpack }))
     } else {
       set(s => ({ equipSlots: newEquipSlots, secondary: { ...s.secondary, slots: [...s.secondary.slots, updatedSlot] }, ...closeBackpack }))
     }

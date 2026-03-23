@@ -1,4 +1,5 @@
 import { useDraggable } from '@dnd-kit/core'
+import { useRef } from 'react'
 import { useInventoryStore } from '../store'
 import { EquipSlotKey, itemIcon } from '../types'
 
@@ -51,6 +52,10 @@ function ESlot({ slotKey, label }: { slotKey: EquipSlotKey; label: string }) {
     disabled: !slot,
   })
 
+  const showContext  = useInventoryStore(s => s.showContext)
+  const dragStart    = useRef<{ x: number; y: number } | null>(null)
+  const didDrag      = useRef(false)
+
   return (
     <div className="e-slot-wrap">
       <div className="e-slot-label">{label}</div>
@@ -59,6 +64,20 @@ function ESlot({ slotKey, label }: { slotKey: EquipSlotKey; label: string }) {
         data-equip-key={slotKey}
         className={`e-slot ${slot ? 'occupied' : ''} ${isDragging ? 'dragging' : ''} ${slot && (slot.item_id === 'backpack' || slot.item_id === 'duffel_bag') ? 'bag-slot' : ''}`}
         style={{ opacity: isDragging ? 0.3 : 1 }}
+        onPointerDown={(e) => { dragStart.current = { x: e.clientX, y: e.clientY }; didDrag.current = false }}
+        onPointerMove={(e) => {
+          if (dragStart.current) {
+            const dx = e.clientX - dragStart.current.x
+            const dy = e.clientY - dragStart.current.y
+            if (Math.sqrt(dx*dx + dy*dy) > 6) didDrag.current = true
+          }
+        }}
+        onContextMenu={slot ? (e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          if (didDrag.current) { didDrag.current = false; return }
+          showContext(slot.id, e.clientX, e.clientY)
+        } : undefined}
         {...(slot ? { ...attributes, ...listeners } : {})}
       >
         

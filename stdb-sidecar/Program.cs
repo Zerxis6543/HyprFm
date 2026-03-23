@@ -1,6 +1,3 @@
-// G:\FIVEMSTDBPROJECT\stdb-sidecar\Program.cs
-// COMPLETE FILE — replace entire contents
-
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -77,8 +74,10 @@ class Program
     static void OnSubscriptionReady(SubscriptionEventContext ctx)
     {
         Console.WriteLine("[Sidecar] Subscription active. Seeding items...");
-        _db!.Db.InstructionQueue.OnInsert += OnInstructionInserted;
-        SeedItems();
+          _db!.Db.InstructionQueue.OnInsert += OnInstructionInserted;
+          // Wait for SpacetimeDB to fully sync before seeding
+          Thread.Sleep(2000);
+          SeedItems();
     }
 
     static void OnInstructionInserted(EventContext ctx, InstructionQueue row)
@@ -98,7 +97,8 @@ class Program
                 _db!.Reducers.SeedItem(
                     item.Id, item.Label, item.Weight,
                     item.Stackable, item.Usable, item.MaxStack,
-                    item.Category, item.PropModel);
+                    item.Category, item.PropModel,
+                    item.MagCapacity, item.StoredCapacity, item.AmmoType);
             }
             catch (Exception ex)
             {
@@ -257,14 +257,36 @@ class Program
                         break;
 
                     case "add_item":
-                        _db.Reducers.AddItem(
-                            args.GetProperty("owner_id").GetString()   ?? "",
-                            args.GetProperty("owner_type").GetString() ?? "player",
-                            args.GetProperty("item_id").GetString()    ?? "",
-                            args.GetProperty("quantity").GetUInt32(),
-                            args.GetProperty("metadata").GetString()   ?? "{}"
-                        );
-                        break;
+                    {
+                        string aiOwnerId   = args.GetProperty("owner_id").GetString()   ?? "";
+                        string aiOwnerType = args.GetProperty("owner_type").GetString() ?? "player";
+                        string aiItemId    = args.GetProperty("item_id").GetString()    ?? "";
+                        uint   aiQty       = args.GetProperty("quantity").GetUInt32();
+                        string aiMeta      = args.TryGetProperty("metadata", out var amEl) ? amEl.GetString() ?? "{}" : "{}";
+
+                        if (aiMeta == "{}" || string.IsNullOrEmpty(aiMeta))
+                        {
+                            var aiDef = _db!.Db.ItemDefinition.Iter()
+                                .FirstOrDefault(d => d.ItemId == aiItemId);
+                            if (aiDef != null && aiDef.Category == "weapon")
+                            {
+                                var serial = $"WPN-{Guid.NewGuid().ToString("N")[..8].ToUpper()}";
+                                aiMeta = JsonSerializer.Serialize(new {
+                                    serial          = serial,
+                                    mag_ammo        = 0,
+                                    stored_ammo     = 0,
+                                    mag_capacity    = aiDef.MagCapacity,
+                                    stored_capacity = aiDef.StoredCapacity,
+                                    durability      = 100,
+                                    ammo_type       = aiDef.AmmoType,
+                                });
+                            }
+                        }
+
+                        _db!.Reducers.AddItem(aiOwnerId, aiOwnerType, aiItemId, aiQty, aiMeta);
+                        await WriteJson(ctx, new { ok = true });
+                        return;
+                    }
 
                     case "remove_item":
                         _db.Reducers.RemoveItem(
@@ -369,8 +391,11 @@ class Program
                                     stackable = d.Stackable,
                                     usable    = d.Usable,
                                     max_stack = d.MaxStack,
-                                    category   = d.Category,
-                                    prop_model = d.PropModel,
+                                    category        = d.Category,
+                                    prop_model      = d.PropModel,
+                                    mag_capacity    = d.MagCapacity,
+                                    stored_capacity = d.StoredCapacity,
+                                    ammo_type       = d.AmmoType,
                                 };
                             }
                         }
@@ -387,20 +412,37 @@ class Program
                                 .FirstOrDefault(s => s.OwnerId == ownerId + "_equip_backpack" && s.OwnerType == "equip");
                             if (bpSlot != null && !string.IsNullOrEmpty(bpSlot.OwnerId))
                             {
-                                string bpStashId = $"backpack_slot_{bpSlot.Id}";
+                                string bpStashId     = $"backpack_slot_{bpSlot.Id}";
+                                  string bpStashIdLegacy = $"backpack_{ownerId}";
                                 string bpItemId  = bpSlot.ItemId;
                                 uint   bpMaxSlots = bpItemId == "duffel_bag" ? 30u : 20u;
                                 float  bpWeight  = bpItemId == "duffel_bag" ? 50f  : 30f;
                                 string bpLabel   = bpItemId == "duffel_bag" ? "DUFFEL BAG" : "BACKPACK";
                                 try { _db!.Reducers.CreateStash(bpStashId, "backpack", bpLabel, bpMaxSlots, bpWeight, ownerId, 0f, 0f, 0f); } catch { }
-                                var bpSlotList = _db!.Db.InventorySlot.Iter()
-                                    .Where(s => s.OwnerId == bpStashId && s.OwnerType == "stash")
-                                    .Select(s => (object)new {
-                                        id = s.Id, owner_id = s.OwnerId, owner_type = s.OwnerType,
-                                        item_id = s.ItemId, quantity = s.Quantity,
-                                        metadata = s.Metadata, slot_index = s.SlotIndex,
-                                    }).ToList();
-                                backpackData = new {
+                               // Check both new (slot-based) and legacy (identity-based) stash IDs
+                                  var bpSlotList = _db!.Db.InventorySlot.Iter()
+                                      .Where(s => (s.OwnerId == bpStashId || s.OwnerId == bpStashIdLegacy) && s.OwnerType == "stash")
+                                      .Select(s => (object)new {
+                                          id = s.Id, owner_id = s.OwnerId, owner_type = s.OwnerType,
+                                          item_id = s.ItemId, quantity = s.Quantity,
+                                          metadata = s.Metadata, slot_index = s.SlotIndex,
+                                      }).ToList();
+
+                                  // Migrate legacy items to new stash ID
+                                  bool hasLegacy = _db!.Db.InventorySlot.Iter()
+                                      .Any(s => s.OwnerId == bpStashIdLegacy && s.OwnerType == "stash");
+                                  if (hasLegacy)
+                                  {
+                                      Console.WriteLine($"[Sidecar] Migrating backpack items from {bpStashIdLegacy} to {bpStashId}");
+                                      try { _db!.Reducers.CreateStash(bpStashId, "backpack", bpLabel, bpMaxSlots, bpWeight, ownerId, 0f, 0f, 0f); } catch { }
+                                      foreach (var legacySlot in _db!.Db.InventorySlot.Iter()
+                                          .Where(s => s.OwnerId == bpStashIdLegacy && s.OwnerType == "stash").ToList())
+                                      {
+                                          try { _db!.Reducers.TransferItem(legacySlot.Id, bpStashId, "stash", legacySlot.SlotIndex); } catch { }
+                                      }
+                                  }
+
+                                  backpackData = new {
                                     stash_id   = bpStashId,
                                     label      = bpLabel,
                                     max_weight = bpWeight,
@@ -455,8 +497,13 @@ class Program
 
                         var defs = _db.Db.ItemDefinition.Iter()
                             .ToDictionary(d => d.ItemId, d => (object)new {
-                                item_id = d.ItemId, label = d.Label, weight = d.Weight,
-                                stackable = d.Stackable, usable = d.Usable, max_stack = d.MaxStack,
+                                item_id         = d.ItemId,   label     = d.Label,
+                                weight          = d.Weight,   stackable = d.Stackable,
+                                usable          = d.Usable,   max_stack = d.MaxStack,
+                                category        = d.Category, prop_model = d.PropModel,
+                                mag_capacity    = d.MagCapacity,
+                                stored_capacity = d.StoredCapacity,
+                                ammo_type       = d.AmmoType,
                             });
 
                         await WriteJson(ctx, new {
@@ -515,8 +562,22 @@ class Program
                         }
                         catch { /* already exists */ }
 
+                        string bpStashIdLegacyOb = $"backpack_{bpIdentity}";
+                        // Migrate legacy items if needed
+                        bool hasLegacyOb = _db!.Db.InventorySlot.Iter()
+                            .Any(s => s.OwnerId == bpStashIdLegacyOb && s.OwnerType == "stash");
+                        if (hasLegacyOb)
+                        {
+                            Console.WriteLine($"[Sidecar] open_backpack: migrating {bpStashIdLegacyOb} -> {bpStashId}");
+                            try { _db!.Reducers.CreateStash(bpStashId, "backpack", bpLabel, bpSlots, bpWeight, bpIdentity, 0f, 0f, 0f); } catch { }
+                            foreach (var ls in _db!.Db.InventorySlot.Iter()
+                                .Where(s => s.OwnerId == bpStashIdLegacyOb && s.OwnerType == "stash").ToList())
+                            {
+                                try { _db!.Reducers.TransferItem(ls.Id, bpStashId, "stash", ls.SlotIndex); } catch { }
+                            }
+                        }
                         var bpSlotList = _db!.Db.InventorySlot.Iter()
-                            .Where(s => s.OwnerId == bpStashId && s.OwnerType == "stash")
+                            .Where(s => (s.OwnerId == bpStashId || s.OwnerId == bpStashIdLegacyOb) && s.OwnerType == "stash")
                             .Select(s => (object)new {
                                 id = s.Id, owner_id = s.OwnerId, owner_type = s.OwnerType,
                                 item_id = s.ItemId, quantity = s.Quantity,
@@ -747,6 +808,53 @@ class Program
                             slots,
                             item_defs  = defs,
                         });
+                        return;
+                    }
+
+                    case "give_item_to_player":
+                    {
+                        uint   gServerId = args.GetProperty("server_id").GetUInt32();
+                        string gItemId   = args.GetProperty("item_id").GetString()  ?? "";
+                        uint   gQty      = args.TryGetProperty("quantity", out var gqEl) ? gqEl.GetUInt32() : 1;
+
+                        var gSession = _db!.Db.ActiveSession.Iter()
+                            .FirstOrDefault(a => a.ServerId == gServerId);
+                        if (gSession.ServerId == 0)
+                        {
+                            await WriteJson(ctx, new { ok = false, error = "player not found" });
+                            return;
+                        }
+
+                        var gIdentity = gSession.Identity.ToString().ToLower();
+                        if (gIdentity.StartsWith("0x")) gIdentity = gIdentity.Substring(2);
+
+                        // Find next free slot
+                        var gUsed = _db!.Db.InventorySlot.Iter()
+                            .Where(s => s.OwnerId == gIdentity && s.OwnerType == "player")
+                            .Select(s => s.SlotIndex).ToHashSet();
+                        uint gSlotIndex = 0;
+                        while (gUsed.Contains(gSlotIndex)) gSlotIndex++;
+
+                        // Auto-generate weapon metadata
+                        string gMeta = "{}";
+                        var gDef = _db!.Db.ItemDefinition.Iter()
+                            .FirstOrDefault(d => d.ItemId == gItemId);
+                        if (gDef != null && gDef.Category == "weapon")
+                        {
+                            var serial = $"WPN-{Guid.NewGuid().ToString("N")[..8].ToUpper()}";
+                            gMeta = JsonSerializer.Serialize(new {
+                                serial          = serial,
+                                mag_ammo        = 0,
+                                stored_ammo     = 0,
+                                mag_capacity    = gDef.MagCapacity,
+                                stored_capacity = gDef.StoredCapacity,
+                                durability      = 100,
+                                ammo_type       = gDef.AmmoType,
+                            });
+                        }
+
+                        _db!.Reducers.AddItem(gIdentity, "player", gItemId, gQty, gMeta);
+                        await WriteJson(ctx, new { ok = true, owner_id = gIdentity });
                         return;
                     }
 

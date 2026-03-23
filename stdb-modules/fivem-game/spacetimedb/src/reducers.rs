@@ -133,17 +133,45 @@ pub fn request_spawn(
 #[spacetimedb::reducer]
 pub fn seed_item(
     ctx: &ReducerContext,
-    item_id: String,
-    label: String,
-    weight: f32,
-    stackable: bool,
-    usable: bool,
-    max_stack: u32,
-    category: String,
-    prop_model: String,
+    item_id: String, label: String, weight: f32,
+    stackable: bool, usable: bool, max_stack: u32,
+    category: String, prop_model: String,
+    mag_capacity: i32, stored_capacity: i32, ammo_type: String,
 ) {
     if ctx.db.item_definition().item_id().find(&item_id).is_some() { return; }
-    ctx.db.item_definition().insert(ItemDefinition { item_id, label, weight, stackable, usable, max_stack, category, prop_model });
+    ctx.db.item_definition().insert(ItemDefinition {
+        item_id, label, weight, stackable, usable, max_stack,
+        category, prop_model, mag_capacity, stored_capacity, ammo_type,
+    });
+}
+
+#[spacetimedb::reducer]
+pub fn update_item(
+    ctx: &ReducerContext,
+    item_id: String, label: String, weight: f32,
+    stackable: bool, usable: bool, max_stack: u32,
+    category: String, prop_model: String,
+    mag_capacity: i32, stored_capacity: i32, ammo_type: String,
+) {
+    if let Some(mut item) = ctx.db.item_definition().item_id().find(&item_id) {
+        item.label           = label;
+        item.weight          = weight;
+        item.stackable       = stackable;
+        item.usable          = usable;
+        item.max_stack       = max_stack;
+        item.category        = category;
+        item.prop_model      = prop_model;
+        item.mag_capacity    = mag_capacity;
+        item.stored_capacity = stored_capacity;
+        item.ammo_type       = ammo_type;
+        ctx.db.item_definition().item_id().update(item);
+    } else {
+        ctx.db.item_definition().insert(ItemDefinition {
+            item_id, label, weight, stackable, usable,
+            max_stack, category, prop_model,
+            mag_capacity, stored_capacity, ammo_type,
+        });
+    }
 }
 
 /// Add items to any inventory (player/vehicle/stash) by owner_id.

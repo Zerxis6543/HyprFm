@@ -648,6 +648,7 @@ namespace SpacetimeDB.Types
                 Reducer.SeedItem args => Reducers.InvokeSeedItem(eventContext, args),
                 Reducer.SplitStack args => Reducers.InvokeSplitStack(eventContext, args),
                 Reducer.TransferItem args => Reducers.InvokeTransferItem(eventContext, args),
+                Reducer.UpdateItem args => Reducers.InvokeUpdateItem(eventContext, args),
                 Reducer.UseItem args => Reducers.InvokeUseItem(eventContext, args),
                 _ => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {reducer}")
             };
