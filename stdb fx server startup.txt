@@ -1,5 +1,5 @@
-//starts the servers and side-cart
-powershell -ExecutionPolicy Bypass -File "G:\FIVEMSTDBPROJECT\Start-Server.ps1"
+//starts the servers and side-car
+powershell -ExecutionPolicy Bypass -File "G:\FIVEMSTDBPROJECT\HyprFm\Start-Server.ps1"
 
 //publishes modules
 powershell -ExecutionPolicy Bypass -File "G:\FIVEMSTDBPROJECT\Publish-Modules.ps1"
