@@ -1,6 +1,6 @@
 $Server     = "http://127.0.0.1:3000"
-$ModulesDir = "G:\FIVEMSTDBPROJECT\STFM\stdb-modules"
-$SidecarDir = "G:\FIVEMSTDBPROJECT\STFM\stdb-sidecar"
+$ModulesDir = "G:\FivemSTDBProject\HyprFm\stdb-modules"
+$SidecarDir = "G:\FivemSTDBProject\HyprFm\stdb-sidecar"
 $GeneratedDir = "$SidecarDir\Generated"
 
 $Modules = @(
@@ -30,7 +30,7 @@ dotnet build
 if ($LASTEXITCODE -ne 0) { Write-Host "[Publish] Sidecar build failed." -ForegroundColor Red; exit 1 }
 
 Write-Host "[Publish] Building NUI..." -ForegroundColor Cyan
-Set-Location -LiteralPath "G:\FivemSTDBProject\STFM\fivem-server-files\resources\[core]\stdb-inventory\web"
+Set-Location -LiteralPath "G:\FivemSTDBProject\HyprFm\fivem-server-files\resources\[core]\stdb-inventory\web"
 npm run build
 if ($LASTEXITCODE -ne 0) { Write-Host "[Publish] NUI build failed." -ForegroundColor Red; exit 1 }
 
