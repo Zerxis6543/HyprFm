@@ -4,7 +4,7 @@
     "serverName": "fivemstdb"
   },
   "server": {
-    "dataPath": "G:/FivemSTDBProject/STFM/fivem-server-files"
+    "dataPath": "G:/FivemSTDBProject/HyprFm/fivem-server-files"
   },
   "whitelist": {
     "mode": "adminOnly"
