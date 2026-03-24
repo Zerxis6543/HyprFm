@@ -478,3 +478,98 @@
 ║             TXADMIN║ txaReportResources 
 [           resources] Stopping resource FiveM-Peak-Check
 [      script:monitor] [txAdmin] Sending resources list to txAdmin.
+║             TXADMIN║ ================================================================
+║             TXADMIN║ ======== [25760] FXServer Starting - 2026/03/24, 05:32:21       
+║             TXADMIN║ ================================================================
+[           resources] Scanning resources.
+[           resources] Found 31 resources.
+[          svadhesive] Authenticating server license key...
+[          svadhesive] Server license key authentication succeeded. Welcome!
+[    c-scripting-core] Creating script environments for monitor
+[      script:monitor] [txAdmin] Resource v8.0.1 threads and commands set up. All Ready.
+[           resources] Started resource monitor
+[    c-scripting-core] Creating script environments for mapmanager
+[           resources] Started resource mapmanager
+[    c-scripting-core] Creating script environments for chat
+[           resources] Started resource chat
+[           resources] Started resource spawnmanager
+[    c-scripting-core] Creating script environments for sessionmanager
+[           resources] Started resource sessionmanager
+[   script:mapmanager] Started gametype Freeroam
+[           resources] Started resource basic-gamemode
+[    c-scripting-core] Creating script environments for hardcap
+[           resources] Started resource hardcap
+[    c-scripting-core] Creating script environments for stdb-relay
+[   script:stdb-relay] [stdb-relay] Server ready — polling sidecar.
+[           resources] Started resource stdb-relay
+[           resources] Started resource stdb-inventory
+[           resources] Started resource bob74_ipl
+[           resources] Started resource mnr_cayo
+[   script:mapmanager] Started map fivem-map-skater
+[           resources] Started resource fivem-map-skater
+[ citizen-server-impl]         fff                          
+[ citizen-server-impl]   cccc ff   xx  xx     rr rr    eee  
+[ citizen-server-impl] cc     ffff   xx       rrr  r ee   e 
+[ citizen-server-impl] cc     ff     xx   ... rr     eeeee  
+[ citizen-server-impl]  ccccc ff   xx  xx ... rr      eeeee 
+[ citizen-server-impl]                                      
+[ citizen-server-impl] Authenticated with cfx.re Nucleus: https://zerxis654-yog959.users.cfx.re/
+[      script:hardcap] Connecting: Joshua Sprigs
+[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 1 stash=backpack_slot_7
+[ citizen-server-impl] network thread hitch warning: timer interval of 31704567 milliseconds
+[ citizen-server-impl] sync thread hitch warning: timer interval of 31704567 milliseconds
+[ citizen-server-impl] server thread hitch warning: timer interval of 31704613 milliseconds
+[ citizen-server-impl] server thread hitch warning: timer interval of 170 milliseconds
+║           Zerxis654║ restart stdb-inventory
+[           resources] Stopping resource stdb-inventory
+[           resources] Started resource stdb-inventory
+[ citizen-server-impl] server thread hitch warning: timer interval of 233 milliseconds
+[      script:hardcap] Connecting: Joshua Sprigs
+║           Zerxis654║ stdbgive 3 weapon_pistol 1
+[   script:stdb-relay] [stdbgive] nil
+║           Zerxis654║ stdbgive 2 weapon_pistol 1
+[   script:stdb-relay] [stdbgive] nil
+║           Zerxis654║ stdbgive 1 weapon_pistol 1
+[   script:stdb-relay] [stdbgive] nil
+║           Zerxis654║ stdbgive 4 weapon_pistol 1
+[   script:stdb-relay] [stdbgive] nil
+║           Zerxis654║ stdbgive 5 weapon_pistol 1
+[   script:stdb-relay] [stdbgive] nil
+║             TXADMIN║ ================================================================
+║             TXADMIN║ ======== [14524] FXServer Starting - 2026/03/24, 18:42:12       
+║             TXADMIN║ ================================================================
+[           resources] Scanning resources.
+[           resources] Found 31 resources.
+[          svadhesive] Authenticating server license key...
+[          svadhesive] Server license key authentication succeeded. Welcome!
+[    c-scripting-core] Creating script environments for monitor
+[      script:monitor] [txAdmin] Resource v8.0.1 threads and commands set up. All Ready.
+[           resources] Started resource monitor
+[    c-scripting-core] Creating script environments for mapmanager
+[           resources] Started resource mapmanager
+[    c-scripting-core] Creating script environments for chat
+[           resources] Started resource chat
+[           resources] Started resource spawnmanager
+[    c-scripting-core] Creating script environments for sessionmanager
+[           resources] Started resource sessionmanager
+[   script:mapmanager] Started gametype Freeroam
+[           resources] Started resource basic-gamemode
+[    c-scripting-core] Creating script environments for hardcap
+[           resources] Started resource hardcap
+[    c-scripting-core] Creating script environments for stdb-relay
+[   script:stdb-relay] [stdb-relay] Server ready — polling sidecar.
+[           resources] Started resource stdb-relay
+[           resources] Started resource stdb-inventory
+[           resources] Started resource bob74_ipl
+[           resources] Started resource mnr_cayo
+[   script:mapmanager] Started map fivem-map-skater
+[           resources] Started resource fivem-map-skater
+[ citizen-server-impl]         fff                          
+[ citizen-server-impl]   cccc ff   xx  xx     rr rr    eee  
+[ citizen-server-impl] cc     ffff   xx       rrr  r ee   e 
+[ citizen-server-impl] cc     ff     xx   ... rr     eeeee  
+[ citizen-server-impl]  ccccc ff   xx  xx ... rr      eeeee 
+[ citizen-server-impl]                                      
+[ citizen-server-impl] Authenticated with cfx.re Nucleus: https://zerxis654-yog959.users.cfx.re/
+[      script:hardcap] Connecting: Joshua Sprigs
+[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 1 stash=backpack_slot_7

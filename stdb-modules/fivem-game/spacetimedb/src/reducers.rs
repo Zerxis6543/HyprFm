@@ -99,7 +99,7 @@ pub fn request_spawn(
     spawn_x:  f32,
     spawn_y:  f32,
     spawn_z:  f32,
-    _heading: f32,
+    _heading: f32, // Added underscore to fix the compiler warning
 ) {
     let identity = ctx.sender();
     let session  = match ctx.db.active_session().identity().find(identity) {
@@ -120,7 +120,7 @@ pub fn request_spawn(
     ctx.db.instruction_queue().insert(InstructionQueue {
         id: 0, target_entity_net_id: session.net_id,
         native_key: "FREEZE_ENTITY_POSITION".to_string(),
-        payload: json!([false]).to_string(),
+        payload: json!([false]).to_string(), // Fixed: Removed the stray 'F' here
         queued_at: ctx.timestamp, consumed: false,
     });
 
@@ -444,4 +444,252 @@ pub fn delete_stash(ctx: &ReducerContext, stash_id: String) {
         .collect();
     for id in slot_ids { ctx.db.inventory_slot().id().delete(id); }
     ctx.db.stash_definition().stash_id().delete(stash_id);
+}
+
+#[spacetimedb::reducer]
+pub fn give_item_to_identity(
+    ctx:                &ReducerContext,
+    owner_identity_hex: String,   // canonical hex, no "0x" — resolved by sidecar
+    item_id:            String,
+    quantity:           u32,
+    metadata:           String,   // "{}" triggers auto-generation for weapons
+) -> Result<(), String> {
+
+    // ── 1. Resolve item definition ────────────────────────────────────────────
+    let def = ctx.db.item_definition().item_id().find(&item_id)
+        .ok_or_else(|| format!("Unknown item: {}", item_id))?;
+
+    // ── 2. Build weapon metadata if the caller passed "{}" ────────────────────
+    // This was previously done with Guid.NewGuid() in C# — domain ID generation
+    // belongs in the authoritative layer, not the bridge layer.
+    let resolved_metadata = if (metadata == "{}" || metadata.is_empty()) && def.category == "weapon" {
+        // Use the reducer timestamp as the unique serial source.
+        // Microsecond precision makes collisions practically impossible.
+        let serial = format!("WPN-{:08X}", ctx.timestamp.micros_since_epoch() as u32);
+        format!(
+            r#"{{"serial":"{}","mag_ammo":0,"stored_ammo":0,"mag_capacity":{},"stored_capacity":{},"durability":100,"ammo_type":"{}"}}"#,
+            serial, def.mag_capacity, def.stored_capacity, def.ammo_type
+        )
+    } else {
+        metadata
+    };
+
+    // ── 3. Weight gate ────────────────────────────────────────────────────────
+    let current_weight: f32 = ctx.db.inventory_slot().iter()
+        .filter(|s| s.owner_id == owner_identity_hex && s.owner_type == "player")
+        .map(|s| {
+            ctx.db.item_definition().item_id().find(&s.item_id)
+                .map(|d| d.weight * s.quantity as f32)
+                .unwrap_or(0.0)
+        })
+        .sum();
+
+    let incoming_weight = def.weight * quantity as f32;
+    if current_weight + incoming_weight > 85.0 {
+        return Err(format!(
+            "WEIGHT_LIMIT|{:.2}|85.00",
+            current_weight + incoming_weight
+        ));
+    }
+
+    // ── 4. Stackable merge ────────────────────────────────────────────────────
+    if def.stackable {
+        if let Some(mut existing) = ctx.db.inventory_slot().iter()
+            .find(|s| s.owner_id == owner_identity_hex && s.item_id == item_id)
+        {
+            existing.quantity = (existing.quantity + quantity).min(def.max_stack);
+            ctx.db.inventory_slot().id().update(existing);
+            return Ok(());
+        }
+    }
+
+    // ── 5. Authoritative next-free-slot finder ────────────────────────────────
+    // This runs inside a SpacetimeDB transaction — concurrent calls are
+    // serialised by the database, making slot collisions impossible.
+    // The C# while-loop had no such guarantee.
+    let used: std::collections::HashSet<u32> = ctx.db.inventory_slot().iter()
+        .filter(|s| s.owner_id == owner_identity_hex && s.owner_type == "player")
+        .map(|s| s.slot_index)
+        .collect();
+    let slot_index = (0u32..).find(|i| !used.contains(i)).unwrap_or(0);
+
+    ctx.db.inventory_slot().insert(InventorySlot {
+        id: 0,
+        owner_id:   owner_identity_hex,
+        owner_type: "player".to_string(),
+        item_id,
+        quantity,
+        metadata:   resolved_metadata,
+        slot_index,
+    });
+
+    Ok(())
+}
+
+// ── DROP ITEM TO GROUND ───────────────────────────────────────────────────────
+//
+// Replaces the entire drop_item_to_ground case in Program.cs.
+// Three algorithms that were in C# now live here:
+//   (a) spatial proximity search (within 5m)
+//   (b) ground stash creation with a deterministic ID
+//   (c) next-free-slot finder for the ground stash
+//
+// After calling this reducer the sidecar queries for the stash near (x,y)
+// to build the response — it never needs to know the stash_id in advance.
+
+#[spacetimedb::reducer]
+pub fn drop_item_to_ground(
+    ctx:      &ReducerContext,
+    slot_id:  u64,
+    quantity: u32,
+    x:        f32,
+    y:        f32,
+    z:        f32,
+) -> Result<(), String> {
+
+    // ── 1. Verify the slot exists ─────────────────────────────────────────────
+    let slot = ctx.db.inventory_slot().id().find(slot_id)
+        .ok_or_else(|| format!("Slot {} not found", slot_id))?;
+
+    // ── 2. Spatial search — find an existing ground stash within 5m ──────────
+    let search_radius_sq: f32 = 25.0; 
+    let nearby_stash = ctx.db.stash_definition().iter()
+        .filter(|s| s.stash_type == "ground")
+        .filter(|s| {
+            let dx = s.pos_x - x;
+            let dy = s.pos_y - y;
+            dx * dx + dy * dy <= search_radius_sq
+        })
+        .min_by(|a, b| {
+            let da = (a.pos_x - x).powi(2) + (a.pos_y - y).powi(2);
+            let db = (b.pos_x - x).powi(2) + (b.pos_y - y).powi(2);
+            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+    // ── 3. Resolve or create the ground stash ────────────────────────────────
+    let stash_id = match nearby_stash {
+        Some(existing) => existing.stash_id,
+        None => {
+            // Fixed: Updated timestamp method name
+            let new_id = format!("ground_{}", ctx.timestamp.to_micros_since_unix_epoch());
+            ctx.db.stash_definition().insert(StashDefinition {
+                stash_id:   new_id.clone(),
+                stash_type: "ground".to_string(),
+                label:      "GROUND".to_string(),
+                max_slots:  50,
+                max_weight: 999.0,
+                owner_id:   String::new(),
+                pos_x: x, pos_y: y, pos_z: z,
+            });
+            new_id
+        }
+    };
+
+    // ── 4. Determine actual quantity to drop ──────────────────────────────────
+    let actual_qty = if quantity > 0 && quantity < slot.quantity {
+        quantity
+    } else {
+        slot.quantity
+    };
+
+    // ── 5. Find the next free slot index in the ground stash ─────────────────
+    let used_indices: std::collections::HashSet<u32> = ctx.db.inventory_slot().iter()
+        .filter(|s| s.owner_id == stash_id)
+        .map(|s| s.slot_index)
+        .collect();
+    let new_slot_index = (0u32..).find(|i| !used_indices.contains(i)).unwrap_or(0);
+
+    // Capture item_id for logging BEFORE it might get moved in step 6
+    let logged_item_id = slot.item_id.clone();
+
+    // ── 6. Transfer full stack or split partial ───────────────────────────────
+    if actual_qty == slot.quantity {
+        // Fixed: Use stash_id.clone() so stash_id is still available for logging
+        ctx.db.inventory_slot().id().update(InventorySlot {
+            owner_id:   stash_id.clone(),
+            owner_type: "stash".to_string(),
+            slot_index: new_slot_index,
+            ..slot
+        });
+    } else {
+        let mut remaining = slot.clone();
+        remaining.quantity -= actual_qty;
+        ctx.db.inventory_slot().id().update(remaining);
+
+        ctx.db.inventory_slot().insert(InventorySlot {
+            id:         0,
+            // Fixed: Use stash_id.clone() here as well
+            owner_id:   stash_id.clone(),
+            owner_type: "stash".to_string(),
+            item_id:    slot.item_id,
+            quantity:   actual_qty,
+            metadata:   slot.metadata,
+            slot_index: new_slot_index,
+        });
+    }
+
+    // Now uses the cloned versions to avoid "borrow of moved value" errors
+    log::info!(
+        "[stash] Dropped {}x {} to ground stash {} at ({:.1},{:.1})",
+        actual_qty, logged_item_id, stash_id, x, y
+    );
+
+    Ok(())
+}
+
+// ── FIND OR CREATE GROUND STASH ───────────────────────────────────────────────
+//
+// Replaces the find_or_create_ground_stash case in Program.cs.
+// Used when the player opens their inventory — we need a ground stash to
+// display as the secondary panel, even if it is empty.
+//
+// After calling this reducer the sidecar queries StashDefinition near (x,y)
+// to get the stash_id, then queries InventorySlot for its contents.
+
+#[spacetimedb::reducer]
+pub fn find_or_create_ground_stash(
+    ctx: &ReducerContext,
+    x:   f32,
+    y:   f32,
+    z:   f32,
+) -> Result<(), String> {
+
+    let search_radius_sq: f32 = 25.0; // 5m radius
+
+    // ── Spatial search — identical algorithm to drop_item_to_ground ───────────
+    // Having one authoritative implementation means both paths always agree
+    // on which stash "owns" a given position — previously the two C# copies
+    // could disagree if one was called between the other's search and insert.
+    let nearby = ctx.db.stash_definition().iter()
+        .filter(|s| s.stash_type == "ground")
+        .filter(|s| {
+            let dx = s.pos_x - x;
+            let dy = s.pos_y - y;
+            dx * dx + dy * dy <= search_radius_sq
+        })
+        .min_by(|a, b| {
+            let da = (a.pos_x - x).powi(2) + (a.pos_y - y).powi(2);
+            let db = (b.pos_x - x).powi(2) + (b.pos_y - y).powi(2);
+            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+    if nearby.is_none() {
+        // No stash within 5m — create a fresh one
+        // Updated method name below
+        let new_id = format!("ground_{}", ctx.timestamp.to_micros_since_unix_epoch());
+        ctx.db.stash_definition().insert(StashDefinition {
+            stash_id:   new_id.clone(),
+            stash_type: "ground".to_string(),
+            label:      "GROUND".to_string(),
+            max_slots:  50,
+            max_weight: 999.0,
+            owner_id:   String::new(),
+            pos_x: x, pos_y: y, pos_z: z,
+        });
+        log::info!("[stash] Created ground stash {} at ({:.1},{:.1})", new_id, x, y);
+    }
+    // If a stash already exists nearby, this reducer is a no-op.
+    // The sidecar will query to find it after the frame tick.
+
+    Ok(())
 }
