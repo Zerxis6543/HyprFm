@@ -4,6 +4,7 @@ use crate::tables::{item_definition, inventory_slot};
 use stdb_core::InstructionQueue;
 use stdb_core::instruction::instruction_queue;
 use serde_json::json;
+use stdb_core::opcodes;
 
 // ── ADMIN: seed item definitions ─────────────────────────────────────────────
 
@@ -305,11 +306,12 @@ pub fn use_item(
     match slot.item_id.as_str() {
         "bandage" => {
             ctx.db.instruction_queue().insert(InstructionQueue {
-                id: 0,
+                id:                   0,
                 target_entity_net_id: net_id,
-                opcode: opcodes::entity::SET_HEALTH, 
-                payload: json!([40]).to_string(),    
-                queued_at: ctx.timestamp,           
+                opcode:               opcodes::entity::SET_HEALTH,
+                payload:              json!([200]).to_string(),
+                queued_at:            ctx.timestamp,
+                consumed:             false,
             });
             // consume one bandage
             drop(slot);

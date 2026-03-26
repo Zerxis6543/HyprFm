@@ -1,7 +1,7 @@
 use spacetimedb::{ReducerContext, Table};
 use crate::tables::*;
 use serde_json::json;
-use crate::opcodes::*;
+use stdb_core::opcodes;
 
 // ── CORE ──────────────────────────────────────────────────────────────────────
 

@@ -72,7 +72,7 @@ pub fn request_spawn(
         id: 0,
         target_entity_net_id: session.net_id,
         opcode: opcodes::entity::SET_COORDS,
-        payload: json!([x, y, z, false, false, true]),
+        payload: json!([spawn_x, spawn_y, spawn_z, false, false, true]).to_string(),
         queued_at: ctx.timestamp,
         consumed: false,
     });
@@ -81,8 +81,8 @@ pub fn request_spawn(
     ctx.db.instruction_queue().insert(InstructionQueue {
         id: 0,
         target_entity_net_id: session.net_id,
-        opcode: opcodes::entity::SET_FROZEN
-        payload: json!([false])
+        opcode: opcodes::entity::SET_FROZEN,
+        payload: json!([false]).to_string(),
         queued_at: ctx.timestamp,
         consumed: false,
     });
