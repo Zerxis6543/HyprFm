@@ -10,6 +10,7 @@ version '1.0.0'
 -- vehicle_config.lua is shared so both server and client can call VehicleConfig.GetConfig()
 shared_scripts {
     'shared/vehicle_config.lua',
+    'shared/constants.lua',
 }
 
 client_scripts {

@@ -41,7 +41,7 @@ namespace SpacetimeDB.Types
     {
         public global::SpacetimeDB.Col<InstructionQueue, ulong> Id { get; }
         public global::SpacetimeDB.Col<InstructionQueue, uint> TargetEntityNetId { get; }
-        public global::SpacetimeDB.Col<InstructionQueue, string> NativeKey { get; }
+        public global::SpacetimeDB.Col<InstructionQueue, ushort> Opcode { get; }
         public global::SpacetimeDB.Col<InstructionQueue, string> Payload { get; }
         public global::SpacetimeDB.Col<InstructionQueue, SpacetimeDB.Timestamp> QueuedAt { get; }
         public global::SpacetimeDB.Col<InstructionQueue, bool> Consumed { get; }
@@ -50,7 +50,7 @@ namespace SpacetimeDB.Types
         {
             Id = new global::SpacetimeDB.Col<InstructionQueue, ulong>(tableName, "id");
             TargetEntityNetId = new global::SpacetimeDB.Col<InstructionQueue, uint>(tableName, "target_entity_net_id");
-            NativeKey = new global::SpacetimeDB.Col<InstructionQueue, string>(tableName, "native_key");
+            Opcode = new global::SpacetimeDB.Col<InstructionQueue, ushort>(tableName, "opcode");
             Payload = new global::SpacetimeDB.Col<InstructionQueue, string>(tableName, "payload");
             QueuedAt = new global::SpacetimeDB.Col<InstructionQueue, SpacetimeDB.Timestamp>(tableName, "queued_at");
             Consumed = new global::SpacetimeDB.Col<InstructionQueue, bool>(tableName, "consumed");

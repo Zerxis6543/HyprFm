@@ -1,53 +1,8 @@
 ================================================================
-======== Log Rotated - 2026/03/26, 00:00:00                     
+======== Log Rotated - 2026/03/27, 00:00:00                     
 ================================================================
-[      script:hardcap] Connecting: Joshua Sprigs
-║             TXADMIN║ txaReportResources 
-[      script:monitor] [txAdmin] Sending resources list to txAdmin.
-[      script:hardcap] Connecting: Joshua Sprigs
-[      script:hardcap] Connecting: Joshua Sprigs
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 4 stash=backpack_slot_4103
-[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774498715648289 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774498715648289 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774498805991163 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774498805991163 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774498805991163 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774498805991163 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:backpack_slot_4103 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774498805991163 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:backpack_slot_4103 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774498866791393 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:backpack_slot_4103 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774498805991163 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774498805991163 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774498805991163 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774498805991163 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774499095030674 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774499095030674 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
-[ citizen-server-impl] server thread hitch warning: timer interval of 17016581 milliseconds
-[ citizen-server-impl] network thread hitch warning: timer interval of 17016549 milliseconds
-[ citizen-server-impl] sync thread hitch warning: timer interval of 17016549 milliseconds
 ║             TXADMIN║ ================================================================
-║             TXADMIN║ ======== [62248] FXServer Starting - 2026/03/26, 14:37:18       
+║             TXADMIN║ ======== [62176] FXServer Starting - 2026/03/27, 00:45:36       
 ║             TXADMIN║ ================================================================
 [           resources] Scanning resources.
 [           resources] Found 31 resources.
@@ -83,51 +38,97 @@
 [ citizen-server-impl]                                      
 [ citizen-server-impl] Authenticated with cfx.re Nucleus: https://zerxis654-yog959.users.cfx.re/
 [      script:hardcap] Connecting: Joshua Sprigs
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 1 stash=backpack_slot_8199
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 1 stash=backpack_slot_8199
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 1 stash=backpack_slot_8199
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 1 stash=backpack_slot_8199
+[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 1 stash=backpack_slot_7
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:backpack_slot_7 - Syncing via Delta Queue
 [   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774530707787213 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774530707787213 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774565258381198 - Syncing via Delta Queue
 [   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
 [   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774530735082912 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774530735082912 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774565278863509 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774565278863509 - Syncing via Delta Queue
 [   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
 [   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774530807278971 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774530807278971 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774565313859665 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774565313859665 - Syncing via Delta Queue
 [   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 1 stash=backpack_slot_8199
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 1 stash=backpack_slot_8199
-[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774530967063449 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774530967063449 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774530962542740 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774530962542740 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774531112609658 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774531112609658 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774531148359156 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774531148359156 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774531174301711 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774531174301711 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
-[      script:hardcap] Connecting: Joshua Sprigs
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:backpack_slot_8199 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:2 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774553089823340 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:2 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:2 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774553106573774 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774553106573774 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:2 - Syncing via Delta Queue
+║             TXADMIN║ txaReportResources 
+[      script:monitor] [txAdmin] Sending resources list to txAdmin.
+║           Zerxis654║ ensure "stdb-relay"
+║             TXADMIN║ txaReportResources 
+[           resources] Stopping resource stdb-relay
+[    c-scripting-core] Creating script environments for stdb-relay
+[           resources] Started resource stdb-relay
+[      script:monitor] [txAdmin] Sending resources list to txAdmin.
+║             TXADMIN║ txaEvent "serverShuttingDown" "{\"delay\":5000,\"author\":\"Zerxis654\",\"message\":\"Server restarting (admin request).\"}"
+[      script:monitor] [txAdmin] Server shutting down. Kicking all players.
+
+║             TXADMIN║ ================================================================
+║             TXADMIN║ ======== [51588] FXServer Starting - 2026/03/27, 01:03:39       
+║             TXADMIN║ ================================================================
+[           resources] Scanning resources.
+[           resources] Found 31 resources.
+[          svadhesive] Authenticating server license key...
+[          svadhesive] Server license key authentication succeeded. Welcome!
+[    c-scripting-core] Creating script environments for monitor
+[      script:monitor] [txAdmin] Resource v8.0.1 threads and commands set up. All Ready.
+[           resources] Started resource monitor
+[    c-scripting-core] Creating script environments for mapmanager
+[           resources] Started resource mapmanager
+[    c-scripting-core] Creating script environments for chat
+[           resources] Started resource chat
+[           resources] Started resource spawnmanager
+[    c-scripting-core] Creating script environments for sessionmanager
+[           resources] Started resource sessionmanager
+[   script:mapmanager] Started gametype Freeroam
+[           resources] Started resource basic-gamemode
+[    c-scripting-core] Creating script environments for hardcap
+[           resources] Started resource hardcap
+[    c-scripting-core] Creating script environments for stdb-relay
+[           resources] Started resource stdb-relay
+[           resources] Started resource stdb-inventory
+[           resources] Started resource bob74_ipl
+[           resources] Started resource mnr_cayo
+[   script:mapmanager] Started map fivem-map-skater
+[           resources] Started resource fivem-map-skater
+[ citizen-server-impl]         fff                          
+[ citizen-server-impl]   cccc ff   xx  xx     rr rr    eee  
+[ citizen-server-impl] cc     ffff   xx       rrr  r ee   e 
+[ citizen-server-impl] cc     ff     xx   ... rr     eeeee  
+[ citizen-server-impl]  ccccc ff   xx  xx ... rr      eeeee 
+[ citizen-server-impl]                                      
+[ citizen-server-impl] Authenticated with cfx.re Nucleus: https://zerxis654-yog959.users.cfx.re/
+║             TXADMIN║ ================================================================
+║             TXADMIN║ ======== [23288] FXServer Starting - 2026/03/27, 01:04:06       
+║             TXADMIN║ ================================================================
+[           resources] Scanning resources.
+[           resources] Found 31 resources.
+[          svadhesive] Authenticating server license key...
+[          svadhesive] Server license key authentication succeeded. Welcome!
+[    c-scripting-core] Creating script environments for monitor
+[      script:monitor] [txAdmin] Resource v8.0.1 threads and commands set up. All Ready.
+[           resources] Started resource monitor
+[    c-scripting-core] Creating script environments for mapmanager
+[           resources] Started resource mapmanager
+[    c-scripting-core] Creating script environments for chat
+[           resources] Started resource chat
+[           resources] Started resource spawnmanager
+[    c-scripting-core] Creating script environments for sessionmanager
+[           resources] Started resource sessionmanager
+[   script:mapmanager] Started gametype Freeroam
+[           resources] Started resource basic-gamemode
+[    c-scripting-core] Creating script environments for hardcap
+[           resources] Started resource hardcap
+[    c-scripting-core] Creating script environments for stdb-relay
+[           resources] Started resource stdb-relay
+[           resources] Started resource stdb-inventory
+[           resources] Started resource bob74_ipl
+[           resources] Started resource mnr_cayo
+[   script:mapmanager] Started map fivem-map-skater
+[           resources] Started resource fivem-map-skater
+[ citizen-server-impl]         fff                          
+[ citizen-server-impl]   cccc ff   xx  xx     rr rr    eee  
+[ citizen-server-impl] cc     ffff   xx       rrr  r ee   e 
+[ citizen-server-impl] cc     ff     xx   ... rr     eeeee  
+[ citizen-server-impl]  ccccc ff   xx  xx ... rr      eeeee 
+[ citizen-server-impl]                                      
+[ citizen-server-impl] Authenticated with cfx.re Nucleus: https://zerxis654-yog959.users.cfx.re/

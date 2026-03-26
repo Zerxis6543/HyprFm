@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "G:\\FIVEMSTDBPROJECT\\HyprFm\\stdb-sidecar\\StdbSidecar.csproj": {}
+    "G:\\FivemSTDBProject\\HyprFm\\stdb-sidecar\\StdbSidecar.csproj": {}
   },
   "projects": {
-    "G:\\FIVEMSTDBPROJECT\\HyprFm\\stdb-sidecar\\StdbSidecar.csproj": {
+    "G:\\FivemSTDBProject\\HyprFm\\stdb-sidecar\\StdbSidecar.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "G:\\FIVEMSTDBPROJECT\\HyprFm\\stdb-sidecar\\StdbSidecar.csproj",
+        "projectUniqueName": "G:\\FivemSTDBProject\\HyprFm\\stdb-sidecar\\StdbSidecar.csproj",
         "projectName": "StdbSidecar",
-        "projectPath": "G:\\FIVEMSTDBPROJECT\\HyprFm\\stdb-sidecar\\StdbSidecar.csproj",
+        "projectPath": "G:\\FivemSTDBProject\\HyprFm\\stdb-sidecar\\StdbSidecar.csproj",
         "packagesPath": "C:\\Users\\zerxi\\.nuget\\packages\\",
-        "outputPath": "G:\\FIVEMSTDBPROJECT\\HyprFm\\stdb-sidecar\\obj\\",
+        "outputPath": "G:\\FivemSTDBProject\\HyprFm\\stdb-sidecar\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\zerxi\\AppData\\Roaming\\NuGet\\NuGet.Config",

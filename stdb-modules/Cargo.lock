@@ -751,6 +751,7 @@ dependencies = [
  "log",
  "serde_json",
  "spacetimedb",
+ "stdb-core",
 ]
 
 [[package]]

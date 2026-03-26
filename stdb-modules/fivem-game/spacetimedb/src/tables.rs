@@ -12,7 +12,7 @@ pub struct InstructionQueue {
     #[auto_inc]
     pub id:                   u64,
     pub target_entity_net_id: u32,
-    pub native_key:           String,
+    pub opcode:               u16,
     pub payload:              String,
     pub queued_at:            Timestamp,
     pub consumed:             bool,

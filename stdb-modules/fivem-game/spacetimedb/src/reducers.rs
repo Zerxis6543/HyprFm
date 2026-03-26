@@ -116,7 +116,7 @@ pub fn request_spawn(
     ctx.db.instruction_queue().insert(InstructionQueue {
         id: 0, target_entity_net_id: session.net_id,
         opcode: opcodes::entity::SET_COORDS,
-        payload: json!([x, y, z, false, false, true]).to_string(),
+        payload: json!([spawn_x, spawn_y, spawn_z, false, false, true]).to_string(),
         queued_at: ctx.timestamp, consumed: false,
     });
     ctx.db.instruction_queue().insert(InstructionQueue {
@@ -449,20 +449,13 @@ pub fn delete_stash(ctx: &ReducerContext, stash_id: String) {
 }
 
 #[spacetimedb::reducer]
-pub fn give_item_to_identity(ctx: ReducerContext, identity: Identity, item_id: u32) {
-    id: 0,
-    target_entity_net_id: net_id,
-    opcode:   opcodes::effect::HEAL,   // 0x2001
-    payload:  json!([40]).to_string(), // compact array, no string keys
-    queued_at: ctx.timestamp,
-    consumed: false,
-};
+pub fn give_item_to_identity(
     ctx:                &ReducerContext,
-    owner_identity_hex: String,   // canonical hex, no "0x" — resolved by sidecar
+    owner_identity_hex: String,
     item_id:            String,
     quantity:           u32,
-    metadata:           String,   // "{}" triggers auto-generation for weapons
-    -> Result<(), String> {
+    metadata:           String,
+) -> Result<(), String> {
 
     // ── 1. Resolve item definition ────────────────────────────────────────────
     let def = ctx.db.item_definition().item_id().find(&item_id)

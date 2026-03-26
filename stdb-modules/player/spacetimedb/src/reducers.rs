@@ -3,6 +3,7 @@ use crate::tables::{Player, ActiveSession};
 use crate::tables::{player, active_session};
 use stdb_core::InstructionQueue;
 use stdb_core::instruction::instruction_queue;
+use stdb_core::opcodes;
 use serde_json::json;
 
 #[spacetimedb::reducer]

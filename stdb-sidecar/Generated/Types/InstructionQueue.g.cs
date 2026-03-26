@@ -17,8 +17,8 @@ namespace SpacetimeDB.Types
         public ulong Id;
         [DataMember(Name = "target_entity_net_id")]
         public uint TargetEntityNetId;
-        [DataMember(Name = "native_key")]
-        public string NativeKey;
+        [DataMember(Name = "opcode")]
+        public ushort Opcode;
         [DataMember(Name = "payload")]
         public string Payload;
         [DataMember(Name = "queued_at")]
@@ -29,7 +29,7 @@ namespace SpacetimeDB.Types
         public InstructionQueue(
             ulong Id,
             uint TargetEntityNetId,
-            string NativeKey,
+            ushort Opcode,
             string Payload,
             SpacetimeDB.Timestamp QueuedAt,
             bool Consumed
@@ -37,7 +37,7 @@ namespace SpacetimeDB.Types
         {
             this.Id = Id;
             this.TargetEntityNetId = TargetEntityNetId;
-            this.NativeKey = NativeKey;
+            this.Opcode = Opcode;
             this.Payload = Payload;
             this.QueuedAt = QueuedAt;
             this.Consumed = Consumed;
@@ -45,7 +45,6 @@ namespace SpacetimeDB.Types
 
         public InstructionQueue()
         {
-            this.NativeKey = "";
             this.Payload = "";
         }
     }

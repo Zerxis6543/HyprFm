@@ -100,7 +100,7 @@ class Program
     static void OnInstructionInserted(EventContext ctx, InstructionQueue row)
     {
         if (row.Consumed) return;
-        Console.WriteLine($"[Sidecar] Queued instruction #{row.Id}: {row.NativeKey}");
+        Console.WriteLine($"[Sidecar] Queued instruction #{row.Id}: opcode=0x{row.Opcode:X4}");
         _pending.Enqueue(row);
     }
 
@@ -163,7 +163,7 @@ class Program
                     batch.Add(new {
                         id                   = instr.Id,
                         target_entity_net_id = instr.TargetEntityNetId,
-                        native_key           = instr.NativeKey,
+                        opcode               = instr.Opcode,
                         payload              = instr.Payload
                     });
                 }
