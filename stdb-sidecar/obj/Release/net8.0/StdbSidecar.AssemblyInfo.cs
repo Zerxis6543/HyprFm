@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("StdbSidecar")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+edcc0b487e4cff0aacb4e1c1857595f9069fbc90")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+a94799b719e1410771f6e95970259596fe4275cd")]
 [assembly: System.Reflection.AssemblyProductAttribute("StdbSidecar")]
 [assembly: System.Reflection.AssemblyTitleAttribute("StdbSidecar")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

@@ -1,6 +1,3 @@
--- G:\FivemSTDBProject\fivem-server-files\resources\[core]\stdb-relay\client\spawn.lua
--- COMPLETE FILE — replace entire contents
-
 RegisterNetEvent("stdb:executeNative")
 AddEventHandler("stdb:executeNative", function(nativeKey, payloadJson)
     local ok, args = pcall(json.decode, payloadJson)

@@ -307,10 +307,9 @@ pub fn use_item(
             ctx.db.instruction_queue().insert(InstructionQueue {
                 id: 0,
                 target_entity_net_id: net_id,
-                native_key: "SET_ENTITY_HEALTH".to_string(),
-                payload: json!([200]).to_string(),
-                queued_at: ctx.timestamp,
-                consumed: false,
+                opcode: opcodes::entity::SET_HEALTH, 
+                payload: json!([40]).to_string(),    
+                queued_at: ctx.timestamp,           
             });
             // consume one bandage
             drop(slot);

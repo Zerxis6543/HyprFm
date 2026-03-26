@@ -1,6 +1,7 @@
 use spacetimedb::{ReducerContext, Table};
 use crate::tables::*;
 use serde_json::json;
+use crate::opcodes::*;
 
 // ── CORE ──────────────────────────────────────────────────────────────────────
 
@@ -21,6 +22,7 @@ pub fn on_player_connect(
     display_name: String,
     server_id:    u32,
     net_id:       u32,
+    _heading: f32,
 ) {
     let identity = ctx.sender();
 
@@ -41,7 +43,7 @@ pub fn on_player_connect(
         });
 
         // Give starter items to new players
-        let owner_id = format!("{}", identity);
+        let owner_id = identity.to_hex().to_string();
         let starters: &[(&str, u32, &str)] = &[
             ("phone",         1,   "{}"),
             ("id_card",       1,   "{}"),
@@ -99,7 +101,7 @@ pub fn request_spawn(
     spawn_x:  f32,
     spawn_y:  f32,
     spawn_z:  f32,
-    _heading: f32, // Added underscore to fix the compiler warning
+    _heading: f32,
 ) {
     let identity = ctx.sender();
     let session  = match ctx.db.active_session().identity().find(identity) {
@@ -113,14 +115,14 @@ pub fn request_spawn(
 
     ctx.db.instruction_queue().insert(InstructionQueue {
         id: 0, target_entity_net_id: session.net_id,
-        native_key: "SET_ENTITY_COORDS".to_string(),
-        payload: json!([spawn_x, spawn_y, spawn_z, false, false, true]).to_string(),
+        opcode: opcodes::entity::SET_COORDS,
+        payload: json!([x, y, z, false, false, true]).to_string(),
         queued_at: ctx.timestamp, consumed: false,
     });
     ctx.db.instruction_queue().insert(InstructionQueue {
         id: 0, target_entity_net_id: session.net_id,
-        native_key: "FREEZE_ENTITY_POSITION".to_string(),
-        payload: json!([false]).to_string(), // Fixed: Removed the stray 'F' here
+        opcode: opcodes::entity::SET_FROZEN,
+        payload: json!([false]).to_string(),
         queued_at: ctx.timestamp, consumed: false,
     });
 
@@ -341,8 +343,8 @@ pub fn use_item(ctx: &ReducerContext, slot_id: u64, net_id: u32) {
             // Restore 40 HP (GTA health 100-200, 200 = full)
             ctx.db.instruction_queue().insert(InstructionQueue {
                 id: 0, target_entity_net_id: net_id,
-                native_key: "TRIGGER_CLIENT_EVENT".to_string(),
-                payload: json!(["stdb:applyEffect", net_id, {"effect": "heal", "amount": 40}]).to_string(),
+                opcode: opcodes::effect::HEAL,
+                payload: json!([40]).to_string(),
                 queued_at: ctx.timestamp, consumed: false,
             });
             consume(ctx, slot_id);
@@ -351,8 +353,8 @@ pub fn use_item(ctx: &ReducerContext, slot_id: u64, net_id: u32) {
             // Full heal
             ctx.db.instruction_queue().insert(InstructionQueue {
                 id: 0, target_entity_net_id: net_id,
-                native_key: "TRIGGER_CLIENT_EVENT".to_string(),
-                payload: json!(["stdb:applyEffect", net_id, {"effect": "heal", "amount": 100}]).to_string(),
+                opcode: opcodes::effect::HEAL,
+                payload: json!([100]).to_string(),
                 queued_at: ctx.timestamp, consumed: false,
             });
             consume(ctx, slot_id);
@@ -360,8 +362,8 @@ pub fn use_item(ctx: &ReducerContext, slot_id: u64, net_id: u32) {
         "food_burger" => {
             ctx.db.instruction_queue().insert(InstructionQueue {
                 id: 0, target_entity_net_id: net_id,
-                native_key: "TRIGGER_CLIENT_EVENT".to_string(),
-                payload: json!(["stdb:applyEffect", net_id, {"effect": "hunger", "amount": 30}]).to_string(),
+                opcode: opcodes::effect::HUNGER,
+                payload: json!([30]).to_string(),
                 queued_at: ctx.timestamp, consumed: false,
             });
             consume(ctx, slot_id);
@@ -369,8 +371,8 @@ pub fn use_item(ctx: &ReducerContext, slot_id: u64, net_id: u32) {
         "water_bottle" => {
             ctx.db.instruction_queue().insert(InstructionQueue {
                 id: 0, target_entity_net_id: net_id,
-                native_key: "TRIGGER_CLIENT_EVENT".to_string(),
-                payload: json!(["stdb:applyEffect", net_id, {"effect": "thirst", "amount": 30}]).to_string(),
+                opcode: opcodes::effect::THIRST,
+                payload: json!([30]).to_string(),
                 queued_at: ctx.timestamp, consumed: false,
             });
             consume(ctx, slot_id);
@@ -447,13 +449,20 @@ pub fn delete_stash(ctx: &ReducerContext, stash_id: String) {
 }
 
 #[spacetimedb::reducer]
-pub fn give_item_to_identity(
+pub fn give_item_to_identity(ctx: ReducerContext, identity: Identity, item_id: u32) {
+    id: 0,
+    target_entity_net_id: net_id,
+    opcode:   opcodes::effect::HEAL,   // 0x2001
+    payload:  json!([40]).to_string(), // compact array, no string keys
+    queued_at: ctx.timestamp,
+    consumed: false,
+};
     ctx:                &ReducerContext,
     owner_identity_hex: String,   // canonical hex, no "0x" — resolved by sidecar
     item_id:            String,
     quantity:           u32,
     metadata:           String,   // "{}" triggers auto-generation for weapons
-) -> Result<(), String> {
+    -> Result<(), String> {
 
     // ── 1. Resolve item definition ────────────────────────────────────────────
     let def = ctx.db.item_definition().item_id().find(&item_id)
@@ -465,7 +474,7 @@ pub fn give_item_to_identity(
     let resolved_metadata = if (metadata == "{}" || metadata.is_empty()) && def.category == "weapon" {
         // Use the reducer timestamp as the unique serial source.
         // Microsecond precision makes collisions practically impossible.
-        let serial = format!("WPN-{:08X}", ctx.timestamp.micros_since_epoch() as u32);
+        let serial = format!("WPN-{:08X}", ctx.timestamp.to_micros_since_unix_epoch() as u32);
         format!(
             r#"{{"serial":"{}","mag_ammo":0,"stored_ammo":0,"mag_capacity":{},"stored_capacity":{},"durability":100,"ammo_type":"{}"}}"#,
             serial, def.mag_capacity, def.stored_capacity, def.ammo_type

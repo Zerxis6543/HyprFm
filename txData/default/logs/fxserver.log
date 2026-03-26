@@ -1,454 +1,78 @@
 ================================================================
-======== Log Rotated - 2026/03/23, 00:00:00                     
+======== Log Rotated - 2026/03/26, 00:00:00                     
 ================================================================
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[ citizen-server-impl] server thread hitch warning: timer interval of 156 milliseconds
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 2 stash=backpack_c200385774c161917636ac95f722075e46d5c6d83a36637823f4548fbd752c94
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-║           Zerxis654║ restart stdb-relay
-[           resources] Stopping resource stdb-relay
-[    c-scripting-core] Creating script environments for stdb-relay
-[   script:stdb-relay] [stdb-relay] Server ready — polling sidecar.
-[           resources] Started resource stdb-relay
-[   script:stdb-relay] SCRIPT ERROR: @stdb-relay/server/main.lua:342: attempt to index a nil value (global 'pData')
-[   script:stdb-relay] > userCallback (@stdb-relay/server/main.lua:342)
-[   script:stdb-relay] SCRIPT ERROR: @stdb-relay/server/main.lua:342: attempt to index a nil value (global 'pData')
-[   script:stdb-relay] > userCallback (@stdb-relay/server/main.lua:342)
-[   script:stdb-relay] SCRIPT ERROR: @stdb-relay/server/main.lua:342: attempt to index a nil value (global 'pData')
-[   script:stdb-relay] > userCallback (@stdb-relay/server/main.lua:342)
-[   script:stdb-relay] SCRIPT ERROR: @stdb-relay/server/main.lua:342: attempt to index a nil value (global 'pData')
-[   script:stdb-relay] > userCallback (@stdb-relay/server/main.lua:342)
-[   script:stdb-relay] SCRIPT ERROR: @stdb-relay/server/main.lua:342: attempt to index a nil value (global 'pData')
-[   script:stdb-relay] > userCallback (@stdb-relay/server/main.lua:342)
-║           Zerxis654║ restart stdb-relay
-[           resources] Stopping resource stdb-relay
-[    c-scripting-core] Creating script environments for stdb-relay
-[   script:stdb-relay] [stdb-relay] Server ready — polling sidecar.
-[           resources] Started resource stdb-relay
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 2 stash=backpack_c200385774c161917636ac95f722075e46d5c6d83a36637823f4548fbd752c94
-║           Zerxis654║ restart stdb-relay
-[           resources] Stopping resource stdb-relay
-[    c-scripting-core] Creating script environments for stdb-relay
-[   script:stdb-relay] [stdb-relay] Server ready — polling sidecar.
-[           resources] Started resource stdb-relay
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 2 stash=backpack_c200385774c161917636ac95f722075e46d5c6d83a36637823f4548fbd752c94
-║           Zerxis654║ restart stdb-relay
-[           resources] Stopping resource stdb-relay
-[    c-scripting-core] Creating script environments for stdb-relay
-[   script:stdb-relay] [stdb-relay] Server ready — polling sidecar.
-[           resources] Started resource stdb-relay
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 2 stash=backpack_c200385774c161917636ac95f722075e46d5c6d83a36637823f4548fbd752c94
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
 [      script:hardcap] Connecting: Joshua Sprigs
-║           Zerxis654║ restart stdb-relay
-[           resources] Stopping resource stdb-relay
-[    c-scripting-core] Creating script environments for stdb-relay
-[   script:stdb-relay] [stdb-relay] Server ready — polling sidecar.
-[           resources] Started resource stdb-relay
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[ citizen-server-impl] server thread hitch warning: timer interval of 171 milliseconds
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200ae38bbb298272c4836b4c54e6a2dae02ce05b7716b84f6baba141dc8df79
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200ae38bbb298272c4836b4c54e6a2dae02ce05b7716b84f6baba141dc8df79
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200ae38bbb298272c4836b4c54e6a2dae02ce05b7716b84f6baba141dc8df79
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200ae38bbb298272c4836b4c54e6a2dae02ce05b7716b84f6baba141dc8df79
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200ae38bbb298272c4836b4c54e6a2dae02ce05b7716b84f6baba141dc8df79
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200ae38bbb298272c4836b4c54e6a2dae02ce05b7716b84f6baba141dc8df79
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[ citizen-server-impl] server thread hitch warning: timer interval of 157 milliseconds
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200ae38bbb298272c4836b4c54e6a2dae02ce05b7716b84f6baba141dc8df79
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200ae38bbb298272c4836b4c54e6a2dae02ce05b7716b84f6baba141dc8df79
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200ae38bbb298272c4836b4c54e6a2dae02ce05b7716b84f6baba141dc8df79
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200ae38bbb298272c4836b4c54e6a2dae02ce05b7716b84f6baba141dc8df79
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_
-║           Zerxis654║ restart stdb-relay
-[           resources] Stopping resource stdb-relay
-[    c-scripting-core] Creating script environments for stdb-relay
-[   script:stdb-relay] [stdb-relay] Server ready — polling sidecar.
-[           resources] Started resource stdb-relay
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[ citizen-server-impl] server thread hitch warning: timer interval of 157 milliseconds
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_slot_7
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_slot_7
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_slot_7
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_slot_7
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_slot_7
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_slot_7
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_slot_7
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_slot_7
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[ citizen-server-impl] server thread hitch warning: timer interval of 156 milliseconds
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_slot_7
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_slot_7
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_slot_7
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[ citizen-server-impl] server thread hitch warning: timer interval of 155 milliseconds
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_slot_7
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_slot_7
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_slot_7
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[ citizen-server-impl] server thread hitch warning: timer interval of 158 milliseconds
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[ citizen-server-impl] server thread hitch warning: timer interval of 157 milliseconds
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-║           Zerxis654║ restart stdb-relay
-[           resources] Stopping resource stdb-relay
-[    c-scripting-core] Creating script environments for stdb-relay
-[   script:stdb-relay] [stdb-relay] Server ready — polling sidecar.
-[           resources] Started resource stdb-relay
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-║           Zerxis654║ restart stdb-relay
-[           resources] Stopping resource stdb-relay
-[    c-scripting-core] Creating script environments for stdb-relay
-[   script:stdb-relay] [stdb-relay] Server ready — polling sidecar.
-[           resources] Started resource stdb-relay
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-║           Zerxis654║ restart stdb-relay
-[           resources] Stopping resource stdb-relay
-[    c-scripting-core] Creating script environments for stdb-relay
-[   script:stdb-relay] [stdb-relay] Server ready — polling sidecar.
-[           resources] Started resource stdb-relay
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[ citizen-server-impl] server thread hitch warning: timer interval of 157 milliseconds
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[ citizen-server-impl] server thread hitch warning: timer interval of 155 milliseconds
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_c200f18b683320ff9b84a176b446bc359831d436af2555c406108de549fb5e83
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[ citizen-server-impl] server thread hitch warning: timer interval of 155 milliseconds
-║           Zerxis654║ restart stdb-relay
-[           resources] Stopping resource stdb-relay
-[    c-scripting-core] Creating script environments for stdb-relay
-[   script:stdb-relay] [stdb-relay] Server ready — polling sidecar.
-[           resources] Started resource stdb-relay
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_slot_7
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_slot_7
-║           Zerxis654║ restart stdb-relay
-[           resources] Stopping resource stdb-relay
-[    c-scripting-core] Creating script environments for stdb-relay
-[   script:stdb-relay] [stdb-relay] Server ready — polling sidecar.
-[           resources] Started resource stdb-relay
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[ citizen-server-impl] server thread hitch warning: timer interval of 171 milliseconds
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[      script:hardcap] Connecting: Joshua Sprigs
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[      script:hardcap] Connecting: Joshua Sprigs
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[ citizen-server-impl] server thread hitch warning: timer interval of 186 milliseconds
-[      script:hardcap] Connecting: Joshua Sprigs
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-║           Zerxis654║ restart stdb-relay
-[           resources] Stopping resource stdb-relay
-[    c-scripting-core] Creating script environments for stdb-relay
-[   script:stdb-relay] [stdb-relay] Server ready — polling sidecar.
-[           resources] Started resource stdb-relay
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-║             TXADMIN║ ================================================================
-║             TXADMIN║ ======== [47352] FXServer Starting - 2026/03/23, 04:25:02       
-║             TXADMIN║ ================================================================
-[           resources] Scanning resources.
-[           resources] Found 31 resources.
-[          svadhesive] Authenticating server license key...
-[          svadhesive] Server license key authentication succeeded. Welcome!
-[    c-scripting-core] Creating script environments for monitor
-[      script:monitor] [txAdmin] Resource v8.0.1 threads and commands set up. All Ready.
-[           resources] Started resource monitor
-[    c-scripting-core] Creating script environments for mapmanager
-[           resources] Started resource mapmanager
-[    c-scripting-core] Creating script environments for chat
-[           resources] Started resource chat
-[           resources] Started resource spawnmanager
-[    c-scripting-core] Creating script environments for sessionmanager
-[           resources] Started resource sessionmanager
-[   script:mapmanager] Started gametype Freeroam
-[           resources] Started resource basic-gamemode
-[    c-scripting-core] Creating script environments for hardcap
-[           resources] Started resource hardcap
-[    c-scripting-core] Creating script environments for stdb-relay
-[   script:stdb-relay] [stdb-relay] Server ready — polling sidecar.
-[           resources] Started resource stdb-relay
-[           resources] Started resource stdb-inventory
-[   script:mapmanager] Started map fivem-map-skater
-[           resources] Started resource fivem-map-skater
-[ citizen-server-impl]         fff                          
-[ citizen-server-impl]   cccc ff   xx  xx     rr rr    eee  
-[ citizen-server-impl] cc     ffff   xx       rrr  r ee   e 
-[ citizen-server-impl] cc     ff     xx   ... rr     eeeee  
-[ citizen-server-impl]  ccccc ff   xx  xx ... rr      eeeee 
-[ citizen-server-impl]                                      
-[ citizen-server-impl] Authenticated with cfx.re Nucleus: https://zerxis654-yog959.users.cfx.re/
-[      script:hardcap] Connecting: Joshua Sprigs
-[         script:chat] Joshua Sprigs: stdb:addItem weapon_pistol
-║           Zerxis654║ stdb:addItem weapon_pistol
-[                 cmd] No such command stdb:addItem.
-║           Zerxis654║ restart stdb-relay
-[           resources] Stopping resource stdb-relay
-[    c-scripting-core] Creating script environments for stdb-relay
-[   script:stdb-relay] [stdb-relay] Server ready — polling sidecar.
-[           resources] Started resource stdb-relay
-║           Zerxis654║ stdbgive 1 weapon_pistol 1
-[   script:stdb-relay] [stdbgive] {"ok":true,"owner_id":"c2001c987dce8d389c5ca3fc1db5e13bfa785d3a06546fd691547a0dba8d0993"}
-[         script:chat] Joshua Sprigs: stdbgive 1 weapon_pistol 1
-║           Zerxis654║ stdbgive 1 weapon_pistol 1
-[   script:stdb-relay] [stdbgive] {"ok":true,"owner_id":"c2001c987dce8d389c5ca3fc1db5e13bfa785d3a06546fd691547a0dba8d0993"}
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[ citizen-server-impl] server thread hitch warning: timer interval of 202 milliseconds
-║             TXADMIN║ ================================================================
-║             TXADMIN║ ======== [51568] FXServer Starting - 2026/03/23, 16:02:48       
-║             TXADMIN║ ================================================================
-[           resources] Scanning resources.
-[           resources] Found 31 resources.
-[          svadhesive] Authenticating server license key...
-[          svadhesive] Server license key authentication succeeded. Welcome!
-[    c-scripting-core] Creating script environments for monitor
-[      script:monitor] [txAdmin] Resource v8.0.1 threads and commands set up. All Ready.
-[           resources] Started resource monitor
-[    c-scripting-core] Creating script environments for mapmanager
-[           resources] Started resource mapmanager
-[    c-scripting-core] Creating script environments for chat
-[           resources] Started resource chat
-[           resources] Started resource spawnmanager
-[    c-scripting-core] Creating script environments for sessionmanager
-[           resources] Started resource sessionmanager
-[   script:mapmanager] Started gametype Freeroam
-[           resources] Started resource basic-gamemode
-[    c-scripting-core] Creating script environments for hardcap
-[           resources] Started resource hardcap
-[    c-scripting-core] Creating script environments for stdb-relay
-[   script:stdb-relay] [stdb-relay] Server ready — polling sidecar.
-[           resources] Started resource stdb-relay
-[           resources] Started resource stdb-inventory
-[   script:mapmanager] Started map fivem-map-hipster
-[           resources] Started resource fivem-map-hipster
-[ citizen-server-impl]         fff                          
-[ citizen-server-impl]   cccc ff   xx  xx     rr rr    eee  
-[ citizen-server-impl] cc     ffff   xx       rrr  r ee   e 
-[ citizen-server-impl] cc     ff     xx   ... rr     eeeee  
-[ citizen-server-impl]  ccccc ff   xx  xx ... rr      eeeee 
-[ citizen-server-impl]                                      
-[ citizen-server-impl] Authenticated with cfx.re Nucleus: https://zerxis654-yog959.users.cfx.re/
 ║             TXADMIN║ txaReportResources 
 [      script:monitor] [txAdmin] Sending resources list to txAdmin.
-║           Zerxis654║ ensure "bob74_ipl"
-║             TXADMIN║ txaReportResources 
+[      script:hardcap] Connecting: Joshua Sprigs
+[      script:hardcap] Connecting: Joshua Sprigs
+[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 4 stash=backpack_slot_4103
+[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774498715648289 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774498715648289 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774498805991163 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774498805991163 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774498805991163 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774498805991163 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:backpack_slot_4103 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774498805991163 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:backpack_slot_4103 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774498866791393 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:backpack_slot_4103 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774498805991163 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774498805991163 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774498805991163 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774498805991163 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774499095030674 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774499095030674 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:4 - Syncing via Delta Queue
+[ citizen-server-impl] server thread hitch warning: timer interval of 17016581 milliseconds
+[ citizen-server-impl] network thread hitch warning: timer interval of 17016549 milliseconds
+[ citizen-server-impl] sync thread hitch warning: timer interval of 17016549 milliseconds
+║             TXADMIN║ ================================================================
+║             TXADMIN║ ======== [62248] FXServer Starting - 2026/03/26, 14:37:18       
+║             TXADMIN║ ================================================================
+[           resources] Scanning resources.
+[           resources] Found 31 resources.
+[          svadhesive] Authenticating server license key...
+[          svadhesive] Server license key authentication succeeded. Welcome!
+[    c-scripting-core] Creating script environments for monitor
+[      script:monitor] [txAdmin] Resource v8.0.1 threads and commands set up. All Ready.
+[           resources] Started resource monitor
+[    c-scripting-core] Creating script environments for mapmanager
+[           resources] Started resource mapmanager
+[    c-scripting-core] Creating script environments for chat
+[           resources] Started resource chat
+[           resources] Started resource spawnmanager
+[    c-scripting-core] Creating script environments for sessionmanager
+[           resources] Started resource sessionmanager
+[   script:mapmanager] Started gametype Freeroam
+[           resources] Started resource basic-gamemode
+[    c-scripting-core] Creating script environments for hardcap
+[           resources] Started resource hardcap
+[    c-scripting-core] Creating script environments for stdb-relay
+[   script:stdb-relay] [stdb-relay] Server ready — polling sidecar.
+[           resources] Started resource stdb-relay
+[           resources] Started resource stdb-inventory
 [           resources] Started resource bob74_ipl
-[ citizen-server-impl] server thread hitch warning: timer interval of 754 milliseconds
-[      script:monitor] [txAdmin] Sending resources list to txAdmin.
-║           Zerxis654║ ensure "mnr_cayo"
-║             TXADMIN║ txaReportResources 
 [           resources] Started resource mnr_cayo
-[      script:monitor] [txAdmin] Sending resources list to txAdmin.
-║             TXADMIN║ txaReportResources 
-[      script:monitor] [txAdmin] Sending resources list to txAdmin.
-║             TXADMIN║ txaReportResources 
-[      script:monitor] [txAdmin] Sending resources list to txAdmin.
-[      script:hardcap] Connecting: Joshua Sprigs
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 1 stash=backpack_slot_4103
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[ citizen-server-impl] server thread hitch warning: timer interval of 173 milliseconds
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[ citizen-server-impl] server thread hitch warning: timer interval of 173 milliseconds
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[ citizen-server-impl] server thread hitch warning: timer interval of 154 milliseconds
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[ citizen-server-impl] server thread hitch warning: timer interval of 158 milliseconds
-[      script:hardcap] Connecting: Joshua Sprigs
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 2 stash=backpack_slot_8199
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[ citizen-server-impl] server thread hitch warning: timer interval of 202 milliseconds
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-║           Zerxis654║ stdbgive 1 weapon_pistol 1
-[   script:stdb-relay] [stdbgive] {"ok":true,"owner_id":"c2001c987dce8d389c5ca3fc1db5e13bfa785d3a06546fd691547a0dba8d0993"}
-║           Zerxis654║ stdbgive 2 weapon_pistol 1
-[   script:stdb-relay] [stdbgive] {"ok":true,"owner_id":"c2005e4410a77afff3f2f177bba1f937e733915d635673cfc38ec01e6243eaf4"}
-║           Zerxis654║ restart stdb-relay
-[           resources] Stopping resource stdb-relay
-[    c-scripting-core] Creating script environments for stdb-relay
-[   script:stdb-relay] [stdb-relay] Server ready — polling sidecar.
-[           resources] Started resource stdb-relay
-║           Zerxis654║ stdbgive 2 weapon_pistol 1
-[   script:stdb-relay] [stdbgive] {"ok":true,"owner_id":"c2005e4410a77afff3f2f177bba1f937e733915d635673cfc38ec01e6243eaf4"}
-[ citizen-server-impl] server thread hitch warning: timer interval of 172 milliseconds
-[ citizen-server-impl] server thread hitch warning: timer interval of 191 milliseconds
-[      script:hardcap] Connecting: Joshua Sprigs
-║           Zerxis654║ stdbgive 2 weapon_pistol 1
-[   script:stdb-relay] [stdbgive] {"ok":true,"owner_id":"c2005e4410a77afff3f2f177bba1f937e733915d635673cfc38ec01e6243eaf4"}
-║           Zerxis654║ stdbgive 3 weapon_pistol 1
-[   script:stdb-relay] [stdbgive] {"ok":true,"owner_id":"c200f84094960f3eb22fec3fb5c5bc94fbca266ae38795138245c22c1aedd477"}
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_slot_8212
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 3 stash=backpack_slot_8212
-║             TXADMIN║ ================================================================
-║             TXADMIN║ ======== [42236] FXServer Starting - 2026/03/23, 19:01:11       
-║             TXADMIN║ ================================================================
-[           resources] Scanning resources.
-[           resources] Found 31 resources.
-[          svadhesive] Authenticating server license key...
-[          svadhesive] Server license key authentication succeeded. Welcome!
-[    c-scripting-core] Creating script environments for monitor
-[      script:monitor] [txAdmin] Resource v8.0.1 threads and commands set up. All Ready.
-[           resources] Started resource monitor
-[    c-scripting-core] Creating script environments for mapmanager
-[           resources] Started resource mapmanager
-[    c-scripting-core] Creating script environments for chat
-[           resources] Started resource chat
-[           resources] Started resource spawnmanager
-[    c-scripting-core] Creating script environments for sessionmanager
-[           resources] Started resource sessionmanager
-[   script:mapmanager] Started gametype Freeroam
-[           resources] Started resource basic-gamemode
-[    c-scripting-core] Creating script environments for hardcap
-[           resources] Started resource hardcap
-[    c-scripting-core] Creating script environments for stdb-relay
-[   script:stdb-relay] [stdb-relay] Server ready — polling sidecar.
-[           resources] Started resource stdb-relay
-[           resources] Started resource stdb-inventory
-[           resources] Started resource mnr_cayo
-[           resources] Started resource bob74_ipl
 [   script:mapmanager] Started map fivem-map-hipster
 [           resources] Started resource fivem-map-hipster
 [ citizen-server-impl]         fff                          
@@ -459,117 +83,42 @@
 [ citizen-server-impl]                                      
 [ citizen-server-impl] Authenticated with cfx.re Nucleus: https://zerxis654-yog959.users.cfx.re/
 [      script:hardcap] Connecting: Joshua Sprigs
-[      script:hardcap] Connecting: Joshua Sprigs
-║             TXADMIN║ txaReportResources 
-[      script:monitor] [txAdmin] Sending resources list to txAdmin.
-║           Zerxis654║ refresh 
-║             TXADMIN║ txaReportResources 
-[           resources] Scanning resources.
-[           resources] Found 1 new resources, and refreshed 0/31 resources.
-[      script:monitor] [txAdmin] Sending resources list to txAdmin.
-║           Zerxis654║ ensure "FiveM-Peak-Check"
-║             TXADMIN║ txaReportResources 
-[resources:FiveM-Peak] Warning: could not find server_script `**/*Server.lua` (defined in fxmanifest.lua:8)
-[           resources] Started resource FiveM-Peak-Check (1 warning)
-[      script:monitor] [txAdmin] Sending resources list to txAdmin.
-║             TXADMIN║ txaReportResources 
-[      script:monitor] [txAdmin] Sending resources list to txAdmin.
-║           Zerxis654║ stop "FiveM-Peak-Check"
-║             TXADMIN║ txaReportResources 
-[           resources] Stopping resource FiveM-Peak-Check
-[      script:monitor] [txAdmin] Sending resources list to txAdmin.
-║             TXADMIN║ ================================================================
-║             TXADMIN║ ======== [25760] FXServer Starting - 2026/03/24, 05:32:21       
-║             TXADMIN║ ================================================================
-[           resources] Scanning resources.
-[           resources] Found 31 resources.
-[          svadhesive] Authenticating server license key...
-[          svadhesive] Server license key authentication succeeded. Welcome!
-[    c-scripting-core] Creating script environments for monitor
-[      script:monitor] [txAdmin] Resource v8.0.1 threads and commands set up. All Ready.
-[           resources] Started resource monitor
-[    c-scripting-core] Creating script environments for mapmanager
-[           resources] Started resource mapmanager
-[    c-scripting-core] Creating script environments for chat
-[           resources] Started resource chat
-[           resources] Started resource spawnmanager
-[    c-scripting-core] Creating script environments for sessionmanager
-[           resources] Started resource sessionmanager
-[   script:mapmanager] Started gametype Freeroam
-[           resources] Started resource basic-gamemode
-[    c-scripting-core] Creating script environments for hardcap
-[           resources] Started resource hardcap
-[    c-scripting-core] Creating script environments for stdb-relay
-[   script:stdb-relay] [stdb-relay] Server ready — polling sidecar.
-[           resources] Started resource stdb-relay
-[           resources] Started resource stdb-inventory
-[           resources] Started resource bob74_ipl
-[           resources] Started resource mnr_cayo
-[   script:mapmanager] Started map fivem-map-skater
-[           resources] Started resource fivem-map-skater
-[ citizen-server-impl]         fff                          
-[ citizen-server-impl]   cccc ff   xx  xx     rr rr    eee  
-[ citizen-server-impl] cc     ffff   xx       rrr  r ee   e 
-[ citizen-server-impl] cc     ff     xx   ... rr     eeeee  
-[ citizen-server-impl]  ccccc ff   xx  xx ... rr      eeeee 
-[ citizen-server-impl]                                      
-[ citizen-server-impl] Authenticated with cfx.re Nucleus: https://zerxis654-yog959.users.cfx.re/
-[      script:hardcap] Connecting: Joshua Sprigs
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 1 stash=backpack_slot_7
-[ citizen-server-impl] network thread hitch warning: timer interval of 31704567 milliseconds
-[ citizen-server-impl] sync thread hitch warning: timer interval of 31704567 milliseconds
-[ citizen-server-impl] server thread hitch warning: timer interval of 31704613 milliseconds
-[ citizen-server-impl] server thread hitch warning: timer interval of 170 milliseconds
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[ citizen-server-impl] server thread hitch warning: timer interval of 233 milliseconds
-[      script:hardcap] Connecting: Joshua Sprigs
-║           Zerxis654║ stdbgive 3 weapon_pistol 1
-[   script:stdb-relay] [stdbgive] nil
-║           Zerxis654║ stdbgive 2 weapon_pistol 1
-[   script:stdb-relay] [stdbgive] nil
-║           Zerxis654║ stdbgive 1 weapon_pistol 1
-[   script:stdb-relay] [stdbgive] nil
-║           Zerxis654║ stdbgive 4 weapon_pistol 1
-[   script:stdb-relay] [stdbgive] nil
-║           Zerxis654║ stdbgive 5 weapon_pistol 1
-[   script:stdb-relay] [stdbgive] nil
-║             TXADMIN║ ================================================================
-║             TXADMIN║ ======== [14524] FXServer Starting - 2026/03/24, 18:42:12       
-║             TXADMIN║ ================================================================
-[           resources] Scanning resources.
-[           resources] Found 31 resources.
-[          svadhesive] Authenticating server license key...
-[          svadhesive] Server license key authentication succeeded. Welcome!
-[    c-scripting-core] Creating script environments for monitor
-[      script:monitor] [txAdmin] Resource v8.0.1 threads and commands set up. All Ready.
-[           resources] Started resource monitor
-[    c-scripting-core] Creating script environments for mapmanager
-[           resources] Started resource mapmanager
-[    c-scripting-core] Creating script environments for chat
-[           resources] Started resource chat
-[           resources] Started resource spawnmanager
-[    c-scripting-core] Creating script environments for sessionmanager
-[           resources] Started resource sessionmanager
-[   script:mapmanager] Started gametype Freeroam
-[           resources] Started resource basic-gamemode
-[    c-scripting-core] Creating script environments for hardcap
-[           resources] Started resource hardcap
-[    c-scripting-core] Creating script environments for stdb-relay
-[   script:stdb-relay] [stdb-relay] Server ready — polling sidecar.
-[           resources] Started resource stdb-relay
-[           resources] Started resource stdb-inventory
-[           resources] Started resource bob74_ipl
-[           resources] Started resource mnr_cayo
-[   script:mapmanager] Started map fivem-map-skater
-[           resources] Started resource fivem-map-skater
-[ citizen-server-impl]         fff                          
-[ citizen-server-impl]   cccc ff   xx  xx     rr rr    eee  
-[ citizen-server-impl] cc     ffff   xx       rrr  r ee   e 
-[ citizen-server-impl] cc     ff     xx   ... rr     eeeee  
-[ citizen-server-impl]  ccccc ff   xx  xx ... rr      eeeee 
-[ citizen-server-impl]                                      
-[ citizen-server-impl] Authenticated with cfx.re Nucleus: https://zerxis654-yog959.users.cfx.re/
-[      script:hardcap] Connecting: Joshua Sprigs
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 1 stash=backpack_slot_7
+[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 1 stash=backpack_slot_8199
+[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 1 stash=backpack_slot_8199
+[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 1 stash=backpack_slot_8199
+[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 1 stash=backpack_slot_8199
+[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774530707787213 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774530707787213 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774530735082912 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774530735082912 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774530807278971 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774530807278971 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
+[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 1 stash=backpack_slot_8199
+[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 1 stash=backpack_slot_8199
+[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774530967063449 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774530967063449 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774530962542740 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774530962542740 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774531112609658 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774531112609658 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774531148359156 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774531148359156 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774531174301711 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774531174301711 - Syncing via Delta Queue
+[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue

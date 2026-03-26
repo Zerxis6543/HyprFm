@@ -204,7 +204,7 @@ export function EquipmentPanel() {
           border-radius: 3px 3px 0 0;
           padding: 3px 6px;
           white-space: nowrap;
-          overflow: hidden;
+          position: relative;
           text-overflow: ellipsis;
         }
         .e-slot-icon-char { font-size: 10px; line-height: 1; }

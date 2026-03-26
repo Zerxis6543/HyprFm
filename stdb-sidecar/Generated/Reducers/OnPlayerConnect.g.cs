@@ -12,12 +12,12 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void OnPlayerConnectHandler(ReducerEventContext ctx, string steamHex, string displayName, uint serverId, uint netId);
+        public delegate void OnPlayerConnectHandler(ReducerEventContext ctx, string steamHex, string displayName, uint serverId, uint netId, float heading);
         public event OnPlayerConnectHandler? OnOnPlayerConnect;
 
-        public void OnPlayerConnect(string steamHex, string displayName, uint serverId, uint netId)
+        public void OnPlayerConnect(string steamHex, string displayName, uint serverId, uint netId, float heading)
         {
-            conn.InternalCallReducer(new Reducer.OnPlayerConnect(steamHex, displayName, serverId, netId));
+            conn.InternalCallReducer(new Reducer.OnPlayerConnect(steamHex, displayName, serverId, netId, heading));
         }
 
         public bool InvokeOnPlayerConnect(ReducerEventContext ctx, Reducer.OnPlayerConnect args)
@@ -39,7 +39,8 @@ namespace SpacetimeDB.Types
                 args.SteamHex,
                 args.DisplayName,
                 args.ServerId,
-                args.NetId
+                args.NetId,
+                args.Heading
             );
             return true;
         }
@@ -59,18 +60,22 @@ namespace SpacetimeDB.Types
             public uint ServerId;
             [DataMember(Name = "net_id")]
             public uint NetId;
+            [DataMember(Name = "heading")]
+            public float Heading;
 
             public OnPlayerConnect(
                 string SteamHex,
                 string DisplayName,
                 uint ServerId,
-                uint NetId
+                uint NetId,
+                float Heading
             )
             {
                 this.SteamHex = SteamHex;
                 this.DisplayName = DisplayName;
                 this.ServerId = ServerId;
                 this.NetId = NetId;
+                this.Heading = Heading;
             }
 
             public OnPlayerConnect()

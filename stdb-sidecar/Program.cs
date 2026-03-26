@@ -14,6 +14,9 @@ class Program
     static DbConnection? _db;
     static readonly int _sidecarPort = 27200;
     static readonly ConcurrentQueue<InstructionQueue> _pending = new();
+    static readonly SemaphoreSlim _syncGate = new SemaphoreSlim(0, 1);
+
+    static readonly ConcurrentQueue<object> _deltaQueue = new();
 
     static async Task Main(string[] args)
     {
@@ -25,6 +28,8 @@ class Program
         Console.WriteLine($"[Sidecar] HTTP port   : {_sidecarPort}");
 
         _ = Task.Run(() => StartHttpListener());
+        _ = Task.Run(SeedItemsWhenReady);
+
         await Connect(stdbUri, stdbDb, token);
     }
 
@@ -73,11 +78,23 @@ class Program
 
     static void OnSubscriptionReady(SubscriptionEventContext ctx)
     {
-        Console.WriteLine("[Sidecar] Subscription active. Seeding items...");
-          _db!.Db.InstructionQueue.OnInsert += OnInstructionInserted;
-          // Wait for SpacetimeDB to fully sync before seeding
-          Thread.Sleep(2000);
-          SeedItems();
+        Console.WriteLine("[Sidecar] Subscription active. Signaling background tasks...");
+        
+        _db!.Db.InstructionQueue.OnInsert += OnInstructionInserted;
+
+        _db!.Db.InventorySlot.OnInsert += (evCtx, slot) => {
+            _deltaQueue.Enqueue(new { type = "added", slot = slot, owner_id = slot.OwnerId });
+        };
+
+        _db!.Db.InventorySlot.OnUpdate += (evCtx, oldSlot, newSlot) => {
+            _deltaQueue.Enqueue(new { type = "updated", slot = newSlot, owner_id = newSlot.OwnerId });
+        };
+
+        _db!.Db.InventorySlot.OnDelete += (evCtx, slot) => {
+            _deltaQueue.Enqueue(new { type = "deleted", slot_id = slot.Id, owner_id = slot.OwnerId });
+        };
+
+        _syncGate.Release();
     }
 
     static void OnInstructionInserted(EventContext ctx, InstructionQueue row)
@@ -154,6 +171,17 @@ class Program
                 return;
             }
 
+            if (ctx.Request.HttpMethod == "GET" && path == "/slot-deltas")
+            {
+                var deltas = new List<object>();
+                while (_deltaQueue.TryDequeue(out var delta))
+                {
+                    deltas.Add(delta);
+                }
+                await WriteJson(ctx, deltas);
+                return;
+            }
+
             // ── POST /consumed — Lua confirms instructions were processed ──────
             if (ctx.Request.HttpMethod == "POST" && path == "/consumed")
             {
@@ -191,7 +219,8 @@ class Program
                             args.GetProperty("steam_hex").GetString()    ?? "",
                             args.GetProperty("display_name").GetString() ?? "",
                             args.GetProperty("server_id").GetUInt32(),
-                            args.GetProperty("net_id").GetUInt32()
+                            args.GetProperty("net_id").GetUInt32(),
+                            args.TryGetProperty("heading", out var h) ? h.GetSingle() : 0.0f
                         );
                         break;
 
@@ -379,9 +408,9 @@ class Program
                                     var identityStr = session.Identity.ToString().ToLower();
                                     if (identityStr.StartsWith("0x")) identityStr = identityStr.Substring(2);
                                     ownerId = identityStr;
-                                    Console.WriteLine($"[Sidecar] Looking for owner_id={identityStr}, slot count={_db.Db.InventorySlot.Iter().Count()}");
+                                    Console.WriteLine($"[Sidecar] Looking for owner_id={identityStr}, slot count={_db!.Db.InventorySlot.Iter().Count()}");
 
-                                    foreach (var s in _db.Db.InventorySlot.Iter()
+                                    foreach (var s in _db!.Db.InventorySlot.Iter()
                                         .Where(s => s.OwnerId == identityStr && s.OwnerType == "player"))
                                     {
                                         slots.Add(new {
@@ -395,7 +424,7 @@ class Program
                                         });
                                     }
 
-                                    foreach (var s in _db.Db.InventorySlot.Iter()
+                                    foreach (var s in _db!.Db.InventorySlot.Iter()
                                         .Where(s => s.OwnerId.StartsWith(identityStr + "_equip_") && s.OwnerType == "equip"))
                                     {
                                         equippedSlots.Add(new {
@@ -512,7 +541,7 @@ class Program
                                 : 5u;
                             string ownerType = inventoryType == "trunk" ? "vehicle_trunk" : "vehicle_glovebox";
 
-                            var slots = _db.Db.InventorySlot.Iter()
+                            var slots = _db!.Db.InventorySlot.Iter()
                                 .Where(s => s.OwnerId == plate && s.OwnerType == ownerType)
                                 .Select(s => new {
                                     id         = s.Id,
@@ -806,7 +835,7 @@ class Program
 
                             bool hasConfig = def != null;
 
-                            var slots = _db.Db.InventorySlot.Iter()
+                            var slots = _db!.Db.InventorySlot.Iter()
                                 .Where(s => s.OwnerId == stashId && s.OwnerType == "stash")
                                 .Select(s => new {
                                     id         = s.Id,
@@ -909,5 +938,14 @@ class Program
         ctx.Response.StatusCode  = 200;
         await ctx.Response.OutputStream.WriteAsync(bytes);
         ctx.Response.Close();
+    }
+
+    static async Task SeedItemsWhenReady()
+    {
+        await _syncGate.WaitAsync();
+        Console.WriteLine("[Sidecar] Seeding item definitions...");
+        
+        // Assuming your existing SeedItems() call
+        SeedItems(); 
     }
 }

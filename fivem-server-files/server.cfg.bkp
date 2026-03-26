@@ -36,9 +36,8 @@ ensure basic-gamemode
 ensure hardcap
 ensure stdb-relay
 ensure stdb-inventory
-ensure standalone
-
-# start bob74_ipl
+ensure [standalone]
+ensure [mlo]
 
 ## Add system admins
 add_ace group.admin command allow # allow all commands

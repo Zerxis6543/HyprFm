@@ -235,7 +235,7 @@ export function ContextMenu() {
       <style>{`
         .ctx-menu {
           position: fixed;
-          z-index: 9999;
+          z-index: 999999;
           background: rgba(8,10,14,0.97);
           border: 1px solid var(--border);
           border-radius: var(--radius);

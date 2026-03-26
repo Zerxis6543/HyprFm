@@ -3,51 +3,8 @@ local netIdToServerId = {}
 local openInventories = {}  -- tracks who has what open: source → { ownerType, ownerId }
 
 local function broadcastInventoryUpdate(ownerType, ownerId)
-    for src, info in pairs(openInventories) do
-        local primaryMatch   = info.primary   and info.primary.ownerType   == ownerType and info.primary.ownerId   == ownerId
-        local secondaryMatch = info.secondary and info.secondary.ownerType == ownerType and info.secondary.ownerId == ownerId
-        if primaryMatch or secondaryMatch then
-            local capturedSrc = src
-            if ownerType == "player" then
-                -- Player inventory: use get_player_inventory with server_id (handles identity lookup)
-                local serverId = tonumber(src)
-                PerformHttpRequest(SIDECAR_URL .. "reducer",
-                    function(status, body, _)
-                        if status ~= 200 or not body then return end
-                        local ok, result = pcall(json.decode, body)
-                        if ok and result and result.slots then
-                            TriggerClientEvent("stdb:syncSlots", capturedSrc, {
-                                ownerType = "player",
-                                ownerId   = ownerId,
-                                slots     = result.slots,
-                            })
-                        end
-                    end,
-                    "POST",
-                    json.encode({ name = "get_player_inventory", args = { server_id = serverId } }),
-                    { ["Content-Type"] = "application/json" }
-                )
-            else
-                -- Vehicle/stash inventory: use get_inventory_slots directly
-                PerformHttpRequest(SIDECAR_URL .. "reducer",
-                    function(status, body, _)
-                        if status ~= 200 or not body then return end
-                        local ok, result = pcall(json.decode, body)
-                        if ok and result and result.slots then
-                            TriggerClientEvent("stdb:syncSlots", capturedSrc, {
-                                ownerType = ownerType,
-                                ownerId   = ownerId,
-                                slots     = result.slots,
-                            })
-                        end
-                    end,
-                    "POST",
-                    json.encode({ name = "get_inventory_slots", args = { owner_type = ownerType, owner_id = ownerId } }),
-                    { ["Content-Type"] = "application/json" }
-                )
-            end
-        end
-    end
+    -- Just a debug print so you can see it working in the console
+    print(("^2[Inventory]^7 Internal state change detected for %s:%s - Syncing via Delta Queue"):format(ownerType, ownerId))
 end
 
 local clientSideNatives = {
@@ -783,9 +740,7 @@ RegisterCommand("stdbgive", function(source, args)
     PerformHttpRequest(SIDECAR_URL .. "reducer",
         function(status, body, _)
             print("[stdbgive] " .. tostring(body))
-            Citizen.SetTimeout(300, function()
-                broadcastInventoryUpdate("player", tostring(targetId))
-            end)
+            print("[stdbgive] Item given. Delta sync will handle the UI update.")
         end,
         "POST",
         json.encode({ name = "give_item_to_player", args = {
@@ -796,5 +751,29 @@ RegisterCommand("stdbgive", function(source, args)
         { ["Content-Type"] = "application/json" }
     )
 end, true)
+
+Citizen.CreateThread(function()
+    while true do
+        Citizen.Wait(100) -- Check for changes 10 times per second
+        
+        PerformHttpRequest(SIDECAR_URL .. "slot-deltas", function(status, body, _)
+            if status ~= 200 or not body then return end
+            
+            local ok, deltas = pcall(json.decode, body)
+            if not (ok and #deltas > 0) then return end
+
+            for _, delta in ipairs(deltas) do
+                -- Logic: Find which player needs this update
+                -- In SpacetimeDB, owner_id is the Hex Identity
+                for src, info in pairs(openInventories) do
+                    -- Check if the delta belongs to a player's open inventory
+                    if delta.owner_id == info.primary.ownerId or (info.secondary and delta.owner_id == info.secondary.ownerId) then
+                        TriggerClientEvent("stdb:applyInventoryDelta", src, delta)
+                    end
+                end
+            end
+        end, "GET", "")
+    end
+end)
 
 print("[stdb-relay] Server ready — polling sidecar.")

@@ -71,8 +71,8 @@ pub fn request_spawn(
     ctx.db.instruction_queue().insert(InstructionQueue {
         id: 0,
         target_entity_net_id: session.net_id,
-        native_key: "SET_ENTITY_COORDS".to_string(),
-        payload: json!([spawn_x, spawn_y, spawn_z, false, false, true]).to_string(),
+        opcode: opcodes::entity::SET_COORDS,
+        payload: json!([x, y, z, false, false, true]),
         queued_at: ctx.timestamp,
         consumed: false,
     });
@@ -81,8 +81,8 @@ pub fn request_spawn(
     ctx.db.instruction_queue().insert(InstructionQueue {
         id: 0,
         target_entity_net_id: session.net_id,
-        native_key: "FREEZE_ENTITY_POSITION".to_string(),
-        payload: json!([false]).to_string(),
+        opcode: opcodes::entity::SET_FROZEN
+        payload: json!([false])
         queued_at: ctx.timestamp,
         consumed: false,
     });
