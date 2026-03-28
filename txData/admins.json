@@ -1,1 +1,38 @@
-[{"$schema":1,"name":"Zerxis654","master":true,"password_hash":"$2a$11$MuF40q5f2pCV/cgvQCUJoO/2t.UJ0Hz5jsNPYX8FavCRBYdE3zeU.","providers":{"citizenfx":{"id":"Zerxis654","identifier":"fivem:2412049","data":{}}},"permissions":[]}]
+[
+  {
+    "$schema": 1,
+    "name": "Zerxis654",
+    "master": true,
+    "password_hash": "$2a$11$MuF40q5f2pCV/cgvQCUJoO/2t.UJ0Hz5jsNPYX8FavCRBYdE3zeU.",
+    "providers": {
+      "citizenfx": {
+        "id": "Zerxis654",
+        "identifier": "fivem:2412049",
+        "data": {}
+      }
+    },
+    "permissions": []
+  },
+  {
+    "$schema": 1,
+    "name": "bakihanma",
+    "master": false,
+    "password_hash": "$2a$11$jku00dA6amloUNXvCQbNoe7J/d8aHQ52pEiVqipHJEdPfjLBudIlW",
+    "password_temporary": true,
+    "providers": {
+      "citizenfx": {
+        "id": "Chippie_ZA",
+        "identifier": "fivem:11168673",
+        "data": {}
+      },
+      "discord": {
+        "id": "1050490178956963900",
+        "identifier": "discord:1050490178956963900",
+        "data": {}
+      }
+    },
+    "permissions": [
+      "all_permissions"
+    ]
+  }
+]

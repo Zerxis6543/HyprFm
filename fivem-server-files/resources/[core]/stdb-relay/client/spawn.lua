@@ -118,3 +118,15 @@ AddEventHandler("onClientResourceStart", function(resourceName)
     if resourceName ~= GetCurrentResourceName() then return end
     TriggerServerEvent("stdb:clientReady")
 end)
+
+-- This native event fires once the player has finished loading and character is created
+AddEventHandler('playerSpawned', function()
+    local ped = PlayerPedId()
+    
+    -- We need the NetID so the database knows which 'entity' owns the player
+    local netId = NetworkGetNetworkIdFromEntity(ped)
+    local heading = GetEntityHeading(ped)
+    
+    -- Trigger the server-side logic we just added above
+    TriggerServerEvent("stdb:playerConnected", netId, heading)
+end)

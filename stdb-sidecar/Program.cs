@@ -259,7 +259,6 @@ class Program
                             ulong tSlotId   = args.GetProperty("slot_id").GetUInt64();
                             uint  tServerId = args.GetProperty("server_id").GetUInt32();
                         
-                            // ── Identity resolution stays in C# — only ActiveSession has this mapping
                             var tSession = _db!.Db.ActiveSession.Iter()
                                 .FirstOrDefault(a => a.ServerId == tServerId);
                         
@@ -272,7 +271,6 @@ class Program
                             var tIdentity = tSession.Identity.ToString().ToLower();
                             if (tIdentity.StartsWith("0x")) tIdentity = tIdentity.Substring(2);
                         
-                            // ── Resolve the item being transferred so we can pass it to give_item_to_identity
                             var tSlot = _db!.Db.InventorySlot.Iter().FirstOrDefault(s => s.Id == tSlotId);
                             if (tSlot == null || string.IsNullOrEmpty(tSlot.OwnerId))
                             {
@@ -282,9 +280,6 @@ class Program
                         
                             try
                             {
-                                // ── Remove from source first, then give to target
-                                // This two-step approach lets each Rust transaction stay focused.
-                                // give_item_to_identity handles: weight gate + stack merge + slot-finding
                                 _db!.Reducers.RemoveItem(tSlot.OwnerId, tSlot.ItemId, tSlot.Quantity);
                                 _db!.Reducers.GiveItemToIdentity(tIdentity, tSlot.ItemId, tSlot.Quantity, tSlot.Metadata);
                                 await WriteJson(ctx, new { ok = true, owner_id = tIdentity });
@@ -391,478 +386,321 @@ class Program
 
                     // ── Data queries (return JSON directly) ────────────────────
                     case "get_player_inventory":
+                    {
+                        uint   serverId      = args.GetProperty("server_id").GetUInt32();
+                        var    slots         = new List<object>();
+                        var    equippedSlots = new List<object>();
+                        var    defs          = new Dictionary<string, object>();
+                        string ownerId       = "";
+
+                        try
                         {
-                            uint   serverId      = args.GetProperty("server_id").GetUInt32();
-                            var    slots         = new List<object>();
-                            var    equippedSlots = new List<object>();
-                            var    defs          = new Dictionary<string, object>();
-                            string ownerId       = "";
+                            var session = _db.Db.ActiveSession.Iter()
+                                .FirstOrDefault(a => a.ServerId == serverId);
 
-                            try
+                            if (session != null)
                             {
-                                var session = _db.Db.ActiveSession.Iter()
-                                    .FirstOrDefault(a => a.ServerId == serverId);
+                                var identityStr = session.Identity.ToString().ToLower();
+                                if (identityStr.StartsWith("0x")) identityStr = identityStr.Substring(2);
+                                ownerId = identityStr;
 
-                                if (session != null)
+                                foreach (var s in _db!.Db.InventorySlot.Iter()
+                                    .Where(s => s.OwnerId == identityStr && s.OwnerType == "player"))
                                 {
-                                    var identityStr = session.Identity.ToString().ToLower();
-                                    if (identityStr.StartsWith("0x")) identityStr = identityStr.Substring(2);
-                                    ownerId = identityStr;
-                                    Console.WriteLine($"[Sidecar] Looking for owner_id={identityStr}, slot count={_db!.Db.InventorySlot.Iter().Count()}");
-
-                                    foreach (var s in _db!.Db.InventorySlot.Iter()
-                                        .Where(s => s.OwnerId == identityStr && s.OwnerType == "player"))
-                                    {
-                                        slots.Add(new {
-                                            id         = s.Id,
-                                            owner_id   = s.OwnerId,
-                                            owner_type = s.OwnerType,
-                                            item_id    = s.ItemId,
-                                            quantity   = s.Quantity,
-                                            metadata   = s.Metadata,
-                                            slot_index = s.SlotIndex,
-                                        });
-                                    }
-
-                                    foreach (var s in _db!.Db.InventorySlot.Iter()
-                                        .Where(s => s.OwnerId.StartsWith(identityStr + "_equip_") && s.OwnerType == "equip"))
-                                    {
-                                        equippedSlots.Add(new {
-                                            id         = s.Id,
-                                            owner_id   = s.OwnerId,
-                                            owner_type = s.OwnerType,
-                                            item_id    = s.ItemId,
-                                            quantity   = s.Quantity,
-                                            metadata   = s.Metadata,
-                                            slot_index = s.SlotIndex,
-                                            equip_key  = s.OwnerId.Replace(identityStr + "_equip_", ""),
-                                        });
-                                    }
+                                    slots.Add(new {
+                                        id         = s.Id,
+                                        owner_id   = s.OwnerId,
+                                        owner_type = s.OwnerType,
+                                        item_id    = s.ItemId,
+                                        quantity   = s.Quantity,
+                                        metadata   = s.Metadata,
+                                        slot_index = s.SlotIndex,
+                                    });
                                 }
 
-                                foreach (var d in _db.Db.ItemDefinition.Iter())
+                                foreach (var s in _db!.Db.InventorySlot.Iter()
+                                    .Where(s => s.OwnerId.StartsWith(identityStr + "_equip_") && s.OwnerType == "equip"))
                                 {
-                                    defs[d.ItemId] = new {
-                                        item_id   = d.ItemId,
-                                        label     = d.Label,
-                                        weight    = d.Weight,
-                                        stackable = d.Stackable,
-                                        usable    = d.Usable,
-                                        max_stack = d.MaxStack,
-                                        category        = d.Category,
-                                        prop_model      = d.PropModel,
-                                        mag_capacity    = d.MagCapacity,
-                                        stored_capacity = d.StoredCapacity,
-                                        ammo_type       = d.AmmoType,
-                                    };
+                                    equippedSlots.Add(new {
+                                        id         = s.Id,
+                                        owner_id   = s.OwnerId,
+                                        owner_type = s.OwnerType,
+                                        item_id    = s.ItemId,
+                                        quantity   = s.Quantity,
+                                        metadata   = s.Metadata,
+                                        slot_index = s.SlotIndex,
+                                        equip_key  = s.OwnerId.Replace(identityStr + "_equip_", ""),
+                                    });
                                 }
                             }
-                            catch (Exception ex)
+
+                            foreach (var d in _db.Db.ItemDefinition.Iter())
                             {
-                                Console.WriteLine($"[Sidecar] get_player_inventory error: {ex.Message}");
-                            }
-
-                            // If backpack is equipped, include its inventory data inline
-                            object? backpackData = null;
-                            try
-                            {
-                                var bpSlot = _db!.Db.InventorySlot.Iter()
-                                    .FirstOrDefault(s => s.OwnerId == ownerId + "_equip_backpack" && s.OwnerType == "equip");
-                                if (bpSlot != null && !string.IsNullOrEmpty(bpSlot.OwnerId))
-                                {
-                                    string bpStashId     = $"backpack_slot_{bpSlot.Id}";
-                                    string bpStashIdLegacy = $"backpack_{ownerId}";
-                                    string bpItemId  = bpSlot.ItemId;
-                                    uint   bpMaxSlots = bpItemId == "duffel_bag" ? 30u : 20u;
-                                    float  bpWeight  = bpItemId == "duffel_bag" ? 50f  : 30f;
-                                    string bpLabel   = bpItemId == "duffel_bag" ? "DUFFEL BAG" : "BACKPACK";
-                                    try { _db!.Reducers.CreateStash(bpStashId, "backpack", bpLabel, bpMaxSlots, bpWeight, ownerId, 0f, 0f, 0f); } catch { }
-                                // Check both new (slot-based) and legacy (identity-based) stash IDs
-                                    var bpSlotList = _db!.Db.InventorySlot.Iter()
-                                        .Where(s => (s.OwnerId == bpStashId || s.OwnerId == bpStashIdLegacy) && s.OwnerType == "stash")
-                                        .Select(s => (object)new {
-                                            id = s.Id, owner_id = s.OwnerId, owner_type = s.OwnerType,
-                                            item_id = s.ItemId, quantity = s.Quantity,
-                                            metadata = s.Metadata, slot_index = s.SlotIndex,
-                                        }).ToList();
-
-                                    // Migrate legacy items to new stash ID
-                                    bool hasLegacy = _db!.Db.InventorySlot.Iter()
-                                        .Any(s => s.OwnerId == bpStashIdLegacy && s.OwnerType == "stash");
-                                    if (hasLegacy)
-                                    {
-                                        Console.WriteLine($"[Sidecar] Migrating backpack items from {bpStashIdLegacy} to {bpStashId}");
-                                        try { _db!.Reducers.CreateStash(bpStashId, "backpack", bpLabel, bpMaxSlots, bpWeight, ownerId, 0f, 0f, 0f); } catch { }
-                                        foreach (var legacySlot in _db!.Db.InventorySlot.Iter()
-                                            .Where(s => s.OwnerId == bpStashIdLegacy && s.OwnerType == "stash").ToList())
-                                        {
-                                            try { _db!.Reducers.TransferItem(legacySlot.Id, bpStashId, "stash", legacySlot.SlotIndex); } catch { }
-                                        }
-                                    }
-
-                                    backpackData = new {
-                                        stash_id   = bpStashId,
-                                        label      = bpLabel,
-                                        max_weight = bpWeight,
-                                        max_slots  = (int)bpMaxSlots,
-                                        slots      = bpSlotList,
-                                    };
-                                }
-                            }
-                            catch (Exception ex) { Console.WriteLine($"[Sidecar] backpack inline error: {ex.Message}"); }
-
-                            await WriteJson(ctx, new {
-                                server_id      = serverId,
-                                owner_id       = ownerId,
-                                slots,
-                                equipped_slots = equippedSlots,
-                                backpack_data  = backpackData,
-                                item_defs      = defs,
-                                max_weight     = 85,
-                            });
-                            return;
-                        }
-
-                    case "get_vehicle_inventory":
-                        {
-                            string plate         = args.GetProperty("plate").GetString()          ?? "";
-                            string inventoryType = args.GetProperty("inventory_type").GetString() ?? "glovebox";
-                            // inventory_type = "glovebox" | "trunk"
-
-                            var config = _db.Db.VehicleInventory.Iter()
-                                .FirstOrDefault(v => v.Plate == plate);
-
-                            bool   hasConfig = config != null; 
-                            float  maxWeight = inventoryType == "trunk"
-                                ? (hasConfig ? config.TrunkMaxWeight : 50f)
-                                : 10f;
-                            uint   maxSlots  = inventoryType == "trunk"
-                                ? (hasConfig ? config.TrunkSlots : 20u)
-                                : 5u;
-                            string ownerType = inventoryType == "trunk" ? "vehicle_trunk" : "vehicle_glovebox";
-
-                            var slots = _db!.Db.InventorySlot.Iter()
-                                .Where(s => s.OwnerId == plate && s.OwnerType == ownerType)
-                                .Select(s => new {
-                                    id         = s.Id,
-                                    owner_id   = s.OwnerId,
-                                    owner_type = s.OwnerType,
-                                    item_id    = s.ItemId,
-                                    quantity   = s.Quantity,
-                                    metadata   = s.Metadata,
-                                    slot_index = s.SlotIndex,
-                                });
-
-                            var defs = _db.Db.ItemDefinition.Iter()
-                                .ToDictionary(d => d.ItemId, d => (object)new {
-                                    item_id         = d.ItemId,   label     = d.Label,
-                                    weight          = d.Weight,   stackable = d.Stackable,
-                                    usable          = d.Usable,   max_stack = d.MaxStack,
-                                    category        = d.Category, prop_model = d.PropModel,
+                                defs[d.ItemId] = new {
+                                    item_id         = d.ItemId,
+                                    label           = d.Label,
+                                    weight          = d.Weight,
+                                    stackable       = d.Stackable,
+                                    usable          = d.Usable,
+                                    max_stack       = d.MaxStack,
+                                    category        = d.Category,
+                                    prop_model      = d.PropModel,
                                     mag_capacity    = d.MagCapacity,
                                     stored_capacity = d.StoredCapacity,
                                     ammo_type       = d.AmmoType,
-                                });
-
-                            await WriteJson(ctx, new {
-                                plate,
-                                inventory_type = inventoryType,
-                                trunk_type     = hasConfig ? config.TrunkType : "none",
-                                slots,
-                                item_defs      = defs,
-                                max_weight     = maxWeight,
-                                max_slots      = maxSlots,
-                            });
-                            return;
+                                };
+                            }
                         }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[Sidecar] get_player_inventory error: {ex.Message}");
+                        }
+
+                        object? backpackData = null;
+                        try
+                        {
+                            var bpSlot = _db!.Db.InventorySlot.Iter()
+                                .FirstOrDefault(s => s.OwnerId == ownerId + "_equip_backpack" && s.OwnerType == "equip");
+                            if (bpSlot != null && !string.IsNullOrEmpty(bpSlot.OwnerId))
+                            {
+                                string bpStashId      = $"backpack_slot_{bpSlot.Id}";
+                                string bpStashIdLegacy = $"backpack_{ownerId}";
+                                string bpItemId   = bpSlot.ItemId;
+                                uint   bpMaxSlots = bpItemId == "duffel_bag" ? 30u : 20u;
+                                float  bpWeight   = bpItemId == "duffel_bag" ? 50f  : 30f;
+                                string bpLabel    = bpItemId == "duffel_bag" ? "DUFFEL BAG" : "BACKPACK";
+                                try { _db!.Reducers.CreateStash(bpStashId, "backpack", bpLabel, bpMaxSlots, bpWeight, ownerId, 0f, 0f, 0f); } catch { }
+
+                                var bpSlotList = _db!.Db.InventorySlot.Iter()
+                                    .Where(s => (s.OwnerId == bpStashId || s.OwnerId == bpStashIdLegacy) && s.OwnerType == "stash")
+                                    .Select(s => (object)new {
+                                        id = s.Id, owner_id = s.OwnerId, owner_type = s.OwnerType,
+                                        item_id = s.ItemId, quantity = s.Quantity,
+                                        metadata = s.Metadata, slot_index = s.SlotIndex,
+                                    }).ToList();
+
+                                backpackData = new {
+                                    stash_id   = bpStashId,
+                                    label      = bpLabel,
+                                    max_weight = bpWeight,
+                                    max_slots  = (int)bpMaxSlots,
+                                    slots      = bpSlotList,
+                                };
+                            }
+                        }
+                        catch (Exception ex) { Console.WriteLine($"[Sidecar] backpack inline error: {ex.Message}"); }
+
+                        await WriteJson(ctx, new {
+                            server_id      = serverId,
+                            owner_id       = ownerId,
+                            slots,
+                            equipped_slots = equippedSlots,
+                            backpack_data  = backpackData,
+                            item_defs      = defs,
+                            max_weight     = 85,
+                        });
+                        return;
+                    }
+
+                    case "get_vehicle_inventory":
+                    {
+                        string plate         = args.GetProperty("plate").GetString()          ?? "";
+                        string inventoryType = args.GetProperty("inventory_type").GetString() ?? "glovebox";
+
+                        var config   = _db.Db.VehicleInventory.Iter().FirstOrDefault(v => v.Plate == plate);
+                        bool hasConfig = config != null;
+                        float  maxWeight = inventoryType == "trunk" ? (hasConfig ? config.TrunkMaxWeight : 50f) : 10f;
+                        uint   maxSlots  = inventoryType == "trunk" ? (hasConfig ? config.TrunkSlots : 20u)     : 5u;
+                        string ownerType = inventoryType == "trunk"  ? "vehicle_trunk" : "vehicle_glovebox";
+
+                        var vSlots = _db!.Db.InventorySlot.Iter()
+                            .Where(s => s.OwnerId == plate && s.OwnerType == ownerType)
+                            .Select(s => new {
+                                id = s.Id, owner_id = s.OwnerId, owner_type = s.OwnerType,
+                                item_id = s.ItemId, quantity = s.Quantity,
+                                metadata = s.Metadata, slot_index = s.SlotIndex,
+                            });
+
+                        var vDefs = _db.Db.ItemDefinition.Iter()
+                            .ToDictionary(d => d.ItemId, d => (object)new {
+                                item_id = d.ItemId, label = d.Label, weight = d.Weight,
+                                stackable = d.Stackable, usable = d.Usable, max_stack = d.MaxStack,
+                                category = d.Category, prop_model = d.PropModel,
+                                mag_capacity = d.MagCapacity, stored_capacity = d.StoredCapacity,
+                                ammo_type = d.AmmoType,
+                            });
+
+                        await WriteJson(ctx, new {
+                            plate, inventory_type = inventoryType,
+                            trunk_type = hasConfig ? config.TrunkType : "none",
+                            slots      = vSlots,
+                            item_defs  = vDefs,
+                            max_weight = maxWeight,
+                            max_slots  = maxSlots,
+                        });
+                        return;
+                    }
 
                     case "get_inventory_slots":
-                        {
-                            string gsOwnerType = args.GetProperty("owner_type").GetString() ?? "";
-                            string gsOwnerId   = args.GetProperty("owner_id").GetString() ?? "";
-                            var gsSlots = _db!.Db.InventorySlot.Iter()
-                                .Where(s => s.OwnerId == gsOwnerId && s.OwnerType == gsOwnerType)
-                                .Select(s => (object)new {
-                                    id = s.Id, owner_id = s.OwnerId, owner_type = s.OwnerType,
-                                    item_id = s.ItemId, quantity = s.Quantity,
-                                    metadata = s.Metadata, slot_index = s.SlotIndex,
-                                }).ToList();
-                            await WriteJson(ctx, new { slots = gsSlots });
-                            return;
-                        }
+                    {
+                        string gsOwnerType = args.GetProperty("owner_type").GetString() ?? "";
+                        string gsOwnerId   = args.GetProperty("owner_id").GetString()   ?? "";
+                        var gsSlots = _db!.Db.InventorySlot.Iter()
+                            .Where(s => s.OwnerId == gsOwnerId && s.OwnerType == gsOwnerType)
+                            .Select(s => (object)new {
+                                id = s.Id, owner_id = s.OwnerId, owner_type = s.OwnerType,
+                                item_id = s.ItemId, quantity = s.Quantity,
+                                metadata = s.Metadata, slot_index = s.SlotIndex,
+                            }).ToList();
+                        await WriteJson(ctx, new { slots = gsSlots });
+                        return;
+                    }
 
                     case "merge_stacks":
-                        {
-                            ulong srcId = args.GetProperty("src_slot_id").GetUInt64();
-                            ulong dstId = args.GetProperty("dst_slot_id").GetUInt64();
-                            _db!.Reducers.MergeStacks(srcId, dstId);
-                            await WriteJson(ctx, new { ok = true });
-                            return;
-                        }
+                    {
+                        ulong srcId = args.GetProperty("src_slot_id").GetUInt64();
+                        ulong dstId = args.GetProperty("dst_slot_id").GetUInt64();
+                        _db!.Reducers.MergeStacks(srcId, dstId);
+                        await WriteJson(ctx, new { ok = true });
+                        return;
+                    }
 
                     case "open_backpack":
-                        {
-                            string bpIdentity = args.GetProperty("owner_identity").GetString() ?? "";
-                            string bagItemId  = args.GetProperty("bag_item_id").GetString() ?? "backpack";
-                            ulong  bagSlotId  = args.TryGetProperty("bag_slot_id", out var bsid) ? bsid.GetUInt64() : 0;
-                            // Use slot ID as stable stash key — survives ownership transfers
-                            string bpStashId  = bagSlotId > 0 ? $"backpack_slot_{bagSlotId}" : $"backpack_{bpIdentity}";
+                    {
+                        string bpIdentity = args.GetProperty("owner_identity").GetString() ?? "";
+                        string bagItemId  = args.GetProperty("bag_item_id").GetString()    ?? "backpack";
+                        ulong  bagSlotId  = args.TryGetProperty("bag_slot_id", out var bsid) ? bsid.GetUInt64() : 0;
+                        string bpStashId  = bagSlotId > 0 ? $"backpack_slot_{bagSlotId}" : $"backpack_{bpIdentity}";
+                        uint   bpSlots    = bagItemId == "duffel_bag" ? 30u : 20u;
+                        float  bpWeight   = bagItemId == "duffel_bag" ? 50f  : 30f;
+                        string bpLabel    = bagItemId == "duffel_bag" ? "DUFFEL BAG" : "BACKPACK";
+                        try { _db!.Reducers.CreateStash(bpStashId, "backpack", bpLabel, bpSlots, bpWeight, bpIdentity, 0f, 0f, 0f); } catch { }
 
-                            uint   bpSlots  = bagItemId == "duffel_bag" ? 30u : 20u;
-                            float  bpWeight = bagItemId == "duffel_bag" ? 50f  : 30f;
-                            string bpLabel  = bagItemId == "duffel_bag" ? "DUFFEL BAG" : "BACKPACK";
-
-                            try
-                            {
-                                _db!.Reducers.CreateStash(
-                                    bpStashId, "backpack", bpLabel,
-                                    bpSlots, bpWeight, bpIdentity, 0f, 0f, 0f);
-                            }
-                            catch { /* already exists */ }
-
-                            string bpStashIdLegacyOb = $"backpack_{bpIdentity}";
-                            // Migrate legacy items if needed
-                            bool hasLegacyOb = _db!.Db.InventorySlot.Iter()
-                                .Any(s => s.OwnerId == bpStashIdLegacyOb && s.OwnerType == "stash");
-                            if (hasLegacyOb)
-                            {
-                                Console.WriteLine($"[Sidecar] open_backpack: migrating {bpStashIdLegacyOb} -> {bpStashId}");
-                                try { _db!.Reducers.CreateStash(bpStashId, "backpack", bpLabel, bpSlots, bpWeight, bpIdentity, 0f, 0f, 0f); } catch { }
-                                foreach (var ls in _db!.Db.InventorySlot.Iter()
-                                    .Where(s => s.OwnerId == bpStashIdLegacyOb && s.OwnerType == "stash").ToList())
-                                {
-                                    try { _db!.Reducers.TransferItem(ls.Id, bpStashId, "stash", ls.SlotIndex); } catch { }
-                                }
-                            }
-                            var bpSlotList = _db!.Db.InventorySlot.Iter()
-                                .Where(s => (s.OwnerId == bpStashId || s.OwnerId == bpStashIdLegacyOb) && s.OwnerType == "stash")
-                                .Select(s => (object)new {
-                                    id = s.Id, owner_id = s.OwnerId, owner_type = s.OwnerType,
-                                    item_id = s.ItemId, quantity = s.Quantity,
-                                    metadata = s.Metadata, slot_index = s.SlotIndex,
-                                }).ToList();
-
-                            var bpDefs = _db!.Db.ItemDefinition.Iter()
-                                .ToDictionary(d => d.ItemId, d => (object)new {
-                                    item_id = d.ItemId, label = d.Label, weight = d.Weight,
-                                    stackable = d.Stackable, usable = d.Usable,
-                                    max_stack = d.MaxStack, category = d.Category,
-                                });
-
-                            await WriteJson(ctx, new {
-                                stash_id   = bpStashId,
-                                label      = bpLabel,
-                                max_weight = bpWeight,
-                                max_slots  = (int)bpSlots,
-                                slots      = bpSlotList,
-                                item_defs  = bpDefs,
+                        var bpSlotList = _db!.Db.InventorySlot.Iter()
+                            .Where(s => (s.OwnerId == bpStashId || s.OwnerId == $"backpack_{bpIdentity}") && s.OwnerType == "stash")
+                            .Select(s => (object)new {
+                                id = s.Id, owner_id = s.OwnerId, owner_type = s.OwnerType,
+                                item_id = s.ItemId, quantity = s.Quantity,
+                                metadata = s.Metadata, slot_index = s.SlotIndex,
+                            }).ToList();
+                        var bpDefs = _db!.Db.ItemDefinition.Iter()
+                            .ToDictionary(d => d.ItemId, d => (object)new {
+                                item_id = d.ItemId, label = d.Label, weight = d.Weight,
+                                stackable = d.Stackable, usable = d.Usable, max_stack = d.MaxStack, category = d.Category,
                             });
-                            return;
-                        }
+                        await WriteJson(ctx, new {
+                            stash_id = bpStashId, label = bpLabel,
+                            max_weight = bpWeight, max_slots = (int)bpSlots,
+                            slots = bpSlotList, item_defs = bpDefs,
+                        });
+                        return;
+                    }
 
                     case "drop_item_to_ground":
+                    {
+                        ulong dropSlotId = args.GetProperty("slot_id").GetUInt64();
+                        uint  dropQty    = args.TryGetProperty("quantity", out var dqEl) ? dqEl.GetUInt32() : 0;
+                        float dx = (float)args.GetProperty("x").GetDouble();
+                        float dy = (float)args.GetProperty("y").GetDouble();
+                        float dz = (float)args.GetProperty("z").GetDouble();
+                        var preDrop = _db!.Db.InventorySlot.Iter().FirstOrDefault(s => s.Id == dropSlotId);
+                        if (preDrop == null || string.IsNullOrEmpty(preDrop.OwnerId))
                         {
-                            ulong dropSlotId = args.GetProperty("slot_id").GetUInt64();
-                            uint  dropQty    = args.TryGetProperty("quantity", out var dqEl) ? dqEl.GetUInt32() : 0;
-                            float dx = (float)args.GetProperty("x").GetDouble();
-                            float dy = (float)args.GetProperty("y").GetDouble();
-                            float dz = (float)args.GetProperty("z").GetDouble();
-                        
-                            // ── Snapshot the slot before the reducer consumes it
-                            var preDrop = _db!.Db.InventorySlot.Iter().FirstOrDefault(s => s.Id == dropSlotId);
-                            if (preDrop == null || string.IsNullOrEmpty(preDrop.OwnerId))
-                            {
-                                await WriteJson(ctx, new { ok = false, error = "slot not found" });
-                                return;
-                            }
-                        
-                            try
-                            {
-                                // ── Rust does: spatial search → stash create → slot-find → transfer/split
-                                _db!.Reducers.DropItemToGround(dropSlotId, dropQty, dx, dy, dz);
-                            }
-                            catch (Exception ex)
-                            {
-                                Console.WriteLine($"[Sidecar] drop_item_to_ground error: {ex.Message}");
-                                await WriteJson(ctx, new { ok = false, error = ex.Message });
-                                return;
-                            }
-                        
-                            // ── Brief yield — lets SpacetimeDB commit before we query the result
-                            // The frame tick (50ms) handles subscription updates; this 80ms gap
-                            // ensures our read sees the committed state.
-                            await Task.Delay(80);
-                        
-                            // ── Query: find the ground stash Rust resolved/created near (dx, dy)
-                            float searchRadiusSq = 25f; // 5m radius
-                            var resolvedStash = _db!.Db.StashDefinition.Iter()
-                                .Where(s => s.StashType == "ground")
-                                .Where(s => {
-                                    float ex2 = s.PosX - dx, ey = s.PosY - dy;
-                                    return ex2*ex2 + ey*ey <= searchRadiusSq;
-                                })
-                                .OrderBy(s => {
-                                    float ex2 = s.PosX - dx, ey = s.PosY - dy;
-                                    return ex2*ex2 + ey*ey;
-                                })
-                                .FirstOrDefault();
-                        
-                            if (resolvedStash == null || string.IsNullOrEmpty(resolvedStash.StashId))
-                            {
-                                await WriteJson(ctx, new { ok = false, error = "ground stash not found after drop" });
-                                return;
-                            }
-                        
-                            // ── Find the new slot in the stash (the item Rust just moved/created)
-                            var newSlot = _db!.Db.InventorySlot.Iter()
-                                .Where(s => s.OwnerId == resolvedStash.StashId && s.OwnerType == "stash"
-                                        && s.ItemId  == preDrop.ItemId)
-                                .FirstOrDefault();
-                        
-                            await WriteJson(ctx, new {
-                                ok          = true,
-                                stash_id    = resolvedStash.StashId,
-                                new_slot_id = newSlot?.Id ?? 0UL,
-                            });
+                            await WriteJson(ctx, new { ok = false, error = "slot not found" });
                             return;
                         }
-
-                    case "split_stack":
+                        try { _db!.Reducers.DropItemToGround(dropSlotId, dropQty, dx, dy, dz); }
+                        catch (Exception ex)
                         {
-                            ulong splitId  = args.GetProperty("slot_id").GetUInt64();
-                            uint  splitAmt = args.GetProperty("amount").GetUInt32();
-                            _db!.Reducers.SplitStack(splitId, splitAmt);
-                            await WriteJson(ctx, new { ok = true });
+                            await WriteJson(ctx, new { ok = false, error = ex.Message });
                             return;
                         }
-
-                    case "get_stash_pos":
-                        {
-                            string spStashId = args.GetProperty("stash_id").GetString() ?? "";
-                            var spDef = _db!.Db.StashDefinition.Iter()
-                                .FirstOrDefault(s => s.StashId == spStashId);
-                            if (spDef != null)
-                            {
-                                await WriteJson(ctx, new {
-                                    pos_x = spDef.PosX,
-                                    pos_y = spDef.PosY,
-                                    pos_z = spDef.PosZ,
-                                });
-                            }
-                            else
-                            {
-                                await WriteJson(ctx, new { pos_x = 0f, pos_y = 0f, pos_z = 0f });
-                            }
-                            return;
-                        }
+                        await Task.Delay(80);
+                        float srSq = 25f;
+                        var resolvedStash = _db!.Db.StashDefinition.Iter()
+                            .Where(s => s.StashType == "ground")
+                            .Where(s => { float ex2 = s.PosX - dx, ey = s.PosY - dy; return ex2*ex2 + ey*ey <= srSq; })
+                            .OrderBy(s => { float ex2 = s.PosX - dx, ey = s.PosY - dy; return ex2*ex2 + ey*ey; })
+                            .FirstOrDefault();
+                        if (resolvedStash == null) { await WriteJson(ctx, new { ok = false, error = "ground stash not found" }); return; }
+                        var newSlot = _db!.Db.InventorySlot.Iter()
+                            .Where(s => s.OwnerId == resolvedStash.StashId && s.OwnerType == "stash" && s.ItemId == preDrop.ItemId)
+                            .FirstOrDefault();
+                        await WriteJson(ctx, new { ok = true, stash_id = resolvedStash.StashId, new_slot_id = newSlot?.Id ?? 0UL });
+                        return;
+                    }
 
                     case "find_or_create_ground_stash":
-                        {
-                            float gx = (float)args.GetProperty("x").GetDouble();
-                            float gy = (float)args.GetProperty("y").GetDouble();
-                            float gz = (float)args.GetProperty("z").GetDouble();
-                        
-                            // ── Rust does: spatial search → create if missing (all in one transaction)
-                            try
-                            {
-                                _db!.Reducers.FindOrCreateGroundStash(gx, gy, gz);
-                            }
-                            catch (Exception ex)
-                            {
-                                Console.WriteLine($"[Sidecar] find_or_create_ground_stash error: {ex.Message}");
-                                await WriteJson(ctx, new { ok = false, error = ex.Message });
-                                return;
-                            }
-                        
-                            // ── Brief yield — SpacetimeDB needs one frame tick to commit
-                            await Task.Delay(80);
-                        
-                            // ── Query: find the stash Rust resolved/created
-                            float gsRadiusSq = 25f;
-                            var gsStash = _db!.Db.StashDefinition.Iter()
-                                .Where(s => s.StashType == "ground")
-                                .Where(s => {
-                                    float ex2 = s.PosX - gx, ey = s.PosY - gy;
-                                    return ex2*ex2 + ey*ey <= gsRadiusSq;
-                                })
-                                .OrderBy(s => {
-                                    float ex2 = s.PosX - gx, ey = s.PosY - gy;
-                                    return ex2*ex2 + ey*ey;
-                                })
-                                .FirstOrDefault();
-                        
-                            string gsStashId = gsStash?.StashId ?? "";
-                            Console.WriteLine($"[Sidecar] Ground stash resolved: {gsStashId} at ({gx:F1},{gy:F1})");
-                        
-                            // ── Assemble the stash payload: contents + item definitions
-                            var gsSlots = _db!.Db.InventorySlot.Iter()
-                                .Where(s => s.OwnerId == gsStashId && s.OwnerType == "stash")
-                                .Select(s => (object)new {
-                                    id         = s.Id,
-                                    owner_id   = s.OwnerId,
-                                    owner_type = s.OwnerType,
-                                    item_id    = s.ItemId,
-                                    quantity   = s.Quantity,
-                                    metadata   = s.Metadata,
-                                    slot_index = s.SlotIndex,
-                                }).ToList();
-                        
-                            var gsDefs = _db!.Db.ItemDefinition.Iter()
-                                .ToDictionary(d => d.ItemId, d => (object)new {
-                                    item_id    = d.ItemId,   label      = d.Label,
-                                    weight     = d.Weight,   stackable  = d.Stackable,
-                                    usable     = d.Usable,   max_stack  = d.MaxStack,
-                                    category   = d.Category, prop_model = d.PropModel,
-                                });
-                        
-                            await WriteJson(ctx, new {
-                                stash_id   = gsStashId,
-                                label      = "GROUND",
-                                max_weight = 999f,
-                                max_slots  = 50,
-                                slots      = gsSlots,
-                                item_defs  = gsDefs,
+                    {
+                        float gx = (float)args.GetProperty("x").GetDouble();
+                        float gy = (float)args.GetProperty("y").GetDouble();
+                        float gz = (float)args.GetProperty("z").GetDouble();
+                        try { _db!.Reducers.FindOrCreateGroundStash(gx, gy, gz); }
+                        catch (Exception ex) { await WriteJson(ctx, new { ok = false, error = ex.Message }); return; }
+                        await Task.Delay(80);
+                        float gsRSq = 25f;
+                        var gsStash = _db!.Db.StashDefinition.Iter()
+                            .Where(s => s.StashType == "ground")
+                            .Where(s => { float ex2 = s.PosX - gx, ey = s.PosY - gy; return ex2*ex2 + ey*ey <= gsRSq; })
+                            .OrderBy(s => { float ex2 = s.PosX - gx, ey = s.PosY - gy; return ex2*ex2 + ey*ey; })
+                            .FirstOrDefault();
+                        string gsStashId = gsStash?.StashId ?? "";
+                        var gsSlots = _db!.Db.InventorySlot.Iter()
+                            .Where(s => s.OwnerId == gsStashId && s.OwnerType == "stash")
+                            .Select(s => (object)new {
+                                id = s.Id, owner_id = s.OwnerId, owner_type = s.OwnerType,
+                                item_id = s.ItemId, quantity = s.Quantity, metadata = s.Metadata, slot_index = s.SlotIndex,
+                            }).ToList();
+                        var gsDefs = _db!.Db.ItemDefinition.Iter()
+                            .ToDictionary(d => d.ItemId, d => (object)new {
+                                item_id = d.ItemId, label = d.Label, weight = d.Weight,
+                                stackable = d.Stackable, usable = d.Usable, max_stack = d.MaxStack,
+                                category = d.Category, prop_model = d.PropModel,
                             });
-                            return;
-                        }
+                        await WriteJson(ctx, new {
+                            stash_id = gsStashId, label = "GROUND", max_weight = 999f, max_slots = 50,
+                            slots = gsSlots, item_defs = gsDefs,
+                        });
+                        return;
+                    }
+
+                    case "get_stash_pos":
+                    {
+                        string spStashId = args.GetProperty("stash_id").GetString() ?? "";
+                        var spDef = _db!.Db.StashDefinition.Iter().FirstOrDefault(s => s.StashId == spStashId);
+                        await WriteJson(ctx, spDef != null
+                            ? new { pos_x = spDef.PosX, pos_y = spDef.PosY, pos_z = spDef.PosZ }
+                            : new { pos_x = 0f,         pos_y = 0f,         pos_z = 0f });
+                        return;
+                    }
 
                     case "get_stash_inventory":
-                        {
-                            string stashId = args.GetProperty("stash_id").GetString() ?? "";
-
-                            var def = _db.Db.StashDefinition.Iter()
-                                .FirstOrDefault(s => s.StashId == stashId);
-
-                            bool hasConfig = def != null;
-
-                            var slots = _db!.Db.InventorySlot.Iter()
-                                .Where(s => s.OwnerId == stashId && s.OwnerType == "stash")
-                                .Select(s => new {
-                                    id         = s.Id,
-                                    owner_id   = s.OwnerId,
-                                    owner_type = s.OwnerType,
-                                    item_id    = s.ItemId,
-                                    quantity   = s.Quantity,
-                                    metadata   = s.Metadata,
-                                    slot_index = s.SlotIndex,
-                                });
-
-                            var defs = _db.Db.ItemDefinition.Iter()
-                                .ToDictionary(d => d.ItemId, d => (object)new {
-                                    item_id = d.ItemId, label = d.Label, weight = d.Weight,
-                                    stackable = d.Stackable, usable = d.Usable, max_stack = d.MaxStack,
-                                });
-
-                            await WriteJson(ctx, new {
-                                stash_id   = stashId,
-                                label      = hasConfig ? def.Label     : stashId,
-                                max_weight = hasConfig ? def.MaxWeight : 100f,
-                                max_slots  = hasConfig ? def.MaxSlots  : 20u,
-                                slots,
-                                item_defs  = defs,
+                    {
+                        string stashId  = args.GetProperty("stash_id").GetString() ?? "";
+                        var def         = _db.Db.StashDefinition.Iter().FirstOrDefault(s => s.StashId == stashId);
+                        bool hasConfig  = def != null;
+                        var siSlots     = _db!.Db.InventorySlot.Iter()
+                            .Where(s => s.OwnerId == stashId && s.OwnerType == "stash")
+                            .Select(s => new {
+                                id = s.Id, owner_id = s.OwnerId, owner_type = s.OwnerType,
+                                item_id = s.ItemId, quantity = s.Quantity,
+                                metadata = s.Metadata, slot_index = s.SlotIndex,
                             });
-                            return;
-                        }
+                        var siDefs      = _db.Db.ItemDefinition.Iter()
+                            .ToDictionary(d => d.ItemId, d => (object)new {
+                                item_id = d.ItemId, label = d.Label, weight = d.Weight,
+                                stackable = d.Stackable, usable = d.Usable, max_stack = d.MaxStack,
+                            });
+                        await WriteJson(ctx, new {
+                            stash_id   = stashId,
+                            label      = hasConfig ? def.Label     : stashId,
+                            max_weight = hasConfig ? def.MaxWeight : 100f,
+                            max_slots  = hasConfig ? def.MaxSlots  : 20u,
+                            slots      = siSlots,
+                            item_defs  = siDefs,
+                        });
+                        return;
+                    }
 
                     case "give_item_to_player":
                         {

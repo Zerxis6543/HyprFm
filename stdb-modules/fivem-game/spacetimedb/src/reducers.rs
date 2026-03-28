@@ -13,6 +13,27 @@ pub fn mark_instruction_consumed(ctx: &ReducerContext, id: u64) {
     }
 }
 
+/// produce identical metadata shapes
+fn build_starter_metadata(
+    ctx:     &ReducerContext,
+    def:     &ItemDefinition,
+    suffix:  u32,           // unique-per-item counter within the same reducer call
+) -> String {
+    if def.category == "weapon" {
+        // Combine timestamp microseconds + suffix to make serial unique even
+        // when multiple weapons are given in the same reducer transaction.
+        let serial = format!(
+            "WPN-{:08X}",
+            (ctx.timestamp.to_micros_since_unix_epoch() as u32).wrapping_add(suffix)
+        );
+        format!(
+            r#"{{"serial":"{}","mag_ammo":0,"stored_ammo":0,"mag_capacity":{},"stored_capacity":{},"durability":100,"ammo_type":"{}"}}"#,
+            serial, def.mag_capacity, def.stored_capacity, def.ammo_type
+        )
+    } else {
+        "{}".to_string()
+    }
+}
 // ── PLAYER ────────────────────────────────────────────────────────────────────
 
 #[spacetimedb::reducer]
@@ -44,33 +65,38 @@ pub fn on_player_connect(
 
         // Give starter items to new players
         let owner_id = identity.to_hex().to_string();
-        let starters: &[(&str, u32, &str)] = &[
-            ("phone",         1,   "{}"),
-            ("id_card",       1,   "{}"),
-            ("water_bottle",  2,   "{}"),
-            ("food_burger",   1,   "{}"),
-            ("bandage",       5,   "{}"),
-            ("cash",          500, "{}"),
-            ("backpack",      1,   "{}"),
-            ("weapon_pistol", 1,   "{}"),
-            ("ammo_pistol",   50,  "{}"),
-            ("parachute",     1,   "{}"),
-            ("body_armour",   1,   "{}"),
+        let starters: &[(&str, u32)] = &[
+            ("phone",         1),
+            ("id_card",       1),
+            ("water_bottle",  2),
+            ("food_burger",   1),
+            ("bandage",       5),
+            ("cash",          500),
+            ("backpack",      1),
+            ("weapon_pistol", 1),
+            ("ammo_pistol",   50),
+            ("parachute",     1),
+            ("body_armour",   1),
         ];
-        for (item_id, quantity, metadata) in starters {
-            if ctx.db.item_definition().item_id().find(&item_id.to_string()).is_some() {
+ 
+        for (idx, (item_id, quantity)) in starters.iter().enumerate() {
+            if let Some(def) = ctx.db.item_definition().item_id().find(&item_id.to_string()) {
                 let used: Vec<u32> = ctx.db.inventory_slot().iter()
                     .filter(|s| s.owner_id == owner_id)
                     .map(|s| s.slot_index)
                     .collect();
                 let slot_index = (0u32..).find(|i| !used.contains(i)).unwrap_or(0);
+ 
+                // build_starter_metadata generates weapon serials; returns "{}" otherwise
+                let metadata = build_starter_metadata(ctx, &def, idx as u32);
+ 
                 ctx.db.inventory_slot().insert(InventorySlot {
                     id: 0,
                     owner_id:   owner_id.clone(),
                     owner_type: "player".to_string(),
                     item_id:    item_id.to_string(),
                     quantity:   *quantity,
-                    metadata:   metadata.to_string(),
+                    metadata,
                     slot_index,
                 });
             }

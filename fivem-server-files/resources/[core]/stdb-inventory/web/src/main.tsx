@@ -138,6 +138,75 @@ window.addEventListener('message', (e: MessageEvent) => {
       break
     }
 
+      case 'applySlotDeltas': {
+        const state = useInventoryStore.getState()
+      
+        type RawDelta = { type: string; slot?: any; slot_id?: number; owner_id?: string }
+        const rawDeltas: RawDelta[] = d.deltas ?? []
+      
+        const added:   typeof state.slots = []
+        const updated: typeof state.slots = []
+        const removed: number[]            = []
+      
+        for (const delta of rawDeltas) {
+          if (delta.type === 'added'   && delta.slot)              added.push(delta.slot)
+          if (delta.type === 'updated' && delta.slot)              updated.push(delta.slot)
+          if (delta.type === 'deleted' && delta.slot_id != null)   removed.push(delta.slot_id)
+        }
+      
+        const applyToPanel = (
+          slots: typeof state.slots,
+          panelOwnerId:   string,
+          panelOwnerType: string,
+        ) => {
+          // Remove deleted ids (applied to all panels — no routing hint on delete)
+          let result = slots.filter(s => !removed.includes(s.id))
+          // Apply updates
+          result = result.map(s => {
+            const u = updated.find(u => u.id === s.id)
+            return u ? { ...s, ...u } : s
+          })
+          // Add new slots belonging to this panel
+          const existingIds = new Set(result.map(s => s.id))
+          for (const a of added) {
+            if (!existingIds.has(a.id) &&
+                a.owner_type === panelOwnerType &&
+                (panelOwnerId === '' || a.owner_id === panelOwnerId)) {
+              result.push(a)
+            }
+          }
+          return result
+        }
+      
+        const pocketOwnerId = state.slots[0]?.owner_id ?? ''
+      
+        const newPockets = applyToPanel(state.slots, pocketOwnerId, 'player')
+      
+        const newSecondarySlots = state.secondary.id !== ''
+          ? applyToPanel(
+              state.secondary.slots,
+              state.secondary.id,
+              state.secondary.type === 'glovebox' ? 'vehicle_glovebox' :
+              state.secondary.type === 'trunk'    ? 'vehicle_trunk'    :
+              'stash'
+            )
+          : state.secondary.slots
+      
+        const newBackpackSlots = state.backpack
+          ? applyToPanel(state.backpack.slots, state.backpack.id, 'stash')
+          : null
+      
+        useInventoryStore.setState(s => ({
+          slots:     newPockets,
+          secondary: { ...s.secondary, slots: newSecondarySlots },
+          backpack:  s.backpack && newBackpackSlots
+            ? { ...s.backpack, slots: newBackpackSlots }
+            : s.backpack,
+        }))
+      
+        break
+      }
+
     case 'closeInventory':
       store.closeInventory()
       break

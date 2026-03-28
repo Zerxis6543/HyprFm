@@ -1,62 +1,47 @@
--- server/exports.lua
--- ── HyprFM Public API — The "Golden Path" for third-party developers ──────────
+-- ─────────────────────────────────────────────────────────────────────────────
+-- HyprFM Public API — The "Golden Path" for third-party resource developers.
 --
--- Two bridges, one principle: the Lua relay never decides state.
+-- LOADED AFTER main.lua within the same resource (see fxmanifest.lua).
+-- References _volatileQueue and _identityToServerId defined in main.lua.
+--
+-- Two bridges, one principle: the Lua relay NEVER decides state.
 --
 --  Commit(reducerName, args, cb)
---  ─────────────────────────────
---  Use for ANYTHING that changes game state.
---  Routes through the sidecar → SpacetimeDB → Rust reducer.
---  All state changes are atomic, ordered, and auditable.
---  This is the Zero-Trust Sovereign path.
+--    State mutations — always routed through SpacetimeDB.
+--    Every change is atomic, ordered, and auditable.
 --
 --  InvokeNative(opcode, netId, args)
---  ──────────────────────────────────
---  Use for cosmetic effects that must NOT be persisted or replayed.
---  Inserts directly into the local volatile queue — zero HTTP round-trip.
---  This is the Volatile Express path.
---  Never use this for health, inventory, money, or any game-state mutation.
---
--- ─────────────────────────────────────────────────────────────────────────────
--- _volatileQueue is defined in main.lua (same resource, shared Lua state).
--- Ensure main.lua is listed BEFORE exports.lua in fxmanifest.lua.
+--    Cosmetic effects only — zero HTTP cost, not persisted, not replayed.
+--    NEVER use for health, inventory, money, or any game-state mutation.
 -- ─────────────────────────────────────────────────────────────────────────────
 
 local SIDECAR_URL = "http://127.0.0.1:27200/"
 
 -- ═════════════════════════════════════════════════════════════════════════════
 -- BRIDGE 1: Commit — Zero-Trust Sovereign Path
--- All state mutations MUST go through this channel.
 -- ═════════════════════════════════════════════════════════════════════════════
 
---- Trigger a Rust reducer via the SpacetimeDB sidecar.
---- All game state changes (give item, set job, heal, fine, etc.) use this.
+--- Trigger a SpacetimeDB reducer via the C# sidecar.
+--- All game state mutations MUST use this — never write state in Lua.
 ---
---- @param reducerName string  Snake_case Rust reducer name (e.g. "give_item_to_player")
---- @param args        table   Named argument table matching the reducer's parameter list
---- @param cb          function|nil  Optional callback: cb(success: bool, result: table|nil)
----
---- Security: The sidecar validates reducer names and the Rust layer enforces
---- all ownership rules, weight limits, and permission checks.
---- A scripter CANNOT bypass these by calling Commit with bad args — Rust will reject.
+--- @param reducerName  string         Snake_case reducer name ("give_item_to_player")
+--- @param args         table          Named argument table matching the reducer
+--- @param cb           function|nil   cb(success: bool, result: table|nil)
 exports("Commit", function(reducerName, args, cb)
-    -- Guard: reducerName must be a non-empty string
     if type(reducerName) ~= "string" or #reducerName == 0 then
-        print("[hyprfm] Commit: invalid reducerName — must be a non-empty string")
+        print("[hyprfm] Commit: reducerName must be a non-empty string")
         if cb then cb(false, nil) end
         return
     end
 
-    PerformHttpRequest(
-        SIDECAR_URL .. "reducer",
+    PerformHttpRequest(SIDECAR_URL .. "reducer",
         function(status, body, _)
-            local success = status == 200
+            local success = (status == 200)
             local result  = nil
             if success and body and body ~= "" then
                 local ok, parsed = pcall(json.decode, body)
                 if ok then result = parsed end
             end
-            -- Surface structured errors to the caller (e.g. WEIGHT_LIMIT)
             if cb then cb(success, result) end
         end,
         "POST",
@@ -67,41 +52,38 @@ end)
 
 -- ═════════════════════════════════════════════════════════════════════════════
 -- BRIDGE 2: InvokeNative — Volatile Express Path
--- Cosmetic effects only. Zero HTTP cost. Not persisted.
 -- ═════════════════════════════════════════════════════════════════════════════
 
---- Insert a volatile instruction directly into the local dispatch queue.
---- Processed at the next 100ms poll tick with ZERO HTTP round-trips.
+--- Insert a volatile instruction directly into the poll loop's queue.
+--- Processed at the next 100ms tick with ZERO HTTP round-trips.
+--- Cosmetic / one-shot only. Not stored in SpacetimeDB. Not replayed.
 ---
---- @param opcode  integer  u16 opcode from Opcode.* constants in constants.lua
---- @param netId   integer  GTA NetworkId of the target entity
---- @param args    table    Positional argument array (matches the opcode's payload schema)
---- @return boolean  true if enqueued, false if validation failed
+--- @param opcode  integer   u16 opcode constant from constants.lua (Opcode.*)
+--- @param netId   integer   GTA NetworkId of the target entity
+--- @param args    table     Positional argument array for the opcode's payload schema
+--- @return boolean          true if enqueued, false if validation failed
 ---
 --- Example:
----   exports['stdb-relay']:InvokeNative(Opcode.Effect.Heal, playerNetId, { 40 })
----   exports['stdb-relay']:InvokeNative(Opcode.Engine.CallLocalNative, playerNetId,
+---   exports['stdb-relay']:InvokeNative(Opcode.Effect.Heal,            playerNetId, { 40 })
+---   exports['stdb-relay']:InvokeNative(Opcode.Engine.CallLocalNative,  playerNetId,
 ---       { "PLAY_SOUND_FRONTEND", -1, "Beep_Red", "DLC_HEIST_HACKING_SNAKE_SOUNDS" })
 exports("InvokeNative", function(opcode, netId, args)
-    -- Validate opcode range: must be a u16 integer
-    if type(opcode) ~= "number" or opcode < 0 or opcode > 0xFFFF or math.floor(opcode) ~= opcode then
-        print(("[hyprfm] InvokeNative: invalid opcode %s"):format(tostring(opcode)))
+    -- Guard: must be an integer in the u16 range
+    if type(opcode) ~= "number" or opcode < 0 or opcode > 0xFFFF
+       or math.floor(opcode) ~= opcode then
+        print(("[hyprfm] InvokeNative: invalid opcode '%s'"):format(tostring(opcode)))
         return false
     end
 
-    -- Safety guard: ENGINE domain only.
-    -- Entity and Effect opcodes carry state significance and MUST go through
-    -- Commit → SpacetimeDB to maintain the Sovereign State guarantee.
-    -- If you need to apply a heal cosmetically (animation without state change),
-    -- you still want the state recorded — use Commit("use_item", ...) instead.
+    -- Guard: only recognised domains are accepted
     local domain = opcode & 0xF000
     if domain ~= 0x9000 and domain ~= 0x1000 and domain ~= 0x2000 then
-        print(("[hyprfm] InvokeNative: unknown domain for opcode %s"):format(Opcode.Format(opcode)))
+        print(("[hyprfm] InvokeNative: opcode 0x%04X has an unrecognised domain"):format(opcode))
         return false
     end
 
-    -- Enqueue into the volatile queue defined in main.lua.
-    -- The poll loop drains this before the HTTP fetch each tick (Phase 1).
+    -- Append to the module-level volatile queue defined in main.lua.
+    -- The poll loop drains this before the HTTP fetch on each 100ms tick.
     _volatileQueue[#_volatileQueue + 1] = {
         target_entity_net_id = netId,
         opcode               = opcode,
@@ -111,14 +93,17 @@ exports("InvokeNative", function(opcode, netId, args)
 end)
 
 -- ═════════════════════════════════════════════════════════════════════════════
--- LEGACY INVENTORY BRIDGES (unchanged, kept for community compatibility)
+-- CONVENIENCE WRAPPERS  (thin facades — community dev "golden path")
 -- ═════════════════════════════════════════════════════════════════════════════
 
---- Add an item to a player's inventory.
---- @param serverId  number  FiveM server ID
---- @param itemId    string  Item definition ID (e.g. "weapon_pistol")
+--- Give an item to a connected player's inventory.
+--- Internally calls give_item_to_identity via the sidecar's server_id lookup.
+--- Weight limit errors are surfaced through the callback.
+---
+--- @param serverId  number
+--- @param itemId    string   e.g. "weapon_pistol"
 --- @param quantity  number
---- @param cb        function|nil  cb(success, errorCode)
+--- @param cb        function|nil  cb(success: bool, errorCode: string|nil)
 exports("AddItemToPlayer", function(serverId, itemId, quantity, cb)
     PerformHttpRequest(SIDECAR_URL .. "reducer",
         function(status, body, _)
@@ -131,35 +116,54 @@ exports("AddItemToPlayer", function(serverId, itemId, quantity, cb)
         end,
         "POST",
         json.encode({ name = "give_item_to_player", args = {
-            server_id = serverId, item_id = itemId, quantity = quantity
+            server_id = serverId,
+            item_id   = itemId,
+            quantity  = quantity,
         }}),
         { ["Content-Type"] = "application/json" }
     )
 end)
 
---- Remove an item from a player's inventory.
+--- Remove an item from a connected player's inventory.
+--- Resolves identity hex locally from the _identityToServerId map.
+---
 --- @param serverId  number
 --- @param itemId    string
 --- @param quantity  number
---- @param cb        function|nil  cb(success)
+--- @param cb        function|nil  cb(success: bool)
 exports("RemoveItemFromPlayer", function(serverId, itemId, quantity, cb)
+    -- Resolve identity hex from the local map (populated on inventory open)
+    local identityHex = ""
+    for identity, sid in pairs(_identityToServerId) do
+        if sid == serverId then identityHex = identity; break end
+    end
+
+    if identityHex == "" then
+        print(("[hyprfm] RemoveItemFromPlayer: no identity mapping for server_id %d"):format(serverId))
+        if cb then cb(false) end
+        return
+    end
+
     PerformHttpRequest(SIDECAR_URL .. "reducer",
-        function(status, body, _)
+        function(status, _, _)
             if cb then cb(status == 200) end
         end,
         "POST",
-        json.encode({ name = "remove_item_from_player", args = {
-            server_id = serverId, item_id = itemId, quantity = quantity
+        json.encode({ name = "remove_item", args = {
+            owner_id = identityHex,
+            item_id  = itemId,
+            quantity = quantity,
         }}),
         { ["Content-Type"] = "application/json" }
     )
 end)
 
---- Check if a player has at least `quantity` of an item.
+--- Check if a player currently has at least `quantity` of an item.
+---
 --- @param serverId  number
 --- @param itemId    string
---- @param quantity  number  Minimum required
---- @param cb        function  cb(hasItem: boolean, actualCount: number)
+--- @param quantity  number   Minimum required amount
+--- @param cb        function  cb(hasItem: bool, actualCount: number)
 exports("HasItem", function(serverId, itemId, quantity, cb)
     PerformHttpRequest(SIDECAR_URL .. "reducer",
         function(status, body, _)
@@ -178,31 +182,45 @@ exports("HasItem", function(serverId, itemId, quantity, cb)
     )
 end)
 
---- Register a persistent world stash.
---- Idempotent — safe to call on resource restart.
+--- Register a persistent world stash. Idempotent — safe to call on restart.
+--- The Rust reducer skips insertion if stash_id already exists.
+---
+--- @param stashId   string   Unique stash identifier
+--- @param label     string   Display label shown in NUI
+--- @param maxSlots  number
+--- @param maxWeight number   kg
+--- @param x         number   World position
+--- @param y         number
+--- @param z         number
 exports("RegisterStash", function(stashId, label, maxSlots, maxWeight, x, y, z)
     PerformHttpRequest(SIDECAR_URL .. "reducer", function() end, "POST",
         json.encode({ name = "create_stash", args = {
-            stash_id = stashId, stash_type = "world",
-            label = label, max_slots = maxSlots, max_weight = maxWeight,
-            owner_id = "", pos_x = x, pos_y = y, pos_z = z,
+            stash_id   = stashId,    stash_type = "world",
+            label      = label,      max_slots  = maxSlots,
+            max_weight = maxWeight,  owner_id   = "",
+            pos_x      = x,          pos_y      = y,         pos_z = z,
         }}),
         { ["Content-Type"] = "application/json" }
     )
 end)
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- USAGE SUMMARY FOR THIRD-PARTY SCRIPTERS:
+-- USAGE SUMMARY FOR THIRD-PARTY RESOURCE DEVELOPERS:
 --
---  State-changing (use Commit):
---    exports['stdb-relay']:Commit("give_item_to_player", { server_id=src, item_id="medkit", quantity=1 })
---    exports['stdb-relay']:Commit("use_item", { slot_id=slotId, net_id=netId }, function(ok) end)
+--  State mutations (always Commit):
+--    exports['stdb-relay']:Commit("give_item_to_player",
+--        { server_id = src, item_id = "medkit", quantity = 1 },
+--        function(ok, result) end)
 --
---  Cosmetic/volatile (use InvokeNative):
+--    exports['stdb-relay']:Commit("use_item",
+--        { slot_id = slotId, net_id = netId })
+--
+--  Cosmetic / volatile (InvokeNative, ENGINE domain only):
 --    exports['stdb-relay']:InvokeNative(Opcode.Effect.Heal, netId, { 40 })
---    exports['stdb-relay']:InvokeNative(Opcode.Engine.CallLocalNative, netId, { "PLAY_SOUND_FRONTEND", -1, "Beep_Red", "" })
+--    exports['stdb-relay']:InvokeNative(Opcode.Engine.CallLocalNative, netId,
+--        { "PLAY_SOUND_FRONTEND", -1, "Beep_Red", "DLC_HEIST_HACKING_SNAKE_SOUNDS" })
 --
---  Shorthand wrappers (convenience):
---    exports['stdb-relay']:AddItemToPlayer(src, "weapon_pistol", 1, cb)
---    exports['stdb-relay']:HasItem(src, "lockpick", 1, function(has) end)
+--  Convenience shortcuts:
+--    exports['stdb-relay']:AddItemToPlayer(src, "lockpick", 1, cb)
+--    exports['stdb-relay']:HasItem(src, "lockpick", 1, function(has, count) end)
 -- ─────────────────────────────────────────────────────────────────────────────

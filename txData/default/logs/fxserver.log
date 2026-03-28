@@ -1,11 +1,11 @@
 ================================================================
-======== Log Rotated - 2026/03/27, 00:00:00                     
+======== Log Rotated - 2026/03/28, 00:00:00                     
 ================================================================
 ║             TXADMIN║ ================================================================
-║             TXADMIN║ ======== [62176] FXServer Starting - 2026/03/27, 00:45:36       
+║             TXADMIN║ ======== [65128] FXServer Starting - 2026/03/28, 00:42:11       
 ║             TXADMIN║ ================================================================
 [           resources] Scanning resources.
-[           resources] Found 31 resources.
+[           resources] Found 30 resources.
 [          svadhesive] Authenticating server license key...
 [          svadhesive] Server license key authentication succeeded. Welcome!
 [    c-scripting-core] Creating script environments for monitor
@@ -23,7 +23,7 @@
 [    c-scripting-core] Creating script environments for hardcap
 [           resources] Started resource hardcap
 [    c-scripting-core] Creating script environments for stdb-relay
-[   script:stdb-relay] [stdb-relay] Server ready — polling sidecar.
+[   script:stdb-relay] [stdb-relay] SERVER MAIN LOADED
 [           resources] Started resource stdb-relay
 [           resources] Started resource stdb-inventory
 [           resources] Started resource bob74_ipl
@@ -38,35 +38,112 @@
 [ citizen-server-impl]                                      
 [ citizen-server-impl] Authenticated with cfx.re Nucleus: https://zerxis654-yog959.users.cfx.re/
 [      script:hardcap] Connecting: Joshua Sprigs
-[   script:stdb-relay] [stdb-relay] Sending openBackpackPanel to player 1 stash=backpack_slot_7
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:backpack_slot_7 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774565258381198 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774565278863509 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774565278863509 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774565313859665 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for stash:ground_1774565313859665 - Syncing via Delta Queue
-[   script:stdb-relay] [Inventory] Internal state change detected for player:1 - Syncing via Delta Queue
+[   script:stdb-relay] [stdb-relay] Sending player connect to sidecar for: Joshua Sprigs
+[   script:stdb-relay] [stdb-relay] on_player_connect response status: 200
+║             TXADMIN║ ================================================================
+║             TXADMIN║ ======== [45348] FXServer Starting - 2026/03/28, 05:04:12       
+║             TXADMIN║ ================================================================
+[           resources] Scanning resources.
+[           resources] Found 30 resources.
+[          svadhesive] Authenticating server license key...
+[          svadhesive] Server license key authentication succeeded. Welcome!
+[    c-scripting-core] Creating script environments for monitor
+[      script:monitor] [txAdmin] Resource v8.0.1 threads and commands set up. All Ready.
+[           resources] Started resource monitor
+[    c-scripting-core] Creating script environments for mapmanager
+[           resources] Started resource mapmanager
+[    c-scripting-core] Creating script environments for chat
+[           resources] Started resource chat
+[           resources] Started resource spawnmanager
+[    c-scripting-core] Creating script environments for sessionmanager
+[           resources] Started resource sessionmanager
+[   script:mapmanager] Started gametype Freeroam
+[           resources] Started resource basic-gamemode
+[    c-scripting-core] Creating script environments for hardcap
+[           resources] Started resource hardcap
+[    c-scripting-core] Creating script environments for stdb-relay
+[   script:stdb-relay] [stdb-relay] SERVER MAIN LOADED
+[           resources] Started resource stdb-relay
+[           resources] Started resource stdb-inventory
+[           resources] Started resource bob74_ipl
+[           resources] Started resource mnr_cayo
+[   script:mapmanager] Started map fivem-map-skater
+[           resources] Started resource fivem-map-skater
+[ citizen-server-impl]         fff                          
+[ citizen-server-impl]   cccc ff   xx  xx     rr rr    eee  
+[ citizen-server-impl] cc     ffff   xx       rrr  r ee   e 
+[ citizen-server-impl] cc     ff     xx   ... rr     eeeee  
+[ citizen-server-impl]  ccccc ff   xx  xx ... rr      eeeee 
+[ citizen-server-impl]                                      
+[ citizen-server-impl] Authenticated with cfx.re Nucleus: https://zerxis654-yog959.users.cfx.re/
+║           Zerxis654║ restart stdb-inventory
+[           resources] Stopping resource stdb-inventory
+[           resources] Started resource stdb-inventory
+[ citizen-server-impl] server thread hitch warning: timer interval of 171 milliseconds
+[      script:hardcap] Connecting: Joshua Sprigs
+[   script:stdb-relay] [stdb-relay] 'Joshua Sprigs' (server_id=1) registered with SpacetimeDB
+║             TXADMIN║ ================================================================
+║             TXADMIN║ ======== [62540] FXServer Starting - 2026/03/28, 05:41:39       
+║             TXADMIN║ ================================================================
+[           resources] Scanning resources.
+[           resources] Found 30 resources.
+[          svadhesive] Authenticating server license key...
+[          svadhesive] Server license key authentication succeeded. Welcome!
+[    c-scripting-core] Creating script environments for monitor
+[      script:monitor] [txAdmin] Resource v8.0.1 threads and commands set up. All Ready.
+[           resources] Started resource monitor
+[    c-scripting-core] Creating script environments for mapmanager
+[           resources] Started resource mapmanager
+[    c-scripting-core] Creating script environments for chat
+[           resources] Started resource chat
+[           resources] Started resource spawnmanager
+[    c-scripting-core] Creating script environments for sessionmanager
+[           resources] Started resource sessionmanager
+[   script:mapmanager] Started gametype Freeroam
+[           resources] Started resource basic-gamemode
+[    c-scripting-core] Creating script environments for hardcap
+[           resources] Started resource hardcap
+[    c-scripting-core] Creating script environments for stdb-relay
+[   script:stdb-relay] [stdb-relay] SERVER MAIN LOADED
+[           resources] Started resource stdb-relay
+[           resources] Started resource stdb-inventory
+[           resources] Started resource bob74_ipl
+[           resources] Started resource mnr_cayo
+[   script:mapmanager] Started map fivem-map-skater
+[           resources] Started resource fivem-map-skater
+[ citizen-server-impl]         fff                          
+[ citizen-server-impl]   cccc ff   xx  xx     rr rr    eee  
+[ citizen-server-impl] cc     ffff   xx       rrr  r ee   e 
+[ citizen-server-impl] cc     ff     xx   ... rr     eeeee  
+[ citizen-server-impl]  ccccc ff   xx  xx ... rr      eeeee 
+[ citizen-server-impl]                                      
+[ citizen-server-impl] Authenticated with cfx.re Nucleus: https://zerxis654-yog959.users.cfx.re/
+[      script:hardcap] Connecting: Joshua Sprigs
+[   script:stdb-relay] [stdb-relay] 'Joshua Sprigs' (server_id=1) registered with SpacetimeDB
+[      script:hardcap] Connecting: Joshua Sprigs
+[   script:stdb-relay] [stdb-relay] 'Joshua Sprigs' (server_id=2) registered with SpacetimeDB
 ║             TXADMIN║ txaReportResources 
 [      script:monitor] [txAdmin] Sending resources list to txAdmin.
-║           Zerxis654║ ensure "stdb-relay"
-║             TXADMIN║ txaReportResources 
+[      script:hardcap] Connecting: Joshua Sprigs
+[   script:stdb-relay] [stdb-relay] 'Joshua Sprigs' (server_id=3) registered with SpacetimeDB
+║           Zerxis654║ restart stdb-inventory
+[           resources] Stopping resource stdb-inventory
+[           resources] Started resource stdb-inventory
+║           Zerxis654║ restart stdb-relay
 [           resources] Stopping resource stdb-relay
 [    c-scripting-core] Creating script environments for stdb-relay
+[   script:stdb-relay] [stdb-relay] SERVER MAIN LOADED
 [           resources] Started resource stdb-relay
-[      script:monitor] [txAdmin] Sending resources list to txAdmin.
-║             TXADMIN║ txaEvent "serverShuttingDown" "{\"delay\":5000,\"author\":\"Zerxis654\",\"message\":\"Server restarting (admin request).\"}"
-[      script:monitor] [txAdmin] Server shutting down. Kicking all players.
-
+[      script:hardcap] Connecting: Joshua Sprigs
+[   script:stdb-relay] [stdb-relay] 'Joshua Sprigs' (server_id=4) registered with SpacetimeDB
+║           Zerxis654║ restart stdb-inventory
+[           resources] Stopping resource stdb-inventory
+[           resources] Started resource stdb-inventory
 ║             TXADMIN║ ================================================================
-║             TXADMIN║ ======== [51588] FXServer Starting - 2026/03/27, 01:03:39       
+║             TXADMIN║ ======== [60832] FXServer Starting - 2026/03/28, 09:50:09       
 ║             TXADMIN║ ================================================================
 [           resources] Scanning resources.
-[           resources] Found 31 resources.
+[           resources] Found 30 resources.
 [          svadhesive] Authenticating server license key...
 [          svadhesive] Server license key authentication succeeded. Welcome!
 [    c-scripting-core] Creating script environments for monitor
@@ -84,6 +161,7 @@
 [    c-scripting-core] Creating script environments for hardcap
 [           resources] Started resource hardcap
 [    c-scripting-core] Creating script environments for stdb-relay
+[   script:stdb-relay] [stdb-relay] SERVER MAIN LOADED
 [           resources] Started resource stdb-relay
 [           resources] Started resource stdb-inventory
 [           resources] Started resource bob74_ipl
@@ -97,11 +175,23 @@
 [ citizen-server-impl]  ccccc ff   xx  xx ... rr      eeeee 
 [ citizen-server-impl]                                      
 [ citizen-server-impl] Authenticated with cfx.re Nucleus: https://zerxis654-yog959.users.cfx.re/
+[      script:hardcap] Connecting: Joshua Sprigs
+[   script:stdb-relay] [stdb-relay] 'Joshua Sprigs' (server_id=1) registered with SpacetimeDB
+║           Zerxis654║ restart stdb-relay
+[           resources] Stopping resource stdb-relay
+[    c-scripting-core] Creating script environments for stdb-relay
+[   script:stdb-relay] [stdb-relay] SERVER MAIN LOADED
+[           resources] Started resource stdb-relay
+║           Zerxis654║ restart stdb-inventory
+[           resources] Stopping resource stdb-inventory
+[           resources] Started resource stdb-inventory
+[      script:hardcap] Connecting: Joshua Sprigs
+[   script:stdb-relay] [stdb-relay] 'Joshua Sprigs' (server_id=2) registered with SpacetimeDB
 ║             TXADMIN║ ================================================================
-║             TXADMIN║ ======== [23288] FXServer Starting - 2026/03/27, 01:04:06       
+║             TXADMIN║ ======== [70812] FXServer Starting - 2026/03/28, 18:58:46       
 ║             TXADMIN║ ================================================================
 [           resources] Scanning resources.
-[           resources] Found 31 resources.
+[           resources] Found 30 resources.
 [          svadhesive] Authenticating server license key...
 [          svadhesive] Server license key authentication succeeded. Welcome!
 [    c-scripting-core] Creating script environments for monitor
@@ -119,6 +209,7 @@
 [    c-scripting-core] Creating script environments for hardcap
 [           resources] Started resource hardcap
 [    c-scripting-core] Creating script environments for stdb-relay
+[   script:stdb-relay] [stdb-relay] SERVER MAIN LOADED
 [           resources] Started resource stdb-relay
 [           resources] Started resource stdb-inventory
 [           resources] Started resource bob74_ipl
@@ -132,3 +223,201 @@
 [ citizen-server-impl]  ccccc ff   xx  xx ... rr      eeeee 
 [ citizen-server-impl]                                      
 [ citizen-server-impl] Authenticated with cfx.re Nucleus: https://zerxis654-yog959.users.cfx.re/
+║             TXADMIN║ setr "txAdmin-locale" "en"
+║             TXADMIN║ set "txAdmin-serverName" "fivemstdb"
+║             TXADMIN║ set "txAdmin-checkPlayerJoin" "true"
+║             TXADMIN║ set "txAdmin-menuAlignRight" "false"
+║             TXADMIN║ set "txAdmin-menuPageKey" "Tab"
+║             TXADMIN║ set "txAdmin-playerModePtfx" "true"
+║             TXADMIN║ set "txAdmin-hideAdminInPunishments" "true"
+║             TXADMIN║ set "txAdmin-hideAdminInMessages" "false"
+║             TXADMIN║ set "txAdmin-hideDefaultAnnouncement" "false"
+║             TXADMIN║ set "txAdmin-hideDefaultDirectMessage" "false"
+║             TXADMIN║ set "txAdmin-hideDefaultWarning" "false"
+║             TXADMIN║ set "txAdmin-hideDefaultScheduledRestartWarning" "false"
+║             TXADMIN║ txaEvent "configChanged" "{}"
+║             TXADMIN║ ================================================================
+║             TXADMIN║ ======== [30636] FXServer Starting - 2026/03/28, 19:01:02       
+║             TXADMIN║ ================================================================
+[           resources] Scanning resources.
+[           resources] Found 30 resources.
+[          svadhesive] Authenticating server license key...
+[          svadhesive] Server license key authentication succeeded. Welcome!
+[    c-scripting-core] Creating script environments for monitor
+[      script:monitor] [txAdmin] Resource v8.0.1 threads and commands set up. All Ready.
+[           resources] Started resource monitor
+[    c-scripting-core] Creating script environments for mapmanager
+[           resources] Started resource mapmanager
+[    c-scripting-core] Creating script environments for chat
+[           resources] Started resource chat
+[           resources] Started resource spawnmanager
+[    c-scripting-core] Creating script environments for sessionmanager
+[           resources] Started resource sessionmanager
+[   script:mapmanager] Started gametype Freeroam
+[           resources] Started resource basic-gamemode
+[    c-scripting-core] Creating script environments for hardcap
+[           resources] Started resource hardcap
+[    c-scripting-core] Creating script environments for stdb-relay
+[   script:stdb-relay] [stdb-relay] SERVER MAIN LOADED
+[           resources] Started resource stdb-relay
+[           resources] Started resource stdb-inventory
+[           resources] Started resource bob74_ipl
+[           resources] Started resource mnr_cayo
+[   script:mapmanager] Started map fivem-map-skater
+[           resources] Started resource fivem-map-skater
+[ citizen-server-impl]         fff                          
+[ citizen-server-impl]   cccc ff   xx  xx     rr rr    eee  
+[ citizen-server-impl] cc     ffff   xx       rrr  r ee   e 
+[ citizen-server-impl] cc     ff     xx   ... rr     eeeee  
+[ citizen-server-impl]  ccccc ff   xx  xx ... rr      eeeee 
+[ citizen-server-impl]                                      
+[ citizen-server-impl] Authenticated with cfx.re Nucleus: https://zerxis654-yog959.users.cfx.re/
+[      script:hardcap] Connecting: Joshua Sprigs
+[      script:hardcap] Connecting: Baki Hanma
+[   script:stdb-relay] [stdb-relay] 'Joshua Sprigs' (server_id=1) registered with SpacetimeDB
+[   script:stdb-relay] [stdb-relay] 'Baki Hanma' (server_id=2) registered with SpacetimeDB
+║             TXADMIN║ txaEvent "adminsUpdated" "[1,2]"
+║             TXADMIN║ setr "txAdmin-locale" "en"
+║             TXADMIN║ set "txAdmin-serverName" "fivemstdb"
+║             TXADMIN║ set "txAdmin-checkPlayerJoin" "true"
+║             TXADMIN║ set "txAdmin-menuAlignRight" "false"
+║             TXADMIN║ set "txAdmin-menuPageKey" "Tab"
+║             TXADMIN║ set "txAdmin-playerModePtfx" "true"
+║             TXADMIN║ set "txAdmin-hideAdminInPunishments" "true"
+║             TXADMIN║ set "txAdmin-hideAdminInMessages" "false"
+║             TXADMIN║ set "txAdmin-hideDefaultAnnouncement" "false"
+║             TXADMIN║ set "txAdmin-hideDefaultDirectMessage" "false"
+║             TXADMIN║ set "txAdmin-hideDefaultWarning" "false"
+║             TXADMIN║ set "txAdmin-hideDefaultScheduledRestartWarning" "false"
+║             TXADMIN║ txaEvent "configChanged" "{}"
+[   script:stdb-relay] [stdb-relay] 'Baki Hanma' (server_id=2) registered with SpacetimeDB
+[   script:stdb-relay] [stdb-relay] 'Baki Hanma' (server_id=2) registered with SpacetimeDB
+[   script:stdb-relay] [stdb-relay] 'Baki Hanma' (server_id=2) registered with SpacetimeDB
+[   script:stdb-relay] [stdb-relay] 'Baki Hanma' (server_id=2) registered with SpacetimeDB
+║             TXADMIN║ ================================================================
+║             TXADMIN║ ======== [42896] FXServer Starting - 2026/03/28, 19:36:23       
+║             TXADMIN║ ================================================================
+[           resources] Scanning resources.
+[           resources] Found 30 resources.
+[          svadhesive] Authenticating server license key...
+[          svadhesive] Server license key authentication succeeded. Welcome!
+[    c-scripting-core] Creating script environments for monitor
+[      script:monitor] [txAdmin] Resource v8.0.1 threads and commands set up. All Ready.
+[           resources] Started resource monitor
+[    c-scripting-core] Creating script environments for mapmanager
+[           resources] Started resource mapmanager
+[    c-scripting-core] Creating script environments for chat
+[           resources] Started resource chat
+[           resources] Started resource spawnmanager
+[    c-scripting-core] Creating script environments for sessionmanager
+[           resources] Started resource sessionmanager
+[   script:mapmanager] Started gametype Freeroam
+[           resources] Started resource basic-gamemode
+[    c-scripting-core] Creating script environments for hardcap
+[           resources] Started resource hardcap
+[    c-scripting-core] Creating script environments for stdb-relay
+[   script:stdb-relay] [stdb-relay] SERVER MAIN LOADED
+[           resources] Started resource stdb-relay
+[           resources] Started resource stdb-inventory
+[           resources] Started resource bob74_ipl
+[           resources] Started resource mnr_cayo
+[   script:mapmanager] Started map fivem-map-skater
+[           resources] Started resource fivem-map-skater
+[ citizen-server-impl]         fff                          
+[ citizen-server-impl]   cccc ff   xx  xx     rr rr    eee  
+[ citizen-server-impl] cc     ffff   xx       rrr  r ee   e 
+[ citizen-server-impl] cc     ff     xx   ... rr     eeeee  
+[ citizen-server-impl]  ccccc ff   xx  xx ... rr      eeeee 
+[ citizen-server-impl]                                      
+[ citizen-server-impl] Authenticated with cfx.re Nucleus: https://zerxis654-yog959.users.cfx.re/
+[      script:hardcap] Connecting: Joshua Sprigs
+[   script:stdb-relay] [stdb-relay] 'Joshua Sprigs' (server_id=1) registered with SpacetimeDB
+║           Zerxis654║ restart stdb-relay
+[           resources] Stopping resource stdb-relay
+[    c-scripting-core] Creating script environments for stdb-relay
+[   script:stdb-relay] [stdb-relay] SERVER MAIN LOADED
+[           resources] Started resource stdb-relay
+║           Zerxis654║ restart stdb-inventory
+[           resources] Stopping resource stdb-inventory
+[           resources] Started resource stdb-inventory
+║           Zerxis654║ restart stdb-relay
+[           resources] Stopping resource stdb-relay
+[    c-scripting-core] Creating script environments for stdb-relay
+[   script:stdb-relay] [stdb-relay] SERVER MAIN LOADED
+[           resources] Started resource stdb-relay
+║           Zerxis654║ restart stdb-inventory
+[           resources] Stopping resource stdb-inventory
+[           resources] Started resource stdb-inventory
+║             TXADMIN║ ================================================================
+║             TXADMIN║ ======== [73880] FXServer Starting - 2026/03/28, 20:06:09       
+║             TXADMIN║ ================================================================
+[           resources] Scanning resources.
+[           resources] Found 30 resources.
+[          svadhesive] Authenticating server license key...
+[          svadhesive] Server license key authentication succeeded. Welcome!
+[    c-scripting-core] Creating script environments for monitor
+[      script:monitor] [txAdmin] Resource v8.0.1 threads and commands set up. All Ready.
+[           resources] Started resource monitor
+[    c-scripting-core] Creating script environments for mapmanager
+[           resources] Started resource mapmanager
+[    c-scripting-core] Creating script environments for chat
+[           resources] Started resource chat
+[           resources] Started resource spawnmanager
+[    c-scripting-core] Creating script environments for sessionmanager
+[           resources] Started resource sessionmanager
+[   script:mapmanager] Started gametype Freeroam
+[           resources] Started resource basic-gamemode
+[    c-scripting-core] Creating script environments for hardcap
+[           resources] Started resource hardcap
+[    c-scripting-core] Creating script environments for stdb-relay
+[   script:stdb-relay] [stdb-relay] SERVER MAIN LOADED
+[           resources] Started resource stdb-relay
+[           resources] Started resource stdb-inventory
+[           resources] Started resource bob74_ipl
+[           resources] Started resource mnr_cayo
+[   script:mapmanager] Started map fivem-map-skater
+[           resources] Started resource fivem-map-skater
+[ citizen-server-impl]         fff                          
+[ citizen-server-impl]   cccc ff   xx  xx     rr rr    eee  
+[ citizen-server-impl] cc     ffff   xx       rrr  r ee   e 
+[ citizen-server-impl] cc     ff     xx   ... rr     eeeee  
+[ citizen-server-impl]  ccccc ff   xx  xx ... rr      eeeee 
+[ citizen-server-impl]                                      
+[ citizen-server-impl] Authenticated with cfx.re Nucleus: https://zerxis654-yog959.users.cfx.re/
+[      script:hardcap] Connecting: Joshua Sprigs
+[   script:stdb-relay] [stdb-relay] 'Joshua Sprigs' (server_id=1) registered with SpacetimeDB
+║           Zerxis654║ restart stdb-relay
+[           resources] Stopping resource stdb-relay
+[    c-scripting-core] Creating script environments for stdb-relay
+[   script:stdb-relay] [stdb-relay] SERVER MAIN LOADED
+[           resources] Started resource stdb-relay
+║           Zerxis654║ restart stdb-inventory
+[           resources] Stopping resource stdb-inventory
+[           resources] Started resource stdb-inventory
+║           Zerxis654║ restart stdb-relay
+[           resources] Stopping resource stdb-relay
+[    c-scripting-core] Creating script environments for stdb-relay
+[   script:stdb-relay] [stdb-relay] SERVER MAIN LOADED
+[           resources] Started resource stdb-relay
+║           Zerxis654║ restart stdb-inventory
+[           resources] Stopping resource stdb-inventory
+[           resources] Started resource stdb-inventory
+[   script:stdb-relay] [prop] THROW registered: stash=ground_1774722330367735 src=1
+[      script:hardcap] Connecting: Joshua Sprigs
+[   script:stdb-relay] [stdb-relay] 'Joshua Sprigs' (server_id=2) registered with SpacetimeDB
+[   script:stdb-relay] [prop] PLACE registered: stash=ground_1774684064486635 src=2
+║           Zerxis654║ restart stdb-relay
+[           resources] Stopping resource stdb-relay
+[    c-scripting-core] Creating script environments for stdb-relay
+[   script:stdb-relay] [stdb-relay] SERVER MAIN LOADED
+[           resources] Started resource stdb-relay
+║           Zerxis654║ restart stdb-inventory
+[           resources] Stopping resource stdb-inventory
+[           resources] Started resource stdb-inventory
+[   script:stdb-relay] [prop] DROP registered: stash=ground_1774684064486635 src=2
+[      script:hardcap] Connecting: Joshua Sprigs
+[   script:stdb-relay] [stdb-relay] 'Joshua Sprigs' (server_id=3) registered with SpacetimeDB
+[   script:stdb-relay] [prop] THROW registered: stash=ground_1774728206652155 src=3
+[   script:stdb-relay] [prop] THROW registered: stash=ground_1774728222859971 src=3
+[   script:stdb-relay] [prop] THROW registered: stash=ground_1774728242070135 src=3
+[   script:stdb-relay] [prop] PLACE registered: stash=ground_1774728254776381 src=3

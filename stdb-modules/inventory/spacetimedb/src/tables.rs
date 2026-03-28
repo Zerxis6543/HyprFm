@@ -9,6 +9,8 @@ pub struct ItemDefinition {
     pub stackable: bool,
     pub usable:    bool,
     pub max_stack: u32,
+    pub category:  String,
+    pub prop_model: String,
 }
 
 /// One row per stack of items in an inventory slot
@@ -18,10 +20,10 @@ pub struct InventorySlot {
     #[primary_key]
     #[auto_inc]
     pub id:         u64,
-    pub owner_id:   String,   // identity hex, vehicle plate, or stash name
-    pub owner_type: String,   // "player", "vehicle", "stash"
+    pub owner_id:   String,
+    pub owner_type: String,
     pub item_id:    String,
     pub quantity:   u32,
-    pub metadata:   String,   // JSON: durability, ammo, serial, etc
+    pub metadata:   String,
     pub slot_index: u32,
 }

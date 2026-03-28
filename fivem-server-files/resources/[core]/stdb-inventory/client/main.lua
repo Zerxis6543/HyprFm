@@ -470,9 +470,56 @@ AddEventHandler("stdb:spawnWorldDrop", function(slotId, stashId, propModel, x, y
         PlaceObjectOnGroundProperly(obj)
         FreezeEntityPosition(obj, true)
         SetEntityAsMissionEntity(obj, true, true)
-        table.insert(worldProps, { prop = obj, stashId = stashId })
+        -- Store x/y/z so the proximity scan does pure arithmetic (no GetEntityCoords per prop)
+        table.insert(worldProps, { prop = obj, stashId = stashId, x = x, y = y, z = z })
     end
     SetModelAsNoLongerNeeded(propHash)
+end)
+
+local PICKUP_RADIUS   = 3.0
+local nearGroundStash = false
+ 
+-- 500ms scan — pure arithmetic on stored coords, zero native calls per prop
+Citizen.CreateThread(function()
+    while true do
+        Citizen.Wait(500)
+        if isOpen then nearGroundStash = false; goto continueProxScan end
+ 
+        local pedPos  = GetEntityCoords(PlayerPedId())
+        local closest = false
+        for _, data in ipairs(worldProps) do
+            if data.prop and DoesEntityExist(data.prop) then
+                local dx = data.x - pedPos.x
+                local dy = data.y - pedPos.y
+                if dx * dx + dy * dy <= PICKUP_RADIUS * PICKUP_RADIUS then
+                    closest = true; break
+                end
+            end
+        end
+        nearGroundStash = closest
+ 
+        ::continueProxScan::
+    end
+end)
+ 
+-- Per-frame hint draw
+Citizen.CreateThread(function()
+    while true do
+        Citizen.Wait(0)
+        if not nearGroundStash or isOpen or isInspecting then goto continueProxDraw end
+ 
+        DrawRect(0.5, 0.935, 0.20, 0.032, 8, 10, 14, 210)
+ 
+        SetTextFont(4); SetTextScale(0.0, 0.22)
+        SetTextColour(74, 222, 128, 255); SetTextCentre(false)
+        SetTextEntry("STRING"); AddTextComponentString("TAB"); DrawText(0.416, 0.924)
+ 
+        SetTextFont(4); SetTextScale(0.0, 0.22)
+        SetTextColour(220, 220, 220, 200); SetTextCentre(false)
+        SetTextEntry("STRING"); AddTextComponentString("Pick up nearby item"); DrawText(0.446, 0.924)
+ 
+        ::continueProxDraw::
+    end
 end)
 
 RegisterNUICallback("mergeStacks", function(data, cb)
@@ -518,6 +565,26 @@ end)
 RegisterNUICallback("dropItem", function(data, cb)
     TriggerServerEvent("stdb:dropItem", data.slotId, data.quantity, data.itemId, data.propModel)
     cb("ok")
+end)
+
+RegisterNUICallback("groundStashEmpty", function(data, cb)
+    local stashId = data.stashId or ""
+    if stashId == "" then cb({ ok = false }); return end
+ 
+    -- Reverse iterate so table.remove is safe
+    for i = #worldProps, 1, -1 do
+        local propData = worldProps[i]
+        if propData.stashId == stashId then
+            if propData.prop and DoesEntityExist(propData.prop) then
+                SetEntityAsMissionEntity(propData.prop, false, true)
+                DeleteObject(propData.prop)
+            end
+            table.remove(worldProps, i)
+            break
+        end
+    end
+ 
+    cb({ ok = true })
 end)
 
 RegisterNetEvent("stdb:openBackpackPanel")
@@ -984,9 +1051,13 @@ end)
 
 RegisterNetEvent("stdb:deleteWorldProp")
 AddEventHandler("stdb:deleteWorldProp", function(stashId)
+    print(("[prop] CLIENT received deleteWorldProp stashId=" .. tostring(stashId)))
+    print(("[prop] worldProps count=" .. #worldProps))
     local remaining = {}
     for _, data in ipairs(worldProps) do
+        print(("[prop] checking entry stashId=" .. tostring(data.stashId)))
         if data.stashId == stashId then
+            print("[prop] MATCH - deleting prop")
             if data.prop and DoesEntityExist(data.prop) then
                 DeleteObject(data.prop)
             end
@@ -995,7 +1066,14 @@ AddEventHandler("stdb:deleteWorldProp", function(stashId)
         end
     end
     worldProps = remaining
+    print(("[prop] worldProps after cleanup=" .. #worldProps))
 end)
+
+RegisterNetEvent("stdb:slotDeltas")
+AddEventHandler("stdb:slotDeltas", function(deltas)
+    SendNUIMessage({ action = "applySlotDeltas", deltas = deltas })
+end)
+
 
 RegisterNUICallback("requestInventory", function(_, cb)
     local pos = GetEntityCoords(PlayerPedId())

@@ -17,6 +17,8 @@ pub fn seed_item(
     stackable: bool,
     usable:    bool,
     max_stack: u32,
+    category:  String,
+    prop_model: String,
 ) {
     if ctx.db.item_definition().item_id().find(&item_id).is_some() {
         return; // already exists
@@ -28,6 +30,8 @@ pub fn seed_item(
         stackable,
         usable,
         max_stack,
+        category,
+        prop_model,
     });
 }
 
