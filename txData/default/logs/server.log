@@ -1,342 +1,101 @@
 ================================================================
-======== Log Rotated - 2026/03/28, 00:00:00                     
+======== Log Rotated - 2026/03/30, 00:00:00                     
 ================================================================
-[00:00:21] [qaEtH#1] Joshua Sprigs: repaired their vehicle
-[00:00:25] [qaEtH#1] Joshua Sprigs: repaired their vehicle
-[00:00:49] [qaEtH#1] Joshua Sprigs: repaired their vehicle
-[00:01:43] [qaEtH#1] Joshua Sprigs: repaired their vehicle
-[00:02:01] [qaEtH#1] Joshua Sprigs: repaired their vehicle
-[00:03:32] [qaEtH#1] Joshua Sprigs: enabled noclip
-[00:03:43] [qaEtH#1] Joshua Sprigs: said "/-placeItem"
-[00:03:43] [qaEtH#1] Joshua Sprigs: said "/-placeItem"
-[00:03:44] [qaEtH#1] Joshua Sprigs: became mortal (standard mode)
-[00:03:45] [qaEtH#1] Joshua Sprigs: repaired their vehicle
-[00:04:47] [qaEtH#1] Joshua Sprigs: repaired their vehicle
-[00:05:50] [qaEtH#1] Joshua Sprigs: repaired their vehicle
-[00:06:33] [qaEtH#1] Joshua Sprigs: repaired their vehicle
-[00:07:22] [qaEtH#1] Joshua Sprigs: repaired their vehicle
-[00:07:53] [qaEtH#1] Joshua Sprigs: repaired their vehicle
-[00:09:25] [qaEtH#1] Joshua Sprigs: repaired their vehicle
-[00:09:57] [qaEtH#1] Joshua Sprigs: repaired their vehicle
-[00:10:43] [qaEtH#1] Joshua Sprigs: repaired their vehicle
-[00:10:43] [qaEtH#1] Joshua Sprigs: repaired their vehicle
-[00:10:59] [qaEtH#1] Joshua Sprigs: repaired their vehicle
-[00:13:39] [qaEtH#1] Joshua Sprigs: disconnected (Exiting)
 ================================================================
-======== txAdmin v8.0.1 atop fxserver 25770 Starting - 2026/03/28, 00:42:11
+======== txAdmin v8.0.1 atop fxserver 25770 Starting - 2026/03/30, 01:32:38
 ================================================================
-[00:42:13] txAdmin: Logger started
-[00:43:22] [HfRqU#1] Joshua Sprigs: joined with identifiers [license:7df1…5909, xbl:2535…2995, live:1055…0914, discord:5336…1534, fivem:2412049, license2:da0e…971c]
-[00:43:46] [HfRqU#1] Joshua Sprigs: said "/-openInventory"
-[00:43:47] [HfRqU#1] Joshua Sprigs: said "/-openInventory"
-[00:43:47] [HfRqU#1] Joshua Sprigs: said "/-openInventory"
-[00:43:49] [HfRqU#1] Joshua Sprigs: said "/-openInventory"
-[00:43:49] [HfRqU#1] Joshua Sprigs: said "/-openInventory"
-[00:43:49] [HfRqU#1] Joshua Sprigs: said "/-openInventory"
-[00:43:49] [HfRqU#1] Joshua Sprigs: said "/-openInventory"
-[00:43:50] [HfRqU#1] Joshua Sprigs: said "/-openInventory"
-[00:45:42] [HfRqU#1] Joshua Sprigs: enabled noclip
-[00:45:45] [HfRqU#1] Joshua Sprigs: said "/-openInventory"
-[00:45:55] [HfRqU#1] Joshua Sprigs: became mortal (standard mode)
-[00:46:06] [HfRqU#1] Joshua Sprigs: enabled noclip
-[00:46:07] [HfRqU#1] Joshua Sprigs: became mortal (standard mode)
-[00:46:09] [HfRqU#1] Joshua Sprigs: spawned a vehicle (model: f620)
-[00:46:17] [HfRqU#1] Joshua Sprigs: repaired their vehicle
-[00:49:10] [HfRqU#1] Joshua Sprigs: disconnected (Exiting)
+[01:32:44] txAdmin: Logger started
+[01:34:00] [gEcr6#1] Joshua Sprigs: joined with identifiers [license:7df1…5909, xbl:2535…2995, live:1055…0914, discord:5336…1534, fivem:2412049, license2:da0e…971c]
+[01:34:25] [gEcr6#1] Joshua Sprigs: said "/-openInventory"
+[01:34:30] [gEcr6#1] Joshua Sprigs: said "/-openInventory"
+[01:34:32] [gEcr6#1] Joshua Sprigs: said "/-openInventory"
+[01:34:34] [gEcr6#1] Joshua Sprigs: said "/-openInventory"
+[01:35:42] [gEcr6#1] Joshua Sprigs: said "/-openInventory"
+[01:36:19] [gEcr6#1] Joshua Sprigs: said "/-openInventory"
+[01:36:24] [gEcr6#1] Joshua Sprigs: said "/-openInventory"
+[01:36:44] [gEcr6#1] Joshua Sprigs: enabled noclip
+[01:45:37] [gEcr6#1] Joshua Sprigs: became mortal (standard mode)
+[01:46:08] [gEcr6#1] Joshua Sprigs: said "/-openInventory"
+[01:46:12] [gEcr6#1] Joshua Sprigs: said "/-openInventory"
+[01:46:16] [gEcr6#1] Joshua Sprigs: said "/-openInventory"
+[01:46:19] [gEcr6#1] Joshua Sprigs: said "/-openInventory"
+[01:46:29] [gEcr6#1] Joshua Sprigs: said "/-openInventory"
+[01:46:34] [gEcr6#1] Joshua Sprigs: said "/-openInventory"
+[01:46:42] [gEcr6#1] Joshua Sprigs: said "/-openInventory"
+[01:46:44] [gEcr6#1] Joshua Sprigs: said "/-openInventory"
+[01:46:49] [gEcr6#1] Joshua Sprigs: said "/-openInventory"
+[01:47:00] [gEcr6#1] Joshua Sprigs: said "/-openInventory"
+[01:47:02] [gEcr6#1] Joshua Sprigs: said "/-openInventory"
+[01:47:03] [gEcr6#1] Joshua Sprigs: said "/-openInventory"
+[01:47:07] [gEcr6#1] Joshua Sprigs: said "/-openInventory"
+[01:47:09] [gEcr6#1] Joshua Sprigs: said "/-openInventory"
+[01:47:17] [gEcr6#1] Joshua Sprigs: said "/-openInventory"
+[01:47:26] [gEcr6#1] Joshua Sprigs: said "/-openInventory"
+[01:49:39] [gEcr6#1] Joshua Sprigs: said "/-openInventory"
+[01:49:45] [gEcr6#1] Joshua Sprigs: said "/-placeItem"
+[01:49:46] [gEcr6#1] Joshua Sprigs: said "/-openInventory"
+[01:49:50] [gEcr6#1] Joshua Sprigs: said "/-openInventory"
+[01:53:02] [gEcr6#1] Joshua Sprigs: disconnected (Exiting)
 ================================================================
-======== txAdmin v8.0.1 atop fxserver 25770 Starting - 2026/03/28, 05:04:09
+======== txAdmin v8.0.1 atop fxserver 25770 Starting - 2026/03/30, 01:53:29
 ================================================================
-[05:04:15] txAdmin: Logger started
-[05:05:39] [mRKmb#1] Joshua Sprigs: joined with identifiers [license:7df1…5909, xbl:2535…2995, live:1055…0914, discord:5336…1534, fivem:2412049, license2:da0e…971c]
-[05:06:14] [mRKmb#1] Joshua Sprigs: said "/-openInventory"
-[05:07:15] [mRKmb#1] Joshua Sprigs: said "/-openInventory"
-[05:07:37] [mRKmb#1] Joshua Sprigs: said "/-openInventory"
-[05:08:36] [mRKmb#1] Joshua Sprigs: spawned a vehicle (model: sc1)
-[05:12:58] [mRKmb#1] Joshua Sprigs: enabled noclip
-[05:13:16] [mRKmb#1] Joshua Sprigs: said "/-placeItem"
-[05:13:20] [mRKmb#1] Joshua Sprigs: said "/-placeItem"
-[05:13:22] [mRKmb#1] Joshua Sprigs: said "/-placeItem"
-[05:13:44] [mRKmb#1] Joshua Sprigs: said "/-placeItem"
-[05:13:50] [mRKmb#1] Joshua Sprigs: said "/-placeItem"
-[05:15:54] [mRKmb#1] Joshua Sprigs: said "/-placeItem"
-[05:15:58] [mRKmb#1] Joshua Sprigs: became mortal (standard mode)
-[05:16:01] [mRKmb#1] Joshua Sprigs: deleted a vehicle
-[05:16:04] [mRKmb#1] Joshua Sprigs: spawned a vehicle (model: esskey)
-[05:19:00] [mRKmb#1] Joshua Sprigs: disconnected (Exiting)
+[01:53:32] txAdmin: Logger started
 ================================================================
-======== txAdmin v8.0.1 atop fxserver 25770 Starting - 2026/03/28, 05:41:38
+======== txAdmin v8.0.1 atop fxserver 25770 Starting - 2026/03/30, 01:54:29
 ================================================================
-[05:41:40] txAdmin: Logger started
-[05:43:13] [BrNnE#1] Joshua Sprigs: joined with identifiers [license:7df1…5909, xbl:2535…2995, live:1055…0914, discord:5336…1534, fivem:2412049, license2:da0e…971c]
-[05:43:46] [BrNnE#1] Joshua Sprigs: said "/-openInventory"
-[05:43:52] [BrNnE#1] Joshua Sprigs: enabled noclip
-[05:43:59] [BrNnE#1] Joshua Sprigs: became mortal (standard mode)
-[05:44:00] [BrNnE#1] Joshua Sprigs: said "/-openInventory"
-[05:44:08] [BrNnE#1] Joshua Sprigs: said "/-openInventory"
-[05:44:11] [BrNnE#1] Joshua Sprigs: said "/-openInventory"
-[05:44:17] [BrNnE#1] Joshua Sprigs: said "/-openInventory"
-[05:44:21] [BrNnE#1] Joshua Sprigs: said "/-openInventory"
-[05:44:25] [BrNnE#1] Joshua Sprigs: said "/-openInventory"
-[05:44:31] [BrNnE#1] Joshua Sprigs: said "/-openInventory"
-[05:44:36] [BrNnE#1] Joshua Sprigs: said "/-openInventory"
-[05:44:40] [BrNnE#1] Joshua Sprigs: said "/-openInventory"
-[05:44:45] [BrNnE#1] Joshua Sprigs: said "/-openInventory"
-[05:44:56] [BrNnE#1] Joshua Sprigs: enabled noclip
-[05:46:44] [BrNnE#1] Joshua Sprigs: said "/-openInventory"
-[05:46:53] [BrNnE#1] Joshua Sprigs: said "/-openInventory"
-[05:47:18] [BrNnE#1] Joshua Sprigs: said "/-openInventory"
-[05:49:05] [BrNnE#1] Joshua Sprigs: said "/-openInventory"
-[05:49:07] [BrNnE#1] Joshua Sprigs: became mortal (standard mode)
-[05:49:08] [BrNnE#1] Joshua Sprigs: said "/-openInventory"
-[05:50:03] [BrNnE#1] Joshua Sprigs: said "/-openInventory"
-[05:50:13] [BrNnE#1] Joshua Sprigs: said "/-openInventory"
-[05:51:48] [BrNnE#1] Joshua Sprigs: said "/-openInventory"
-[05:51:55] [BrNnE#1] Joshua Sprigs: said "/-openInventory"
-[05:52:16] [BrNnE#1] Joshua Sprigs: said "/-openInventory"
-[05:52:19] [BrNnE#1] Joshua Sprigs: said "/-openInventory"
-[05:52:32] [BrNnE#1] Joshua Sprigs: disconnected (Exiting)
-[05:53:23] [BrNnE#2] Joshua Sprigs: joined with identifiers [license:7df1…5909, xbl:2535…2995, live:1055…0914, discord:5336…1534, fivem:2412049, license2:da0e…971c]
-[05:53:46] [BrNnE#2] Joshua Sprigs: said "/-openInventory"
-[05:53:49] [BrNnE#2] Joshua Sprigs: enabled noclip
-[05:55:17] [BrNnE#2] Joshua Sprigs: said "/-openInventory"
-[05:55:33] [BrNnE#2] Joshua Sprigs: became mortal (standard mode)
-[05:55:34] [BrNnE#2] Joshua Sprigs: said "/-openInventory"
-[05:55:51] [BrNnE#2] Joshua Sprigs: said "/-openInventory"
-[05:56:32] [BrNnE#2] Joshua Sprigs: disconnected (Exiting)
-[08:41:31] [BrNnE#3] Joshua Sprigs: joined with identifiers [license:7df1…5909, xbl:2535…2995, live:1055…0914, discord:5336…1534, fivem:2412049, license2:da0e…971c]
-[08:42:29] [BrNnE#3] Joshua Sprigs: enabled noclip
-[08:42:34] [BrNnE#3] Joshua Sprigs: became mortal (standard mode)
-[08:42:37] [BrNnE#3] Joshua Sprigs: spawned a vehicle (model: comet2)
-[08:44:33] [BrNnE#3] Joshua Sprigs: repaired their vehicle
-[08:44:37] [BrNnE#3] Joshua Sprigs: repaired their vehicle
-[08:46:44] [BrNnE#3] Joshua Sprigs: repaired their vehicle
-[08:49:24] [BrNnE#3] Joshua Sprigs: repaired their vehicle
-[08:49:25] [BrNnE#3] Joshua Sprigs: said "/-openInventory"
-[08:49:31] [BrNnE#3] Joshua Sprigs: said "/-openInventory"
-[08:49:35] [BrNnE#3] Joshua Sprigs: said "/-openInventory"
-[08:49:39] [BrNnE#3] Joshua Sprigs: said "/-openInventory"
-[08:49:45] [BrNnE#3] Joshua Sprigs: said "/-openInventory"
-[08:49:51] [BrNnE#3] Joshua Sprigs: said "/-openInventory"
-[08:49:53] [BrNnE#3] Joshua Sprigs: said "/-openInventory"
-[08:50:00] [BrNnE#3] Joshua Sprigs: said "/-openInventory"
-[08:50:27] [BrNnE#3] Joshua Sprigs: disconnected (Exiting)
-[09:46:55] [BrNnE#4] Joshua Sprigs: joined with identifiers [license:7df1…5909, xbl:2535…2995, live:1055…0914, discord:5336…1534, fivem:2412049, license2:da0e…971c]
-[09:47:45] [BrNnE#4] Joshua Sprigs: said "/-openInventory"
-[09:47:52] [BrNnE#4] Joshua Sprigs: said "/-placeItem"
-[09:47:54] [BrNnE#4] Joshua Sprigs: said "/-openInventory"
-[09:47:57] [BrNnE#4] Joshua Sprigs: said "/-openInventory"
-[09:48:03] [BrNnE#4] Joshua Sprigs: said "/-openInventory"
-[09:48:51] [BrNnE#4] Joshua Sprigs: said "/-openInventory"
-[09:48:55] [BrNnE#4] Joshua Sprigs: said "/-placeItem"
-[09:48:56] [BrNnE#4] Joshua Sprigs: said "/-openInventory"
-[09:48:59] [BrNnE#4] Joshua Sprigs: said "/-openInventory"
-[09:49:01] [BrNnE#4] Joshua Sprigs: said "/-openInventory"
-[09:49:03] [BrNnE#4] Joshua Sprigs: said "/-openInventory"
-[09:49:07] [BrNnE#4] Joshua Sprigs: enabled noclip
-[09:49:10] [BrNnE#4] Joshua Sprigs: became mortal (standard mode)
-[09:49:12] [BrNnE#4] Joshua Sprigs: spawned a vehicle (model: nero)
-[09:49:13] [BrNnE#4] Joshua Sprigs: said "/-openInventory"
-[09:49:15] [BrNnE#4] Joshua Sprigs: said "/-openInventory"
-[09:49:18] [BrNnE#4] Joshua Sprigs: said "/-openInventory"
-[09:49:20] [BrNnE#4] Joshua Sprigs: said "/-openInventory"
-[09:49:23] [BrNnE#4] Joshua Sprigs: said "/-openInventory"
-[09:49:31] [BrNnE#4] Joshua Sprigs: said "/-openInventory"
-[09:49:37] [BrNnE#4] Joshua Sprigs: said "/-openInventory"
-[09:49:48] [BrNnE#4] Joshua Sprigs: disconnected (Disconnected.)
+[01:54:31] txAdmin: Logger started
+[01:55:10] [zFmap#1] Joshua Sprigs: joined with identifiers [license:7df1…5909, xbl:2535…2995, live:1055…0914, discord:5336…1534, fivem:2412049, license2:da0e…971c]
+[01:56:29] [zFmap#1] Joshua Sprigs: said "/-openInventory"
+[01:56:36] [zFmap#1] Joshua Sprigs: said "/-openInventory"
+[01:56:40] [zFmap#1] Joshua Sprigs: said "/-openInventory"
+[01:56:55] [zFmap#1] Joshua Sprigs: said "/-openInventory"
+[01:57:01] [zFmap#1] Joshua Sprigs: said "/-openInventory"
+[01:57:05] [zFmap#1] Joshua Sprigs: said "/-placeItem"
+[01:57:06] [zFmap#1] Joshua Sprigs: said "/-openInventory"
+[01:57:08] [zFmap#1] Joshua Sprigs: said "/-openInventory"
+[01:57:11] [zFmap#1] Joshua Sprigs: enabled noclip
+[01:59:17] [zFmap#1] Joshua Sprigs: became mortal (standard mode)
+[01:59:19] [zFmap#1] Joshua Sprigs: said "minimus"
+[01:59:22] [zFmap#1] Joshua Sprigs: enabled noclip
+[01:59:23] [zFmap#1] Joshua Sprigs: became mortal (standard mode)
+[02:00:55] [zFmap#1] Joshua Sprigs: spawned a vehicle (model: banshee2)
+[02:01:05] [zFmap#1] Joshua Sprigs: repaired their vehicle
+[02:03:24] [zFmap#1] Joshua Sprigs: said "/-openInventory"
+[02:04:01] [zFmap#1] Joshua Sprigs: said "/-openInventory"
+[02:04:01] [zFmap#1] Joshua Sprigs: said "/-openInventory"
+[02:38:03] [zFmap#1] Joshua Sprigs: said "/-openInventory"
+[02:38:05] [zFmap#1] Joshua Sprigs: disconnected (Exiting)
 ================================================================
-======== txAdmin v8.0.1 atop fxserver 25770 Starting - 2026/03/28, 09:50:08
+======== txAdmin v8.0.1 atop fxserver 25770 Starting - 2026/03/30, 07:10:16
 ================================================================
-[09:50:11] txAdmin: Logger started
-[09:50:45] [UYwga#1] Joshua Sprigs: joined with identifiers [license:7df1…5909, xbl:2535…2995, live:1055…0914, discord:5336…1534, fivem:2412049, license2:da0e…971c]
-[09:51:17] [UYwga#1] Joshua Sprigs: said "/-openInventory"
-[09:51:27] [UYwga#1] Joshua Sprigs: said "/-openInventory"
-[09:51:37] [UYwga#1] Joshua Sprigs: said "/-openInventory"
-[09:51:39] [UYwga#1] Joshua Sprigs: said "/-openInventory"
-[09:52:12] [UYwga#1] Joshua Sprigs: said "/-openInventory"
-[09:52:14] [UYwga#1] Joshua Sprigs: said "/-openInventory"
-[09:52:24] [UYwga#1] Joshua Sprigs: said "/-openInventory"
-[09:52:28] [UYwga#1] Joshua Sprigs: said "/-openInventory"
-[09:52:31] [UYwga#1] Joshua Sprigs: said "/-openInventory"
-[09:52:35] [UYwga#1] Joshua Sprigs: said "/-openInventory"
-[09:53:48] [UYwga#1] Joshua Sprigs: said "/-openInventory"
-[09:53:51] [UYwga#1] Joshua Sprigs: said "/-openInventory"
-[10:04:33] [UYwga#1] Joshua Sprigs: said "/-openInventory"
-[10:04:36] [UYwga#1] Joshua Sprigs: said "/-openInventory"
-[10:04:40] [UYwga#1] Joshua Sprigs: said "/-openInventory"
-[10:04:43] [UYwga#1] Joshua Sprigs: said "/-placeItem"
-[10:04:44] [UYwga#1] Joshua Sprigs: said "/-openInventory"
-[10:04:51] [UYwga#1] Joshua Sprigs: disconnected (Disconnected.)
-[10:05:49] [UYwga#2] Joshua Sprigs: joined with identifiers [license:7df1…5909, xbl:2535…2995, live:1055…0914, discord:5336…1534, fivem:2412049, license2:da0e…971c]
-[10:06:12] [UYwga#2] Joshua Sprigs: said "/-openInventory"
-[10:06:15] [UYwga#2] Joshua Sprigs: said "/-placeItem"
-[10:06:16] [UYwga#2] Joshua Sprigs: said "/-openInventory"
-[10:06:21] [UYwga#2] Joshua Sprigs: said "/-openInventory"
-[10:07:12] [UYwga#2] Joshua Sprigs: enabled noclip
-[10:07:15] [UYwga#2] Joshua Sprigs: became mortal (standard mode)
-[10:07:17] [UYwga#2] Joshua Sprigs: spawned a vehicle (model: comet2)
-[10:11:29] [UYwga#2] Joshua Sprigs: repaired their vehicle
-[10:11:32] [UYwga#2] Joshua Sprigs: repaired their vehicle
-[10:12:27] [UYwga#2] Joshua Sprigs: repaired their vehicle
-[10:14:04] [UYwga#2] Joshua Sprigs: enabled noclip
-[10:14:24] [UYwga#2] Joshua Sprigs: became mortal (standard mode)
-[10:14:27] [UYwga#2] Joshua Sprigs: repaired their vehicle
-[10:14:28] [UYwga#2] Joshua Sprigs: repaired their vehicle
-[10:17:22] [UYwga#2] Joshua Sprigs: said "/-openInventory"
-[10:17:33] [UYwga#2] Joshua Sprigs: repaired their vehicle
-[10:17:34] [UYwga#2] Joshua Sprigs: said "/-openInventory"
-[10:17:41] [UYwga#2] Joshua Sprigs: said "/-openInventory"
-[10:17:51] [UYwga#2] Joshua Sprigs: said "/-openInventory"
-[10:17:56] [UYwga#2] Joshua Sprigs: disconnected (Exiting)
-================================================================
-======== txAdmin v8.0.1 atop fxserver 25770 Starting - 2026/03/28, 18:58:43
-================================================================
-[18:58:49] txAdmin: Logger started
-================================================================
-======== txAdmin v8.0.1 atop fxserver 25770 Starting - 2026/03/28, 19:01:02
-================================================================
-[19:01:05] txAdmin: Logger started
-[19:02:29] [6yBNb#1] Joshua Sprigs: joined with identifiers [license:7df1…5909, xbl:2535…2995, live:1055…0914, discord:5336…1534, fivem:2412049, license2:da0e…971c]
-[19:02:30] [6yBNb#2] Baki Hanma: joined with identifiers [license:4dab…66e9, xbl:2535…0714, live:9851…2806, discord:1050…3900, fivem:11168673, license2:7a11…c2e5]
-[19:02:47] [6yBNb#1] Joshua Sprigs: said "/-openInventory"
-[19:03:06] [6yBNb#1] Joshua Sprigs: said "/-openInventory"
-[19:03:15] [6yBNb#2] Baki Hanma: said "/-openInventory"
-[19:03:22] [6yBNb#1] Joshua Sprigs: said "/-openInventory"
-[19:03:45] [6yBNb#1] Joshua Sprigs: said "/-openInventory"
-[19:03:52] [6yBNb#1] Joshua Sprigs: teleported to player [#2] Baki Hanma (x=943.094, y=2208.936, z=48.337)
-[19:03:55] [6yBNb#1] Joshua Sprigs: said "/-openInventory"
-[19:03:58] [6yBNb#1] Joshua Sprigs: said "/-openInventory"
-[19:03:59] [6yBNb#2] Baki Hanma: spawned a vehicle (model: f620)
-[19:04:04] [6yBNb#2] Baki Hanma: repaired their vehicle
-[19:04:05] [6yBNb#2] Baki Hanma: boosted their vehicle
-[19:04:08] [6yBNb#2] Baki Hanma: boosted their vehicle
-[19:04:50] [6yBNb#2] Baki Hanma: enabled god mode
-[19:05:10] [6yBNb#1] Joshua Sprigs: said "/-openInventory"
-[19:05:21] [6yBNb#1] Joshua Sprigs: said "/-openInventory"
-[19:05:36] [6yBNb#1] Joshua Sprigs: caused an explosion (CAR)
-[19:05:41] [6yBNb#1] Joshua Sprigs: enabled god mode
-[19:06:20] [6yBNb#1] Joshua Sprigs: repaired their vehicle
-[19:06:31] [6yBNb#1] Joshua Sprigs: caused an explosion (PLANE)
-[19:06:48] [6yBNb#1] Joshua Sprigs: caused an explosion (PLANE)
-[19:07:33] [6yBNb#2] Baki Hanma: enabled super jump
-[19:07:37] [6yBNb#2] Baki Hanma: died from suicide (Carbine Rifle)
-[19:07:46] [6yBNb#2] Baki Hanma: spawned a vehicle (model: volatus)
-[19:07:49] [6yBNb#2] Baki Hanma: deleted a vehicle
-[19:07:54] [6yBNb#2] Baki Hanma: spawned a vehicle (model: nemesis)
-[19:07:58] [6yBNb#2] Baki Hanma: boosted their vehicle
-[19:08:05] [6yBNb#2] Baki Hanma: said "/-openInventory"
-[19:08:19] [6yBNb#2] Baki Hanma: teleported to a waypoint
-[19:08:30] [6yBNb#1] Joshua Sprigs: said "/-placeItem"
-[19:08:34] [6yBNb#1] Joshua Sprigs: repaired their vehicle
-[19:08:36] [6yBNb#2] Baki Hanma: died from suicide (Pump Shotgun)
-[19:08:51] [6yBNb#2] Baki Hanma: became mortal (standard mode)
-[19:09:03] [6yBNb#2] Baki Hanma: teleported to a waypoint
-[19:09:08] [6yBNb#2] Baki Hanma: enabled god mode
-[19:09:10] [6yBNb#1] Joshua Sprigs: repaired their vehicle
-[19:09:13] [6yBNb#1] Joshua Sprigs: said "/-placeItem"
-[19:09:15] [6yBNb#1] Joshua Sprigs: said "/-placeItem"
-[19:09:17] [6yBNb#1] Joshua Sprigs: said "/-openInventory"
-[19:09:20] [6yBNb#1] Joshua Sprigs: said "/-openInventory"
-[19:09:22] [6yBNb#2] Baki Hanma: said "/-openInventory"
-[19:09:29] [6yBNb#2] Baki Hanma: teleported to player [#1] Joshua Sprigs (x=292.338, y=2639.393, z=44.242)
-[19:10:28] [6yBNb#1] Joshua Sprigs: said "/-openInventory"
-[19:10:34] [6yBNb#1] Joshua Sprigs: said "/-openInventory"
-[19:10:38] [6yBNb#1] Joshua Sprigs: said "/-openInventory"
-[19:11:07] [6yBNb#2] Baki Hanma: caused an explosion (PETROL_PUMP)
-[19:11:09] [6yBNb#2] Baki Hanma: caused an explosion (PLANE)
-[19:11:27] [6yBNb#2] Baki Hanma: said "/-openInventory"
-[19:11:38] [6yBNb#2] Baki Hanma: said "/-openInventory"
-[19:11:44] [6yBNb#2] Baki Hanma: said "/-openInventory"
-[19:11:51] [6yBNb#2] Baki Hanma: said "/-openInventory"
-[19:12:02] [6yBNb#1] Joshua Sprigs: caused an explosion (PLANE)
-[19:12:32] [6yBNb#2] Baki Hanma: said "/-openInventory"
-[19:12:39] [6yBNb#2] Baki Hanma: spawned a vehicle (model: f620)
-[19:13:23] [6yBNb#2] Baki Hanma: caused an explosion (PLANE)
-[19:13:51] [6yBNb#1] Joshua Sprigs: caused an explosion (PLANE)
-[19:15:55] [6yBNb#2] Baki Hanma: died from suicide (Pump Shotgun)
-[19:16:29] [6yBNb#1] Joshua Sprigs: disconnected (Exiting)
-[19:17:44] [6yBNb#2] Baki Hanma: said "/-openInventory"
-[19:19:24] [6yBNb#2] Baki Hanma: became mortal (standard mode)
-[19:19:25] [6yBNb#2] Baki Hanma: enabled noclip
-[19:19:29] [6yBNb#2] Baki Hanma: became mortal (standard mode)
-[19:20:05] [6yBNb#2] Baki Hanma: enabled god mode
-[19:20:56] [6yBNb#2] Baki Hanma: died from suicide (Pistol)
-[19:21:01] [6yBNb#2] Baki Hanma: disconnected (Exiting)
-================================================================
-======== txAdmin v8.0.1 atop fxserver 25770 Starting - 2026/03/28, 19:36:23
-================================================================
-[19:36:25] txAdmin: Logger started
-[19:37:24] [rphxD#1] Joshua Sprigs: joined with identifiers [license:7df1…5909, xbl:2535…2995, live:1055…0914, discord:5336…1534, fivem:2412049, license2:da0e…971c]
-[19:37:50] [rphxD#1] Joshua Sprigs: said "/-openInventory"
-[19:37:57] [rphxD#1] Joshua Sprigs: enabled noclip
-[19:38:00] [rphxD#1] Joshua Sprigs: became mortal (standard mode)
-[19:38:05] [rphxD#1] Joshua Sprigs: said "/-openInventory"
-[19:38:12] [rphxD#1] Joshua Sprigs: said "/-openInventory"
-[19:38:15] [rphxD#1] Joshua Sprigs: said "/-openInventory"
-[19:45:26] [rphxD#1] Joshua Sprigs: said "/-openInventory"
-[19:45:31] [rphxD#1] Joshua Sprigs: said "/-openInventory"
-[19:45:36] [rphxD#1] Joshua Sprigs: said "/-openInventory"
-[19:45:39] [rphxD#1] Joshua Sprigs: said "/-placeItem"
-[19:45:41] [rphxD#1] Joshua Sprigs: said "/-openInventory"
-[19:45:44] [rphxD#1] Joshua Sprigs: said "/-openInventory"
-[19:45:46] [rphxD#1] Joshua Sprigs: said "/-openInventory"
-[19:45:58] [rphxD#1] Joshua Sprigs: said "/-openInventory"
-[19:46:01] [rphxD#1] Joshua Sprigs: said "/-placeItem"
-[19:46:03] [rphxD#1] Joshua Sprigs: said "/-openInventory"
-[19:46:04] [rphxD#1] Joshua Sprigs: said "/-openInventory"
-[19:58:19] [rphxD#1] Joshua Sprigs: said "/-openInventory"
-[19:58:22] [rphxD#1] Joshua Sprigs: said "/-placeItem"
-[19:58:24] [rphxD#1] Joshua Sprigs: said "/-openInventory"
-[19:58:30] [rphxD#1] Joshua Sprigs: said "/-openInventory"
-[19:58:38] [rphxD#1] Joshua Sprigs: said "/-openInventory"
-[19:58:44] [rphxD#1] Joshua Sprigs: disconnected (Exiting)
-================================================================
-======== txAdmin v8.0.1 atop fxserver 25770 Starting - 2026/03/28, 20:06:08
-================================================================
-[20:06:11] txAdmin: Logger started
-[20:07:37] [GLKgn#1] Joshua Sprigs: joined with identifiers [license:7df1…5909, xbl:2535…2995, live:1055…0914, discord:5336…1534, fivem:2412049, license2:da0e…971c]
-[20:08:26] [GLKgn#1] Joshua Sprigs: enabled noclip
-[20:08:32] [GLKgn#1] Joshua Sprigs: became mortal (standard mode)
-[20:08:33] [GLKgn#1] Joshua Sprigs: said "/-openInventory"
-[20:08:41] [GLKgn#1] Joshua Sprigs: said "/-openInventory"
-[20:08:54] [GLKgn#1] Joshua Sprigs: enabled noclip
-[20:09:05] [GLKgn#1] Joshua Sprigs: became mortal (standard mode)
-[20:09:09] [GLKgn#1] Joshua Sprigs: said "/-openInventory"
-[20:09:16] [GLKgn#1] Joshua Sprigs: said "/-openInventory"
-[20:09:20] [GLKgn#1] Joshua Sprigs: said "/-openInventory"
-[20:09:26] [GLKgn#1] Joshua Sprigs: said "/-openInventory"
-[20:13:43] [GLKgn#1] Joshua Sprigs: said "/-openInventory"
-[20:13:45] [GLKgn#1] Joshua Sprigs: said "/-placeItem"
-[20:13:46] [GLKgn#1] Joshua Sprigs: said "/-openInventory"
-[20:13:50] [GLKgn#1] Joshua Sprigs: said "/-openInventory"
-[20:13:56] [GLKgn#1] Joshua Sprigs: said "/-openInventory"
-[20:25:24] [GLKgn#1] Joshua Sprigs: said "/-openInventory"
-[20:25:32] [GLKgn#1] Joshua Sprigs: said "/-openInventory"
-[20:25:38] [GLKgn#1] Joshua Sprigs: disconnected (Exiting)
-[21:27:20] [GLKgn#2] Joshua Sprigs: joined with identifiers [license:7df1…5909, xbl:2535…2995, live:1055…0914, discord:5336…1534, fivem:2412049, license2:da0e…971c]
-[21:28:00] [GLKgn#2] Joshua Sprigs: said "/-openInventory"
-[21:28:04] [GLKgn#2] Joshua Sprigs: said "/-placeItem"
-[21:28:06] [GLKgn#2] Joshua Sprigs: said "/-openInventory"
-[21:29:59] [GLKgn#2] Joshua Sprigs: said "/-openInventory"
-[21:30:03] [GLKgn#2] Joshua Sprigs: said "/-openInventory"
-[21:30:05] [GLKgn#2] Joshua Sprigs: said "/-openInventory"
-[21:30:19] [GLKgn#2] Joshua Sprigs: said "/-openInventory"
-[21:38:03] [GLKgn#2] Joshua Sprigs: spawned a vehicle (model: tyrant)
-[21:38:57] [GLKgn#2] Joshua Sprigs: repaired their vehicle
-[21:41:10] [GLKgn#2] Joshua Sprigs: repaired their vehicle
-[21:42:19] [GLKgn#2] Joshua Sprigs: repaired their vehicle
-[21:49:49] [GLKgn#2] Joshua Sprigs: said "/-openInventory"
-[21:57:31] [GLKgn#2] Joshua Sprigs: said "/-openInventory"
-[22:01:33] [GLKgn#2] Joshua Sprigs: disconnected (Exiting)
-[22:02:52] [GLKgn#3] Joshua Sprigs: joined with identifiers [license:7df1…5909, xbl:2535…2995, live:1055…0914, discord:5336…1534, fivem:2412049, license2:da0e…971c]
-[22:03:19] [GLKgn#3] Joshua Sprigs: said "/-openInventory"
-[22:03:29] [GLKgn#3] Joshua Sprigs: said "/-openInventory"
-[22:03:43] [GLKgn#3] Joshua Sprigs: said "/-openInventory"
-[22:03:50] [GLKgn#3] Joshua Sprigs: said "/-openInventory"
-[22:03:54] [GLKgn#3] Joshua Sprigs: said "/-openInventory"
-[22:03:57] [GLKgn#3] Joshua Sprigs: said "/-openInventory"
-[22:04:03] [GLKgn#3] Joshua Sprigs: said "/-openInventory"
-[22:04:15] [GLKgn#3] Joshua Sprigs: said "/-openInventory"
-[22:04:19] [GLKgn#3] Joshua Sprigs: said "/-placeItem"
-[22:04:20] [GLKgn#3] Joshua Sprigs: said "/-openInventory"
-[22:04:27] [GLKgn#3] Joshua Sprigs: enabled noclip
-[22:05:09] [GLKgn#3] Joshua Sprigs: disconnected (Exiting)
+[07:10:19] txAdmin: Logger started
+[07:24:09] [7bbHz#1] Joshua Sprigs: joined with identifiers [license:7df1…5909, xbl:2535…2995, live:1055…0914, discord:5336…1534, fivem:2412049, license2:da0e…971c]
+[07:24:33] [7bbHz#1] Joshua Sprigs: said "/-openInventory"
+[07:24:40] [7bbHz#1] Joshua Sprigs: said "/-openInventory"
+[07:24:48] [7bbHz#1] Joshua Sprigs: enabled noclip
+[07:24:49] [7bbHz#1] Joshua Sprigs: became mortal (standard mode)
+[07:24:52] [7bbHz#1] Joshua Sprigs: spawned a vehicle (model: trophytruck)
+[07:24:53] [7bbHz#1] Joshua Sprigs: said "/-openInventory"
+[07:24:58] [7bbHz#1] Joshua Sprigs: repaired their vehicle
+[07:24:59] [7bbHz#1] Joshua Sprigs: deleted a vehicle
+[07:25:05] [7bbHz#1] Joshua Sprigs: said "/-openInventory"
+[07:27:12] [7bbHz#1] Joshua Sprigs: said "/-openInventory"
+[07:27:16] [7bbHz#1] Joshua Sprigs: said "/-openInventory"
+[07:27:27] [7bbHz#1] Joshua Sprigs: said "/-openInventory"
+[07:27:31] [7bbHz#1] Joshua Sprigs: said "/-openInventory"
+[07:27:41] [7bbHz#1] Joshua Sprigs: said "/-openInventory"
+[07:31:14] [7bbHz#1] Joshua Sprigs: enabled noclip
+[07:31:38] [7bbHz#1] Joshua Sprigs: became mortal (standard mode)
+[07:31:42] [7bbHz#1] Joshua Sprigs: spawned a vehicle (model: issi5)
+[07:31:44] [7bbHz#1] Joshua Sprigs: repaired their vehicle
+[07:31:45] [7bbHz#1] Joshua Sprigs: deleted a vehicle
+[07:31:51] [7bbHz#1] Joshua Sprigs: made a server-wide announcement: jou ma se poes
+[07:31:51] txAdmin: ((Broadcast) Zerxis654): said "jou ma se poes"
+[07:32:00] [7bbHz#1] Joshua Sprigs: spawned a vehicle (model: f620)
+[07:39:41] [7bbHz#1] Joshua Sprigs: deleted a vehicle
+[07:42:11] [7bbHz#1] Joshua Sprigs: said "/-openInventory"
+[07:45:38] [7bbHz#1] Joshua Sprigs: said "/-openInventory"
+[07:47:14] [7bbHz#1] Joshua Sprigs: said "/-openInventory"
+[07:51:42] [7bbHz#1] Joshua Sprigs: said "/-openInventory"
+[07:55:46] [7bbHz#1] Joshua Sprigs: said "/-openInventory"
+[07:56:10] [7bbHz#1] Joshua Sprigs: said "/-openInventory"

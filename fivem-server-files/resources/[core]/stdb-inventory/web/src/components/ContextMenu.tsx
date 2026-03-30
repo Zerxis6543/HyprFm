@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { useInventoryStore } from '../store'
 import { itemIcon } from '../types'
 
-
 function GetParentResourceName(): string {
   if (typeof window !== 'undefined' && (window as any).GetParentResourceName) {
     return (window as any).GetParentResourceName()
@@ -10,9 +9,42 @@ function GetParentResourceName(): string {
   return 'stdb-inventory'
 }
 
+// ── Optimistic helper ─────────────────────────────────────────────────────────
+// Removes or reduces a slot immediately in the store without waiting for the
+// server delta. The delta arrives ~150ms later and is a no-op (slot already gone).
+function optimisticConsume(slotId: number, consumeQty: number) {
+  const state = useInventoryStore.getState()
+
+  const applyToArr = (arr: typeof state.slots) => {
+    const slot = arr.find(s => s.id === slotId)
+    if (!slot) return arr                               // slot not in this panel
+    if (slot.quantity <= consumeQty) {
+      return arr.filter(s => s.id !== slotId)          // fully consumed
+    }
+    return arr.map(s => s.id === slotId                // partial consume
+      ? { ...s, quantity: s.quantity - consumeQty }
+      : s
+    )
+  }
+
+  // Check and update every panel independently
+  const inPockets   = state.slots.some(s => s.id === slotId)
+  const inSecondary = state.secondary.slots.some(s => s.id === slotId)
+  const inBackpack  = state.backpack?.slots.some(s => s.id === slotId)
+
+  if (inPockets)   useInventoryStore.setState({ slots: applyToArr(state.slots) })
+  if (inSecondary) useInventoryStore.setState(s => ({ secondary: { ...s.secondary, slots: applyToArr(s.secondary.slots) } }))
+  if (inBackpack)  useInventoryStore.setState(s => s.backpack
+    ? { backpack: { ...s.backpack, slots: applyToArr(s.backpack.slots) } }
+    : {}
+  )
+}
+
 export function ContextMenu() {
   const { contextMenu, slots, secondary, itemDefs, hideContext, splitStack } = useInventoryStore()
   const backpack = useInventoryStore(s => s.backpack)
+  const contextMenuInitialSplit = useInventoryStore(s => s.contextMenuInitialSplit)
+
   const ref = useRef<HTMLDivElement>(null)
   const [dropQty, setDropQty]     = useState<number | null>(null)
   const [inspecting, setInspecting] = useState(false)
@@ -20,8 +52,15 @@ export function ContextMenu() {
   const [splitAmt, setSplitAmt]    = useState(1)
 
   useEffect(() => {
-    if (!contextMenu) { setDropQty(null); setInspecting(false); setSplitting(false); setSplitAmt(1) }
-  }, [contextMenu])
+    if (!contextMenu) {
+      setDropQty(null); setInspecting(false); setSplitting(false); setSplitAmt(1)
+    } else if (contextMenuInitialSplit) {
+      setSplitting(true)
+      setSplitAmt(1)
+      setDropQty(null)
+      setInspecting(false)
+    }
+  }, [contextMenu, contextMenuInitialSplit])
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -33,7 +72,6 @@ export function ContextMenu() {
 
   if (!contextMenu) return null
 
-  // Search both panels
   const slot    = slots.find(s => s.id === contextMenu.slotId)
              ?? secondary.slots.find(s => s.id === contextMenu.slotId)
              ?? backpack?.slots.find(s => s.id === contextMenu.slotId)
@@ -42,13 +80,11 @@ export function ContextMenu() {
 
   const qty = dropQty ?? slot.quantity
 
-  // Parse weapon metadata
   const weaponMeta = (() => {
     try { return slot.metadata ? JSON.parse(slot.metadata) : null } catch { return null }
   })()
   const isWeapon = itemDef.category === 'weapon' && weaponMeta?.serial
 
-  // Durability color
   const durabilityColor = (d: number) => {
     if (d >= 75) return '#4ade80'
     if (d >= 50) return '#facc15'
@@ -56,25 +92,45 @@ export function ContextMenu() {
     return '#f87171'
   }
 
-  // Clamp to viewport
   const menuH = inspecting ? 220 : (dropQty !== null ? 180 : (itemDef.usable ? 180 : 150))
   const x = Math.min(contextMenu.x, window.innerWidth  - 200)
   const y = Math.min(contextMenu.y, window.innerHeight - menuH)
+
+  // ── Action helpers (optimistic + server) ─────────────────────────────────
+  const doDrop = (dropAmount: number) => {
+    // Optimistic: remove or reduce immediately so UI reflects the action at once
+    optimisticConsume(slot.id, dropAmount)
+    fetch(`https://${GetParentResourceName()}/dropItem`, {
+      method: 'POST',
+      body: JSON.stringify({
+        slotId:   slot.id,
+        quantity: dropAmount,
+        itemId:   slot.item_id,
+        propModel: itemDef.prop_model ?? '',
+      }),
+    })
+    hideContext()
+  }
+
+  const doUse = () => {
+    // Optimistic: consume one immediately
+    optimisticConsume(slot.id, 1)
+    fetch(`https://${GetParentResourceName()}/useItem`, {
+      method: 'POST',
+      body: JSON.stringify({ slotId: slot.id }),
+    })
+    hideContext()
+  }
 
   return (
     <div ref={ref} className="ctx-menu" style={{ left: x, top: y }}
       onPointerDown={e => e.stopPropagation()}
     >
-
       {/* Header */}
       <div className="ctx-header">
         <div className="ctx-item-icon">
-          <img
-            src={itemIcon(slot.item_id)}
-            alt={itemDef.label}
-            draggable={false}
-            onError={(e) => { (e.target as HTMLImageElement).style.opacity = '0' }}
-          />
+          <img src={itemIcon(slot.item_id)} alt={itemDef.label} draggable={false}
+            onError={(e) => { (e.target as HTMLImageElement).style.opacity = '0' }} />
         </div>
         <div style={{ flex: 1 }}>
           <div className="ctx-name">{itemDef.label.toUpperCase()}</div>
@@ -110,11 +166,9 @@ export function ContextMenu() {
           </div>
           <div style={{ height: 3, background: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden' }}>
             <div style={{
-              height: '100%',
-              width: `${weaponMeta.durability ?? 100}%`,
+              height: '100%', width: `${weaponMeta.durability ?? 100}%`,
               background: durabilityColor(weaponMeta.durability ?? 100),
-              borderRadius: 2,
-              transition: 'width 0.3s ease, background 0.3s ease',
+              borderRadius: 2, transition: 'width 0.3s ease, background 0.3s ease',
             }} />
           </div>
         </div>
@@ -141,21 +195,14 @@ export function ContextMenu() {
           <div className="ctx-qty-label">SPLIT STACK — KEEP {slot.quantity - splitAmt} · SPLIT OFF {splitAmt}</div>
           <div className="ctx-qty-row">
             <button className="ctx-qty-btn" onClick={() => setSplitAmt(Math.max(1, splitAmt - 1))}>−</button>
-            <input
-              className="ctx-qty-input"
-              type="range"
-              min={1}
-              max={slot.quantity - 1}
-              value={splitAmt}
+            <input className="ctx-qty-input" type="range" min={1} max={slot.quantity - 1} value={splitAmt}
               onChange={e => setSplitAmt(parseInt(e.target.value))}
-              style={{ flex: 1, accentColor: 'var(--accent)' }}
-            />
+              style={{ flex: 1, accentColor: 'var(--accent)' }} />
             <button className="ctx-qty-btn" onClick={() => setSplitAmt(Math.min(slot.quantity - 1, splitAmt + 1))}>+</button>
           </div>
           <div style={{ display: 'flex', gap: 4, padding: '4px 8px 8px' }}>
             <button className="ctx-action" style={{ color: '#facc15', flex: 1 }} onClick={() => {
-              splitStack(slot.id, splitAmt)
-              hideContext()
+              splitStack(slot.id, splitAmt); hideContext()
             }}>CONFIRM SPLIT</button>
             <button className="ctx-action" style={{ flex: 1 }} onClick={() => setSplitting(false)}>CANCEL</button>
           </div>
@@ -168,24 +215,13 @@ export function ContextMenu() {
           <div className="ctx-qty-label">DROP QUANTITY</div>
           <div className="ctx-qty-row">
             <button className="ctx-qty-btn" onClick={() => setDropQty(Math.max(1, dropQty - 1))}>−</button>
-            <input
-              className="ctx-qty-input"
-              type="number"
-              min={1}
-              max={slot.quantity}
-              value={dropQty}
-              onChange={e => setDropQty(Math.min(slot.quantity, Math.max(1, parseInt(e.target.value) || 1)))}
-            />
+            <input className="ctx-qty-input" type="number" min={1} max={slot.quantity} value={dropQty}
+              onChange={e => setDropQty(Math.min(slot.quantity, Math.max(1, parseInt(e.target.value) || 1)))} />
             <button className="ctx-qty-btn" onClick={() => setDropQty(Math.min(slot.quantity, dropQty + 1))}>+</button>
           </div>
           <div style={{ display: 'flex', gap: 4, padding: '4px 8px 8px' }}>
-            <button className="ctx-action" style={{ color: '#f87171', flex: 1 }} onClick={() => {
-              fetch(`https://${GetParentResourceName()}/dropItem`, {
-                method: 'POST',
-                body: JSON.stringify({ slotId: slot.id, quantity: dropQty, itemId: slot.item_id, propModel: itemDef.prop_model ?? '' }),
-              })
-              hideContext()
-            }}>CONFIRM DROP</button>
+            <button className="ctx-action" style={{ color: '#f87171', flex: 1 }}
+              onClick={() => doDrop(dropQty)}>CONFIRM DROP</button>
             <button className="ctx-action" style={{ flex: 1 }} onClick={() => setDropQty(null)}>CANCEL</button>
           </div>
         </div>
@@ -194,13 +230,8 @@ export function ContextMenu() {
       {/* Main actions */}
       {!inspecting && dropQty === null && !splitting && (<>
         {itemDef.usable && (
-          <button className="ctx-action" style={{ color: 'var(--accent)' }} onClick={() => {
-            fetch(`https://${GetParentResourceName()}/useItem`, {
-              method: 'POST',
-              body: JSON.stringify({ slotId: slot.id }),
-            })
-            hideContext()
-          }}>USE</button>
+          <button className="ctx-action" style={{ color: 'var(--accent)' }}
+            onClick={doUse}>USE</button>
         )}
 
         <button className="ctx-action" onClick={() => {
@@ -221,11 +252,7 @@ export function ContextMenu() {
 
         <button className="ctx-action" style={{ color: '#f87171' }} onClick={() => {
           if (slot.quantity === 1) {
-            fetch(`https://${GetParentResourceName()}/dropItem`, {
-              method: 'POST',
-              body: JSON.stringify({ slotId: slot.id, quantity: 1, itemId: slot.item_id, propModel: itemDef.prop_model ?? '' }),
-            })
-            hideContext()
+            doDrop(1)
           } else {
             setDropQty(slot.quantity)
           }
@@ -234,72 +261,46 @@ export function ContextMenu() {
 
       <style>{`
         .ctx-menu {
-          position: fixed;
-          z-index: 999999;
-          background: rgba(8,10,14,0.97);
-          border: 1px solid var(--border);
-          border-radius: var(--radius);
-          min-width: 200px;
-          overflow: hidden;
-          box-shadow: 0 8px 32px rgba(0,0,0,0.8);
-          animation: ctxIn 0.08s ease;
+          position: fixed; z-index: 999999;
+          background: rgba(8,10,14,0.97); border: 1px solid var(--border);
+          border-radius: var(--radius); min-width: 200px; overflow: hidden;
+          box-shadow: 0 8px 32px rgba(0,0,0,0.8); animation: ctxIn 0.08s ease;
         }
         @keyframes ctxIn {
           from { opacity: 0; transform: scale(0.96) translateY(-4px); }
           to   { opacity: 1; transform: scale(1) translateY(0); }
         }
-        .ctx-header {
-          display: flex; align-items: center; gap: 10px; padding: 10px 12px;
-        }
+        .ctx-header { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
         .ctx-item-icon {
           width: 36px; height: 36px; flex-shrink: 0;
           display: flex; align-items: center; justify-content: center;
-          background: var(--bg-slot); border: 1px solid var(--border);
-          border-radius: var(--radius);
+          background: var(--bg-slot); border: 1px solid var(--border); border-radius: var(--radius);
         }
         .ctx-item-icon img { width: 26px; height: 26px; object-fit: contain; }
-        .ctx-name {
-          font-size: 11px; font-weight: 700;
-          letter-spacing: 0.08em; color: var(--text-primary);
-        }
-        .ctx-meta {
-          font-family: var(--font-mono); font-size: 9px;
-          color: var(--text-muted); margin-top: 2px;
-        }
+        .ctx-name { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; color: var(--text-primary); }
+        .ctx-meta { font-family: var(--font-mono); font-size: 9px; color: var(--text-muted); margin-top: 2px; }
         .ctx-divider { height: 1px; background: var(--border); }
         .ctx-action {
           display: block; width: 100%; padding: 9px 12px;
           background: none; border: none; text-align: left;
-          font-family: var(--font-ui); font-size: 11px;
-          font-weight: 600; letter-spacing: 0.08em;
-          color: var(--text-secondary);
+          font-family: var(--font-ui); font-size: 11px; font-weight: 600;
+          letter-spacing: 0.08em; color: var(--text-secondary);
           cursor: pointer; transition: background var(--transition);
         }
         .ctx-action:hover { background: rgba(255,255,255,0.05); color: var(--text-primary); }
-        .ctx-inspect {
-          padding: 6px 0;
-        }
+        .ctx-inspect { padding: 6px 0; }
         .ctx-inspect-row {
-          display: flex; justify-content: space-between;
-          padding: 4px 12px;
-          font-family: var(--font-mono); font-size: 9px;
-          color: var(--text-secondary);
+          display: flex; justify-content: space-between; padding: 4px 12px;
+          font-family: var(--font-mono); font-size: 9px; color: var(--text-secondary);
         }
         .ctx-inspect-row span:last-child { color: var(--text-primary); }
         .ctx-qty-wrap { padding: 8px; }
-        .ctx-qty-label {
-          font-size: 9px; font-weight: 700; letter-spacing: 0.1em;
-          color: var(--text-muted); padding: 0 4px 6px;
-        }
-        .ctx-qty-row {
-          display: flex; align-items: center; gap: 4px;
-          padding: 0 4px 6px;
-        }
+        .ctx-qty-label { font-size: 9px; font-weight: 700; letter-spacing: 0.1em; color: var(--text-muted); padding: 0 4px 6px; }
+        .ctx-qty-row { display: flex; align-items: center; gap: 4px; padding: 0 4px 6px; }
         .ctx-qty-btn {
-          width: 28px; height: 28px;
-          background: var(--bg-slot); border: 1px solid var(--border);
-          border-radius: var(--radius); color: var(--text-primary);
-          font-size: 14px; cursor: pointer;
+          width: 28px; height: 28px; background: var(--bg-slot);
+          border: 1px solid var(--border); border-radius: var(--radius);
+          color: var(--text-primary); font-size: 14px; cursor: pointer;
           display: flex; align-items: center; justify-content: center;
         }
         .ctx-qty-btn:hover { border-color: var(--accent); }

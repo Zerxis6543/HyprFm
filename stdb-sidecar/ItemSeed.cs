@@ -32,10 +32,10 @@ static class ItemSeed
         new("phone",         "Phone",          0.1f,  false, true,  1,    "phone",     "prop_npc_phone_02"),
 
         //Weapons and Ammo
-        new("weapon_pistol", "Pistol",        1.5f,  false, false, 1,   "weapon", "prop_w_pi_pistol",      MagCapacity: 17, StoredCapacity: 255,  AmmoType: "ammo_pistol"),
+        new("weapon_pistol", "Pistol",        1.5f,  false, false, 1,   "weapon", "WEAPON_PISTOL",      MagCapacity: 17, StoredCapacity: 255,  AmmoType: "ammo_pistol"),
         new("ammo_pistol",   "Pistol Ammo",   0.05f, true,  false, 250, "misc",   "prop_box_ammo01a"),
-        new("weapon_knife",  "Knife",         0.5f,  false, false, 1,   "weapon", "prop_cs_knife_01",      MagCapacity: 0,  StoredCapacity: 0,   AmmoType: ""),
-        new("assault_rifle", "Assault Rifle", 4.5f,  false, false, 1,   "weapon", "prop_w_ar_assaultrifle",MagCapacity: 30, StoredCapacity: 120, AmmoType: "ammo_rifle"),
+        new("weapon_knife",  "Knife",         0.5f,  false, false, 1,   "weapon", "WEAPON_KNIFE",      MagCapacity: 0,  StoredCapacity: 0,   AmmoType: ""),
+        new("assault_rifle", "Assault Rifle", 4.5f,  false, false, 1,   "weapon", "WEAPON_ASSAULTRIFLE",MagCapacity: 30, StoredCapacity: 120, AmmoType: "ammo_rifle"),
 
         //Other
         new("lockpick",      "Lockpick",       0.1f,  true,  true,  10,   "misc",      "prop_cs_cardbox_01"),

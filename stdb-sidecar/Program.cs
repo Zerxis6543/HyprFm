@@ -87,8 +87,11 @@ class Program
         };
 
         _db!.Db.InventorySlot.OnUpdate += (evCtx, oldSlot, newSlot) => {
-            _deltaQueue.Enqueue(new { type = "updated", slot = newSlot, owner_id = newSlot.OwnerId });
-        };
+            if (oldSlot.OwnerId != newSlot.OwnerId) {
+                _deltaQueue.Enqueue(new { type = "deleted", slot_id = oldSlot.Id, owner_id = oldSlot.OwnerId });
+            }
+    _deltaQueue.Enqueue(new { type = "updated", slot = newSlot, owner_id = newSlot.OwnerId });
+};
 
         _db!.Db.InventorySlot.OnDelete += (evCtx, slot) => {
             _deltaQueue.Enqueue(new { type = "deleted", slot_id = slot.Id, owner_id = slot.OwnerId });
@@ -561,6 +564,62 @@ class Program
                         ulong srcId = args.GetProperty("src_slot_id").GetUInt64();
                         ulong dstId = args.GetProperty("dst_slot_id").GetUInt64();
                         _db!.Reducers.MergeStacks(srcId, dstId);
+                        await WriteJson(ctx, new { ok = true });
+                        return;
+                    }
+
+                    case "split_stack":
+                    {
+                        ulong splitSlotId = args.GetProperty("slot_id").GetUInt64();
+                        uint  splitAmount = args.GetProperty("amount").GetUInt32();
+                        _db!.Reducers.SplitStack(splitSlotId, splitAmount);
+                        await WriteJson(ctx, new { ok = true });
+                        return;
+                    }
+                    case "move_item_partial":
+                    {
+                        ulong  mpSlotId     = args.GetProperty("slot_id").GetUInt64();
+                        uint   mpQty        = args.GetProperty("quantity").GetUInt32();
+                        string mpOwnerId    = args.TryGetProperty("new_owner_id",   out var mpOI) ? mpOI.GetString() ?? "" : "";
+                        string mpOwnerType  = args.TryGetProperty("new_owner_type", out var mpOT) ? mpOT.GetString() ?? "" : "";
+                        uint   mpSlotIndex  = args.TryGetProperty("new_slot_index", out var mpSI) ? mpSI.GetUInt32() : 0u;
+
+                        var mpSrc = _db!.Db.InventorySlot.Iter().FirstOrDefault(s => s.Id == mpSlotId);
+                        if (mpSrc == null) { await WriteJson(ctx, new { ok = false, error = "slot not found" }); return; }
+
+                        if (mpQty >= mpSrc.Quantity)
+                        {
+                            // Full move — delegate to existing reducers
+                            if (string.IsNullOrEmpty(mpOwnerId) || mpOwnerType == "player")
+                                _db!.Reducers.MoveItem(mpSlotId, mpSlotIndex);
+                            else
+                                _db!.Reducers.TransferItem(mpSlotId, mpOwnerId, mpOwnerType, mpSlotIndex);
+                        }
+                        else
+                        {
+                            // Partial: split off mpQty, then transfer the split portion
+                            _db!.Reducers.SplitStack(mpSlotId, mpQty);
+                            await Task.Delay(80);
+
+                            // Find the newly split slot (same owner, same item, quantity == mpQty, newest ID)
+                            var mpSplit = _db!.Db.InventorySlot.Iter()
+                                .Where(s => s.OwnerId  == mpSrc.OwnerId
+                                        && s.OwnerType == mpSrc.OwnerType
+                                        && s.ItemId   == mpSrc.ItemId
+                                        && s.Quantity == mpQty
+                                        && s.Id       != mpSlotId)
+                                .OrderByDescending(s => s.Id)
+                                .FirstOrDefault();
+
+                            if (mpSplit != null)
+                            {
+                                if (string.IsNullOrEmpty(mpOwnerId) || mpOwnerType == "player")
+                                    _db!.Reducers.MoveItem(mpSplit.Id, mpSlotIndex);
+                                else
+                                    _db!.Reducers.TransferItem(mpSplit.Id, mpOwnerId, mpOwnerType, mpSlotIndex);
+                            }
+                        }
+
                         await WriteJson(ctx, new { ok = true });
                         return;
                     }

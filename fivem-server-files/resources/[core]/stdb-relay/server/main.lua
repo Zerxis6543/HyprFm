@@ -1,5 +1,3 @@
--- server/main.lua  [stdb-relay]
--- COMPLETE FILE — replace entire contents
 -- ─────────────────────────────────────────────────────────────────────────────
 -- HyprFM Relay — the thin bridge between FiveM natives and SpacetimeDB.
 -- Principle: This file NEVER decides game state.
@@ -663,6 +661,17 @@ AddEventHandler("stdb:moveItem", function(slotId, newSlotIndex, ownerType, owner
         print(("[stdb-relay] stdb:moveItem: cannot resolve identity for server_id=%d; " ..
                "player may not have opened their inventory yet"):format(src))
         return
+    end
+
+    -- Register the transfer TARGET in _openStashToServerId immediately.
+    -- C# OnUpdate emits an "updated" delta with owner_id = resolvedId.
+    -- Without this registration, that delta has no route and is silently
+    -- dropped — causing the item to vanish from the destination panel.
+    -- This runs BEFORE the HTTP call so the delta loop is ready by the time
+    -- SpacetimeDB commits the change (typically ~80ms later).
+    if resolvedType ~= "player" and resolvedType ~= "equip"
+       and resolvedId ~= nil and resolvedId ~= "" then
+        _openStashToServerId[resolvedId] = src
     end
 
     PerformHttpRequest(SIDECAR_URL .. "reducer",

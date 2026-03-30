@@ -327,15 +327,21 @@ end)
 
 -- ── TAB — open inventory ──────────────────────────────────────────────────────
 RegisterCommand("+openInventory", function()
-    if isOpen then return end
+    if isOpen then
+        -- Close path — mirrors the NUI close callback exactly
+        isOpen = false
+        SetNuiFocus(false, false)
+        SetNuiFocusKeepInput(false)
+        TriggerScreenblurFadeOut(500)
+        TriggerServerEvent("stdb:closeInventory")
+        return
+    end
+    -- Open path — unchanged from original
     if inVehicle then
-        -- If ID not yet available (passenger waiting for driver), poll briefly
         Citizen.CreateThread(function()
             local timeout = 0
             while not currentVehicleId and timeout < 20 do
-                Citizen.Wait(100)
-                timeout = timeout + 1
-                -- Re-check state bag in case driver just set it
+                Citizen.Wait(100); timeout = timeout + 1
                 local ped = PlayerPedId()
                 local veh = GetVehiclePedIsIn(ped, false)
                 if veh ~= 0 then
@@ -346,7 +352,6 @@ RegisterCommand("+openInventory", function()
             if currentVehicleId then
                 TriggerServerEvent("stdb:requestGlovebox", currentVehicleId, currentModel, currentClass)
             else
-                -- Fallback: open pockets+ground if vehicle has no ID yet
                 local pos = GetEntityCoords(PlayerPedId())
                 TriggerServerEvent("stdb:requestInventory", pos.x, pos.y, pos.z)
             end
@@ -356,7 +361,8 @@ RegisterCommand("+openInventory", function()
         TriggerServerEvent("stdb:requestInventory", pos.x, pos.y, pos.z)
     end
 end, false)
-RegisterKeyMapping("+openInventory", "Open Inventory", "keyboard", "TAB")
+-- F2 only — TAB binding removed
+RegisterKeyMapping("+stdb_toggle", "Toggle Inventory", "keyboard", "TAB")
 
 -- ── Unified open event (used for all inventory types now) ─────────────────────
 RegisterNetEvent("stdb:openInventory")
@@ -470,7 +476,6 @@ AddEventHandler("stdb:spawnWorldDrop", function(slotId, stashId, propModel, x, y
         PlaceObjectOnGroundProperly(obj)
         FreezeEntityPosition(obj, true)
         SetEntityAsMissionEntity(obj, true, true)
-        -- Store x/y/z so the proximity scan does pure arithmetic (no GetEntityCoords per prop)
         table.insert(worldProps, { prop = obj, stashId = stashId, x = x, y = y, z = z })
     end
     SetModelAsNoLongerNeeded(propHash)
@@ -479,12 +484,10 @@ end)
 local PICKUP_RADIUS   = 3.0
 local nearGroundStash = false
  
--- 500ms scan — pure arithmetic on stored coords, zero native calls per prop
 Citizen.CreateThread(function()
     while true do
         Citizen.Wait(500)
         if isOpen then nearGroundStash = false; goto continueProxScan end
- 
         local pedPos  = GetEntityCoords(PlayerPedId())
         local closest = false
         for _, data in ipairs(worldProps) do
@@ -497,28 +500,7 @@ Citizen.CreateThread(function()
             end
         end
         nearGroundStash = closest
- 
         ::continueProxScan::
-    end
-end)
- 
--- Per-frame hint draw
-Citizen.CreateThread(function()
-    while true do
-        Citizen.Wait(0)
-        if not nearGroundStash or isOpen or isInspecting then goto continueProxDraw end
- 
-        DrawRect(0.5, 0.935, 0.20, 0.032, 8, 10, 14, 210)
- 
-        SetTextFont(4); SetTextScale(0.0, 0.22)
-        SetTextColour(74, 222, 128, 255); SetTextCentre(false)
-        SetTextEntry("STRING"); AddTextComponentString("TAB"); DrawText(0.416, 0.924)
- 
-        SetTextFont(4); SetTextScale(0.0, 0.22)
-        SetTextColour(220, 220, 220, 200); SetTextCentre(false)
-        SetTextEntry("STRING"); AddTextComponentString("Pick up nearby item"); DrawText(0.446, 0.924)
- 
-        ::continueProxDraw::
     end
 end)
 
@@ -552,7 +534,8 @@ RegisterNUICallback("moveItem", function(data, cb)
         data.ownerType or "",
         data.ownerId   or "",
         pos.x, pos.y, pos.z,
-        data.propModel or ""
+        data.propModel or "",
+        data.quantity  -- nil for full moves, number for partial (half/single)
     )
     cb("ok")
 end)
@@ -855,7 +838,7 @@ Citizen.CreateThread(function()
             isThrowingAnim    = true
 
             local inVeh       = IsPedInAnyVehicle(ped, false)
-            local grenadeHash = GetHashKey("WEAPON_SMOKEGRENADE")
+            local grenadeHash = GetHashKey("WEAPON_BALL")
             local prevWeapon  = GetSelectedPedWeapon(ped)
 
             -- Show our prop at hand bone, hide grenade object each frame

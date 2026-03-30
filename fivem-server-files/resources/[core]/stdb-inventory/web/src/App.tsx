@@ -4,7 +4,7 @@ import {
   DndContext, DragEndEvent, DragStartEvent,
   PointerSensor, useSensor, useSensors, pointerWithin,
 } from '@dnd-kit/core'
-import { useInventoryStore } from './store'
+import { useInventoryStore, dragState } from './store'
 import { InventoryPanel } from './components/InventoryPanel'
 import { EquipmentPanel } from './components/EquipmentPanel'
 import { ContextMenu } from './components/ContextMenu'
@@ -12,48 +12,24 @@ import { InventorySlot, itemIcon, EquipSlotKey } from './types'
 import { InspectHint } from './components/InspectHint'
 
 const EQUIP_ALLOWED: Record<string, string[]> = {
-  backpack:         ['bag'],
-  body_armour:      ['armor'],
-  phone:            ['phone'],
-  parachute:        ['parachute'],
-  weapon_primary:   ['weapon'],
-  weapon_secondary: ['weapon'],
-  hotkey_1:         ['any'],
-  hotkey_2:         ['any'],
-  hotkey_3:         ['any'],
-  hotkey_4:         ['any'],
-  hotkey_5:         ['any'],
+  backpack: ['bag'], body_armour: ['armor'], phone: ['phone'],
+  parachute: ['parachute'], weapon_primary: ['weapon'], weapon_secondary: ['weapon'],
+  hotkey_1: ['any'], hotkey_2: ['any'], hotkey_3: ['any'], hotkey_4: ['any'], hotkey_5: ['any'],
 }
-
-// Direct item-to-slot mapping as reliable fallback
 const ITEM_EQUIP_MAP: Record<string, string> = {
-  backpack:       'backpack',
-  duffel_bag:     'backpack',
-  body_armour:    'body_armour',
-  phone:          'phone',
-  parachute:      'parachute',
-  weapon_pistol:  'weapon_primary',
-  weapon_knife:   'weapon_secondary',
-  assault_rifle:  'weapon_primary',
+  backpack: 'backpack', duffel_bag: 'backpack', body_armour: 'body_armour',
+  phone: 'phone', parachute: 'parachute',
+  weapon_pistol: 'weapon_primary', weapon_knife: 'weapon_secondary', assault_rifle: 'weapon_primary',
 }
-
 function canEquip(itemId: string, equipKey: string): boolean {
   const allowed = EQUIP_ALLOWED[equipKey]
   if (!allowed) return false
   if (allowed.includes('any')) return true
-
-  // Check direct item mapping first
-  const directSlot = ITEM_EQUIP_MAP[itemId]
-  if (directSlot === equipKey) return true
-
-  // Fall back to category check
-  const state = useInventoryStore.getState()
-  const cat   = state.itemDefs[itemId]?.category ?? 'misc'
-  return allowed.includes(cat)
+  if (ITEM_EQUIP_MAP[itemId] === equipKey) return true
+  return allowed.includes(useInventoryStore.getState().itemDefs[itemId]?.category ?? 'misc')
 }
 
 const REF_H = 1080
-
 function useZoom() {
   const [z, setZ] = useState(() => window.innerHeight / REF_H)
   useEffect(() => {
@@ -78,31 +54,17 @@ function DragCursor({ slot, mousePos }: {
   }, [])
   return (
     <div style={{
-      position:      'fixed',
-      left:          pos.x,
-      top:           pos.y,
-      transform:     'translate(-50%, -50%) scale(0.9)',
-      pointerEvents: 'none',
-      zIndex:        9999,
-      width:         110,
-      height:        110,
-      background:    'var(--bg-panel)',
-      border:        '1px solid var(--accent)',
-      borderRadius:  'var(--radius)',
-      display:       'flex',
-      flexDirection: 'column',
-      alignItems:    'center',
-      justifyContent:'center',
-      boxShadow:     '0 8px 32px rgba(0,0,0,0.6), 0 0 16px var(--accent-dim)',
-      gap:           2,
+      position: 'fixed', left: pos.x, top: pos.y,
+      transform: 'translate(-50%, -50%) scale(0.9)',
+      pointerEvents: 'none', zIndex: 9999, width: 110, height: 110,
+      background: 'var(--bg-panel)', border: '1px solid var(--accent)',
+      borderRadius: 'var(--radius)',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      boxShadow: '0 8px 32px rgba(0,0,0,0.6), 0 0 16px var(--accent-dim)', gap: 2,
     }}>
-      <img
-        src={itemIcon(slot.item_id)}
-        alt={slot.item_id}
-        draggable={false}
+      <img src={itemIcon(slot.item_id)} alt={slot.item_id} draggable={false}
         style={{ width: 56, height: 56, objectFit: 'contain' }}
-        onError={(e) => { (e.target as HTMLImageElement).style.opacity = '0' }}
-      />
+        onError={(e) => { (e.target as HTMLImageElement).style.opacity = '0' }} />
       <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-secondary)' }}>
         {slot.quantity}x
       </span>
@@ -131,6 +93,25 @@ export default function App() {
     return () => window.removeEventListener('mousemove', track)
   }, [])
 
+  // Track Ctrl modifier at the window level so we never have to touch dnd-kit's
+  // listeners in ItemSlot. Fires before dnd-kit's sensor, so dragState is set
+  // by the time handleDragStart runs.
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      if (e.button === 0 && e.ctrlKey) {
+        dragState.modifier = 'half'
+      } else if (e.button === 0 && e.shiftKey) {
+        // Shift+left is handled as a click in ItemSlot — don't set a modifier
+        dragState.modifier = null
+      } else {
+        dragState.modifier = null
+      }
+    }
+    window.addEventListener('pointerdown', onDown, { capture: true })
+    return () => window.removeEventListener('pointerdown', onDown, { capture: true })
+  }, [])
+
+  // Single PointerSensor — right-click drag is removed per spec
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   )
@@ -147,7 +128,6 @@ export default function App() {
 
   const [rendered, setRendered] = useState(false)
   const [opacity, setOpacity]   = useState(0)
-
   useEffect(() => {
     if (isOpen) {
       setRendered(true)
@@ -161,13 +141,12 @@ export default function App() {
 
   if (!rendered && !inspectMode) return null
 
-  const PANEL_W  = 520
+  const PANEL_W   = 520
   const panelZoom = { zoom: z } as React.CSSProperties
 
   function handleDragStart(e: DragStartEvent) {
     const id    = String(e.active.id)
     const state = useInventoryStore.getState()
-
     if (id.startsWith('slot-')) {
       const slotId        = parseInt(id.replace('slot-', ''))
       const fromPockets   = state.slots.find(s => s.id === slotId)
@@ -184,11 +163,16 @@ export default function App() {
   }
 
   function handleDragEnd(_e: DragEndEvent) {
-    const source    = draggingSource
-    const slot      = draggingSlot
-    const activeId  = String(_e.active.id)
-    const isEquipSrc = activeId.startsWith('equip-')
+    const source      = draggingSource
+    const slot        = draggingSlot
+    const activeId    = String(_e.active.id)
+    const isEquipSrc  = activeId.startsWith('equip-')
     const equipSrcKey = isEquipSrc ? activeId.replace('equip-', '') as EquipSlotKey : null
+
+    // Read then reset modifier state
+    const modifier = dragState.modifier
+    dragState.modifier = null
+
     setDragging(null, null)
     if (!slot) return
 
@@ -202,7 +186,6 @@ export default function App() {
         if (targetKey && targetKey !== equipSrcKey) swapEquip(equipSrcKey, targetKey)
         return
       }
-      // Equip → Inventory slot (unequip)
       const slotEl = el?.closest('[data-slot-index]')
       if (slotEl) {
         const toIndex     = parseInt(slotEl.getAttribute('data-slot-index') ?? '-1')
@@ -216,8 +199,14 @@ export default function App() {
     const slotEl = el?.closest('[data-slot-index]')
     if (slotEl) {
       const toIndex     = parseInt(slotEl.getAttribute('data-slot-index') ?? '-1')
-      const targetPanel = (slotEl.getAttribute('data-panel') ?? 'pockets') as 'pockets' | 'secondary'
-      if (toIndex >= 0 && source) moveSlot(slot.id, toIndex, source, targetPanel)
+      const targetPanel = (slotEl.getAttribute('data-panel') ?? 'pockets') as 'pockets' | 'secondary' | 'backpack'
+      if (toIndex >= 0 && source) {
+        // Ctrl+drag = half-stack partial move; no modifier = full move
+        const effectiveQty = modifier === 'half'
+          ? Math.max(1, Math.ceil(slot.quantity / 2))
+          : undefined
+        moveSlot(slot.id, toIndex, source, targetPanel, effectiveQty)
+      }
       return
     }
 
@@ -242,10 +231,8 @@ export default function App() {
     >
       <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none' }}>
 
-        {/* Tab bar */}
         <div style={{
-          position: 'fixed', top: 20, right: 20,
-          ...panelZoom,
+          position: 'fixed', top: 20, right: 20, ...panelZoom,
           pointerEvents: 'all', zIndex: 200,
           display: inspectMode ? 'none' : 'flex', gap: 2,
           transformOrigin: 'top right',
@@ -260,65 +247,65 @@ export default function App() {
           </button>
         </div>
 
-        {/* Left — POCKETS + BACKPACK */}
+        {/* Left column — full-height flex container centres panels vertically */}
         <div style={{
-          position: 'fixed', top: '50%', left: 20,
-          ...panelZoom,
-          transform: `translateY(-${50 / z}%) perspective(1200px) rotateY(6deg)`,
-          transformOrigin: 'top left',
-          pointerEvents: 'all', zIndex: 10,
-          display: inspectMode ? 'none' : 'flex', flexDirection: 'column', gap: 8,
-          width: PANEL_W,
+          position: 'fixed', top: 0, bottom: 0, left: 20,
+          display: inspectMode ? 'none' : 'flex',
+          alignItems: 'center',
+          pointerEvents: 'none',   // container is click-through
+          zIndex: 10,
         }}>
-          <InventoryPanel title="POCKETS" panel="pockets" />
-          {backpack && (
-            <div style={{ animation: 'slideDown 0.2s ease' }}>
-              <InventoryPanel
-                title={backpack.label}
-                panel="backpack"
-                secondary
-                contextOverride={backpack}
-              />
-            </div>
-          )}
+          <div style={{
+            ...panelZoom,
+            transform: 'perspective(1200px) rotateY(6deg)',
+            transformOrigin: 'left center',
+            pointerEvents: 'all',
+            display: 'flex', flexDirection: 'column', gap: 8,
+            width: PANEL_W,
+          }}>
+            <InventoryPanel title="POCKETS" panel="pockets" />
+            {backpack && (
+              <div style={{ animation: 'slideDown 0.2s ease' }}>
+                <InventoryPanel title={backpack.label} panel="backpack" secondary contextOverride={backpack} />
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Right — GROUND/GLOVEBOX/UTILITY */}
+        {/* Right column — same centering approach */}
         <div style={{
-          position: 'fixed', top: '50%', right: 20,
-          ...panelZoom,
-          transform: `translateY(-${50 / z}%) perspective(1200px) rotateY(-6deg)`,
-          transformOrigin: 'top right',
-          pointerEvents: 'all', zIndex: 10,
-          display: inspectMode ? 'none' : undefined,
-          width: PANEL_W,
+          position: 'fixed', top: 0, bottom: 0, right: 20,
+          display: inspectMode ? 'none' : 'flex',
+          alignItems: 'center',
+          pointerEvents: 'none',
+          zIndex: 10,
         }}>
-          {activeTab === 'inventories' && <InventoryPanel title="GROUND" panel="secondary" secondary />}
-          {activeTab === 'utility'     && <EquipmentPanel />}
+          <div style={{
+            ...panelZoom,
+            transform: 'perspective(1200px) rotateY(-6deg)',
+            transformOrigin: 'right center',
+            pointerEvents: 'all',
+            width: PANEL_W,
+          }}>
+            {activeTab === 'inventories' && <InventoryPanel title="GROUND" panel="secondary" secondary />}
+            {activeTab === 'utility'     && <EquipmentPanel />}
+          </div>
         </div>
 
-        
         <style>{`
           * { box-sizing: border-box; }
           .tab-btn {
-            padding: 7px 16px;
-            background: rgba(8,10,14,0.88);
-            border: 1px solid var(--border);
-            color: var(--text-secondary);
-            font-family: var(--font-ui);
-            font-size: 11px; font-weight: 700; letter-spacing: 0.1em;
-            cursor: pointer; border-radius: var(--radius);
-            transition: all var(--transition);
-            display: flex; align-items: center; gap: 6px;
+            padding: 7px 16px; background: rgba(8,10,14,0.88);
+            border: 1px solid var(--border); color: var(--text-secondary);
+            font-family: var(--font-ui); font-size: 11px; font-weight: 700;
+            letter-spacing: 0.1em; cursor: pointer; border-radius: var(--radius);
+            transition: all var(--transition); display: flex; align-items: center; gap: 6px;
             backdrop-filter: blur(12px); white-space: nowrap;
           }
           .tab-btn:hover  { color: var(--text-primary); border-color: rgba(255,255,255,0.15); }
           .tab-btn.active { background: var(--accent); color: #000; border-color: var(--accent); }
           .tab-icon { font-size: 10px; opacity: 0.7; }
-          .tab-key {
-            background: rgba(0,0,0,0.3); padding: 1px 6px;
-            border-radius: 2px; font-size: 9px; font-family: var(--font-mono);
-          }
+          .tab-key  { background: rgba(0,0,0,0.3); padding: 1px 6px; border-radius: 2px; font-size: 9px; font-family: var(--font-mono); }
           @keyframes slideDown {
             from { opacity: 0; transform: translateY(-12px); }
             to   { opacity: 1; transform: translateY(0); }

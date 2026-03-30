@@ -146,28 +146,66 @@ window.addEventListener('message', (e: MessageEvent) => {
       
         const added:   typeof state.slots = []
         const updated: typeof state.slots = []
-        const removed: number[]            = []
+      
+        // Track full {slot_id, owner_id} for every deletion so we know WHICH panel
+        // the slot left. We must NOT remove a slot from a panel it was never in.
+        type DeletedInfo = { slot_id: number; owner_id: string }
+        const deletedInfos: DeletedInfo[] = []
       
         for (const delta of rawDeltas) {
-          if (delta.type === 'added'   && delta.slot)              added.push(delta.slot)
-          if (delta.type === 'updated' && delta.slot)              updated.push(delta.slot)
-          if (delta.type === 'deleted' && delta.slot_id != null)   removed.push(delta.slot_id)
+          if (delta.type === 'added'   && delta.slot)            added.push(delta.slot)
+          if (delta.type === 'updated' && delta.slot)            updated.push(delta.slot)
+          if (delta.type === 'deleted' && delta.slot_id != null) {
+            deletedInfos.push({ slot_id: delta.slot_id, owner_id: delta.owner_id ?? '' })
+          }
+        }
+      
+        // Returns the set of slot ids that were deleted FROM this specific panel.
+        // A deletion only applies to the panel whose owner_id matches the delta's
+        // owner_id. This prevents the old-owner deletion from clearing the NEW
+        // owner's panel where the item was just placed.
+        const removedIdsForPanel = (panelOwnerId: string): Set<number> => {
+          return new Set(
+            deletedInfos
+              .filter(d => {
+                // Empty panelOwnerId means pockets is currently empty — still apply
+                // deletions whose owner matches what pockets HAD (the identity hex).
+                // We can't distinguish empty-pockets from "any panel" so we apply all
+                // non-stash deletions to pockets as a safe fallback. The slot simply
+                // won't be found and the filter is a no-op.
+                if (panelOwnerId === '') return true
+                return d.owner_id === panelOwnerId
+              })
+              .map(d => d.slot_id)
+          )
         }
       
         const applyToPanel = (
-          slots: typeof state.slots,
+          slots:          typeof state.slots,
           panelOwnerId:   string,
           panelOwnerType: string,
         ) => {
-          // Remove deleted ids (applied to all panels — no routing hint on delete)
-          let result = slots.filter(s => !removed.includes(s.id))
-          // Apply updates
-          result = result.map(s => {
-            const u = updated.find(u => u.id === s.id)
-            return u ? { ...s, ...u } : s
-          })
-          // Add new slots belonging to this panel
+          // 1. Remove only slots deleted FROM this panel (owner_id-scoped)
+          const removedIds = removedIdsForPanel(panelOwnerId)
+          let result = slots.filter(s => !removedIds.has(s.id))
+      
+          // 2. Process updated slots:
+          //    a. Slot already in this panel → update in place
+          //    b. Slot not here but new owner matches → add it (ownership transfer)
           const existingIds = new Set(result.map(s => s.id))
+          for (const u of updated) {
+            if (existingIds.has(u.id)) {
+              result = result.map(s => s.id === u.id ? { ...s, ...u } : s)
+            } else if (
+              u.owner_type === panelOwnerType &&
+              (panelOwnerId === '' || u.owner_id === panelOwnerId)
+            ) {
+              result.push(u)
+              existingIds.add(u.id)
+            }
+          }
+      
+          // 3. Add brand-new slots belonging to this panel
           for (const a of added) {
             if (!existingIds.has(a.id) &&
                 a.owner_type === panelOwnerType &&
@@ -175,6 +213,7 @@ window.addEventListener('message', (e: MessageEvent) => {
               result.push(a)
             }
           }
+      
           return result
         }
       

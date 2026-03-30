@@ -1,5 +1,5 @@
 import { useDraggable, useDroppable } from '@dnd-kit/core'
-import { CSSProperties } from 'react'
+import { CSSProperties, useCallback } from 'react'
 import { InventorySlot, ItemDefinition, itemIcon, ITEM_RARITY } from '../types'
 import { useInventoryStore } from '../store'
 
@@ -12,8 +12,11 @@ interface Props {
 }
 
 export function ItemSlot({ slotIndex, slot, itemDef, panel, isDropTarget = false }: Props) {
-  const showContext = useInventoryStore(s => s.showContext)
+  const showContext      = useInventoryStore(s => s.showContext)
+  const showContextSplit = useInventoryStore(s => s.showContextSplit)
+  const moveSlot         = useInventoryStore(s => s.moveSlot)
 
+  // Fully intact — never split or wrap listeners; dnd-kit owns them completely
   const { attributes, listeners, setNodeRef: setDragRef, isDragging } = useDraggable({
     id:       slot ? `slot-${slot.id}` : `empty-${panel}-${slotIndex}`,
     disabled: !slot,
@@ -30,17 +33,34 @@ export function ItemSlot({ slotIndex, slot, itemDef, panel, isDropTarget = false
     setDropRef(el)
   }
 
-  const style: CSSProperties = {
-    opacity: isDragging ? 0.3 : 1,
-  }
+  // Shift + Left-click → quick transfer to the opposite panel
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    if (!slot || !e.shiftKey || e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    const state       = useInventoryStore.getState()
+    const targetPanel: 'pockets' | 'secondary' | 'backpack' =
+      panel === 'pockets' ? 'secondary' : 'pockets'
+    const targetSlots = targetPanel === 'pockets' ? state.slots : state.secondary.slots
+    const usedIndices = new Set(targetSlots.map(s => s.slot_index))
+    const nextFree    = Array.from({ length: 200 }, (_, i) => i).find(i => !usedIndices.has(i)) ?? 0
+    moveSlot(slot.id, nextFree, panel, targetPanel)
+  }, [slot, panel, moveSlot])
 
-  const rarity = slot ? (ITEM_RARITY[slot.item_id] ?? { label: 'COMMON', color: '#888' }) : null
-
-  const handleContextMenu = (e: React.MouseEvent) => {
+  // Right-click → normal context menu
+  // Shift + Right-click → open straight to split-amount picker
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
     if (!slot) return
     e.preventDefault()
-    showContext(slot.id, e.clientX, e.clientY)
-  }
+    if (e.shiftKey && slot.quantity > 1) {
+      showContextSplit(slot.id, e.clientX, e.clientY)
+    } else {
+      showContext(slot.id, e.clientX, e.clientY)
+    }
+  }, [slot, showContext, showContextSplit])
+
+  const style: CSSProperties = { opacity: isDragging ? 0.3 : 1 }
+  const rarity = slot ? (ITEM_RARITY[slot.item_id] ?? { label: 'COMMON', color: '#888' }) : null
 
   return (
     <div
@@ -48,9 +68,11 @@ export function ItemSlot({ slotIndex, slot, itemDef, panel, isDropTarget = false
       style={style}
       data-slot-index={slotIndex}
       data-panel={panel}
+      onClick={handleClick}
       onContextMenu={handleContextMenu}
       className={`item-slot ${slot ? 'occupied' : 'empty'} ${isDragging ? 'dragging' : ''} ${isDropTarget ? 'drop-target' : ''}`}
-      {...(slot ? { ...attributes, ...listeners } : {})}
+      {...(slot ? attributes : {})}
+      {...(slot ? listeners  : {})}
     >
       {slot && itemDef && (
         <>
