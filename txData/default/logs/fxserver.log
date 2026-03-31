@@ -1,14 +1,14 @@
 ================================================================
-======== Log Rotated - 2026/03/30, 00:00:00                     
+======== Log Rotated - 2026/03/31, 02:08:59                     
 ================================================================
 ║             TXADMIN║ ================================================================
-║             TXADMIN║ ======== [52392] FXServer Starting - 2026/03/30, 01:32:41       
+║             TXADMIN║ ======== [11888] FXServer Starting - 2026/03/31, 02:09:01       
 ║             TXADMIN║ ================================================================
 [           resources] Scanning resources.
-[           resources] Found 30 resources.
+[           resources] Found 31 resources.
 [          svadhesive] Authenticating server license key...
 [          svadhesive] Server license key authentication succeeded. Welcome!
-[    c-scripting-core] [0mCreating script environments for monitor
+[    c-scripting-core] Creating script environments for monitor
 [      script:monitor] [txAdmin] Resource v8.0.1 threads and commands set up. All Ready.
 [           resources] Started resource monitor
 [    c-scripting-core] Creating script environments for mapmanager
@@ -26,6 +26,8 @@
 [   script:stdb-relay] [stdb-relay] SERVER MAIN LOADED
 [           resources] Started resource stdb-relay
 [           resources] Started resource stdb-inventory
+[resources:FiveM-Peak] Warning: could not find server_script `**/*Server.lua` (defined in fxmanifest.lua:8)
+[           resources] Started resource FiveM-Peak-Check (1 warning)
 [           resources] Started resource bob74_ipl
 [           resources] Started resource mnr_cayo
 [   script:mapmanager] Started map fivem-map-hipster
@@ -39,188 +41,25 @@
 [ citizen-server-impl] Authenticated with cfx.re Nucleus: https://zerxis654-yog959.users.cfx.re/
 [      script:hardcap] Connecting: Joshua Sprigs
 [   script:stdb-relay] [stdb-relay] 'Joshua Sprigs' (server_id=1) registered with SpacetimeDB
-[   script:stdb-relay] [prop] DELTA deleted for ground stash: ground_1774827264338030
-[   script:stdb-relay] [prop] owner lookup for ground_1774827264338030 = nil
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-║           Zerxis654║ restart stdb-relay
-[           resources] Stopping resource stdb-relay
-[    c-scripting-core] Creating script environments for stdb-relay
-[   script:stdb-relay] [stdb-relay] SERVER MAIN LOADED
-[           resources] Started resource stdb-relay
 ║           Zerxis654║ restart stdb-inventory
 [           resources] Stopping resource stdb-inventory
 [           resources] Started resource stdb-inventory
 ║           Zerxis654║ restart stdb-inventory
 [           resources] Stopping resource stdb-inventory
 [           resources] Started resource stdb-inventory
-[   script:stdb-relay] [prop] DELTA deleted for ground stash: ground_1774827968078945
-[   script:stdb-relay] [prop] owner lookup for ground_1774827968078945 = nil
-[   script:stdb-relay] [prop] THROW registered: stash=ground_1774827998961904 src=1
-[   script:stdb-relay] [prop] DELTA deleted for ground stash: ground_1774827998961904
-[   script:stdb-relay] [prop] owner lookup for ground_1774827998961904 = 1
-[   script:stdb-relay] [prop] slot count for ground_1774827998961904 = 0
-[   script:stdb-relay] [prop] FIRING deleteWorldProp -> src=1 stash=ground_1774827998961904
-[   script:stdb-relay] [prop] THROW registered: stash=ground_1774828016937774 src=1
-[   script:stdb-relay] [prop] DELTA deleted for ground stash: ground_1774828016937774
-[   script:stdb-relay] [prop] owner lookup for ground_1774828016937774 = 1
-[   script:stdb-relay] [prop] slot count for ground_1774828016937774 = 0
-[   script:stdb-relay] [prop] FIRING deleteWorldProp -> src=1 stash=ground_1774828016937774
-[   script:stdb-relay] [prop] DELTA deleted for ground stash: ground_1774828016937774
-[   script:stdb-relay] [prop] owner lookup for ground_1774828016937774 = nil
-[   script:stdb-relay] [prop] PLACE registered: stash=ground_1774828179214118 src=1
-[   script:stdb-relay] [prop] DELTA deleted for ground stash: ground_1774828179214118
-[   script:stdb-relay] [prop] owner lookup for ground_1774828179214118 = 1
-[   script:stdb-relay] [prop] slot count for ground_1774828179214118 = 0
-[   script:stdb-relay] [prop] FIRING deleteWorldProp -> src=1 stash=ground_1774828179214118
-║             TXADMIN║ ================================================================
-║             TXADMIN║ ======== [76380] FXServer Starting - 2026/03/30, 01:53:30       
-║             TXADMIN║ ================================================================
-[           resources] Scanning resources.
-[           resources] Found 30 resources.
-[          svadhesive] Authenticating server license key...
-[          svadhesive] Server license key authentication succeeded. Welcome!
-[    c-scripting-core] Creating script environments for monitor
-[      script:monitor] [txAdmin] Resource v8.0.1 threads and commands set up. All Ready.
-[           resources] Started resource monitor
-[    c-scripting-core] Creating script environments for mapmanager
-[           resources] Started resource mapmanager
-[    c-scripting-core] Creating script environments for chat
-[           resources] Started resource chat
-[           resources] Started resource spawnmanager
-[    c-scripting-core] Creating script environments for sessionmanager
-[           resources] Started resource sessionmanager
-[   script:mapmanager] Started gametype Freeroam
-[           resources] Started resource basic-gamemode
-[    c-scripting-core] Creating script environments for hardcap
-[           resources] Started resource hardcap
-[    c-scripting-core] Creating script environments for stdb-relay
-[   script:stdb-relay] [stdb-relay] SERVER MAIN LOADED
-[           resources] Started resource stdb-relay
+[ citizen-server-impl] server thread hitch warning: timer interval of 186 milliseconds
+║           Zerxis654║ restart stdb-inventory
+[           resources] Stopping resource stdb-inventory
 [           resources] Started resource stdb-inventory
-[           resources] Started resource bob74_ipl
-[           resources] Started resource mnr_cayo
-[   script:mapmanager] Started map fivem-map-hipster
-[           resources] Started resource fivem-map-hipster
-[ citizen-server-impl]         fff                          
-[ citizen-server-impl]   cccc ff   xx  xx     rr rr    eee  
-[ citizen-server-impl] cc     ffff   xx       rrr  r ee   e 
-[ citizen-server-impl] cc     ff     xx   ... rr     eeeee  
-[ citizen-server-impl]  ccccc ff   xx  xx ... rr      eeeee 
-[ citizen-server-impl]                                      
-[ citizen-server-impl] Authenticated with cfx.re Nucleus: https://zerxis654-yog959.users.cfx.re/
-║             TXADMIN║ ================================================================
-║             TXADMIN║ ======== [27600] FXServer Starting - 2026/03/30, 01:54:29       
-║             TXADMIN║ ================================================================
-[           resources] Scanning resources.
-[           resources] Found 30 resources.
-[          svadhesive] Authenticating server license key...
-[          svadhesive] Server license key authentication succeeded. Welcome!
-[    c-scripting-core] Creating script environments for monitor
-[      script:monitor] [txAdmin] Resource v8.0.1 threads and commands set up. All Ready.
-[           resources] Started resource monitor
-[    c-scripting-core] Creating script environments for mapmanager
-[           resources] Started resource mapmanager
-[    c-scripting-core] Creating script environments for chat
-[           resources] Started resource chat
-[           resources] Started resource spawnmanager
-[    c-scripting-core] Creating script environments for sessionmanager
-[           resources] Started resource sessionmanager
-[   script:mapmanager] Started gametype Freeroam
-[           resources] Started resource basic-gamemode
-[    c-scripting-core] Creating script environments for hardcap
-[           resources] Started resource hardcap
-[    c-scripting-core] Creating script environments for stdb-relay
-[   script:stdb-relay] [stdb-relay] SERVER MAIN LOADED
-[           resources] Started resource stdb-relay
-[           resources] Started resource stdb-inventory
-[           resources] Started resource bob74_ipl
-[           resources] Started resource mnr_cayo
-[   script:mapmanager] Started map fivem-map-skater
-[           resources] Started resource fivem-map-skater
-[ citizen-server-impl]         fff                          
-[ citizen-server-impl]   cccc ff   xx  xx     rr rr    eee  
-[ citizen-server-impl] cc     ffff   xx       rrr  r ee   e 
-[ citizen-server-impl] cc     ff     xx   ... rr     eeeee  
-[ citizen-server-impl]  ccccc ff   xx  xx ... rr      eeeee 
-[ citizen-server-impl]                                      
-[ citizen-server-impl] Authenticated with cfx.re Nucleus: https://zerxis654-yog959.users.cfx.re/
+[   script:stdb-relay] [prop] THROW registered: stash=ground_1774916672149079 src=1
+[   script:stdb-relay] [prop] DELTA deleted for ground stash: ground_1774916672149079
+[   script:stdb-relay] [prop] owner lookup for ground_1774916672149079 = 1
+[   script:stdb-relay] [prop] slot count for ground_1774916672149079 = 0
+[   script:stdb-relay] [prop] FIRING deleteWorldProp -> src=1 stash=ground_1774916672149079
 [      script:hardcap] Connecting: Joshua Sprigs
-[   script:stdb-relay] [stdb-relay] 'Joshua Sprigs' (server_id=1) registered with SpacetimeDB
-[   script:stdb-relay] [prop] DELTA deleted for ground stash: ground_1774828588988880
-[   script:stdb-relay] [prop] owner lookup for ground_1774828588988880 = nil
-[   script:stdb-relay] [prop] THROW registered: stash=ground_1774828594738309 src=1
-[   script:stdb-relay] [prop] DELTA deleted for ground stash: ground_1774828594738309
-[   script:stdb-relay] [prop] owner lookup for ground_1774828594738309 = 1
-[   script:stdb-relay] [prop] slot count for ground_1774828594738309 = 0
-[   script:stdb-relay] [prop] FIRING deleteWorldProp -> src=1 stash=ground_1774828594738309
-[   script:stdb-relay] [prop] DROP registered: stash=ground_1774828594738309 src=1
-[   script:stdb-relay] [prop] DELTA deleted for ground stash: ground_1774828594738309
-[   script:stdb-relay] [prop] owner lookup for ground_1774828594738309 = 1
-[   script:stdb-relay] [prop] slot count for ground_1774828594738309 = 0
-[   script:stdb-relay] [prop] FIRING deleteWorldProp -> src=1 stash=ground_1774828594738309
-[         script:chat] Joshua Sprigs: minimus
-[ citizen-server-impl] network thread hitch warning: timer interval of 12509728 milliseconds
-[ citizen-server-impl] sync thread hitch warning: timer interval of 12509728 milliseconds
-[              server] Error: Loop svNetwork seems hung! (last checkin 12512 seconds ago)
-[              server] Warning: svNetwork watchdog stack: root
-[ citizen-server-impl] server thread hitch warning: timer interval of 12509760 milliseconds
-║             TXADMIN║ ================================================================
-║             TXADMIN║ ======== [74312] FXServer Starting - 2026/03/30, 07:10:17       
-║             TXADMIN║ ================================================================
-[           resources] Scanning resources.
-[           resources] Found 30 resources.
-[          svadhesive] Authenticating server license key...
-[          svadhesive] Server license key authentication succeeded. Welcome!
-[    c-scripting-core] Creating script environments for monitor
-[      script:monitor] [txAdmin] Resource v8.0.1 threads and commands set up. All Ready.
-[           resources] Started resource monitor
-[    c-scripting-core] Creating script environments for mapmanager
-[           resources] Started resource mapmanager
-[    c-scripting-core] Creating script environments for chat
-[           resources] Started resource chat
-[           resources] Started resource spawnmanager
-[    c-scripting-core] Creating script environments for sessionmanager
-[           resources] Started resource sessionmanager
-[   script:mapmanager] Started gametype Freeroam
-[           resources] Started resource basic-gamemode
-[    c-scripting-core] Creating script environments for hardcap
-[           resources] Started resource hardcap
-[    c-scripting-core] Creating script environments for stdb-relay
-[   script:stdb-relay] [stdb-relay] SERVER MAIN LOADED
-[           resources] Started resource stdb-relay
-[           resources] Started resource stdb-inventory
-[           resources] Started resource bob74_ipl
-[           resources] Started resource mnr_cayo
-[   script:mapmanager] Started map fivem-map-skater
-[           resources] Started resource fivem-map-skater
-[ citizen-server-impl]         fff                          
-[ citizen-server-impl]   cccc ff   xx  xx     rr rr    eee  
-[ citizen-server-impl] cc     ffff   xx       rrr  r ee   e 
-[ citizen-server-impl] cc     ff     xx   ... rr     eeeee  
-[ citizen-server-impl]  ccccc ff   xx  xx ... rr      eeeee 
-[ citizen-server-impl]                                      
-[ citizen-server-impl] Authenticated with cfx.re Nucleus: https://zerxis654-yog959.users.cfx.re/
-[      script:hardcap] Connecting: Joshua Sprigs
-[   script:stdb-relay] [stdb-relay] 'Joshua Sprigs' (server_id=1) registered with SpacetimeDB
-[   script:stdb-relay] [prop] THROW registered: stash=ground_1774848277057812 src=1
-[   script:stdb-relay] [prop] DELTA deleted for ground stash: ground_1774848277057812
-[   script:stdb-relay] [prop] owner lookup for ground_1774848277057812 = 1
-[   script:stdb-relay] [prop] slot count for ground_1774848277057812 = 0
-[   script:stdb-relay] [prop] FIRING deleteWorldProp -> src=1 stash=ground_1774848277057812
-[   script:stdb-relay] [prop] DELTA deleted for ground stash: ground_1774848277057812
-[   script:stdb-relay] [prop] owner lookup for ground_1774848277057812 = nil
-║             TXADMIN║ txaReportResources 
-[      script:monitor] [txAdmin] Sending resources list to txAdmin.
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-║             TXADMIN║ txaEvent "announcement" "{\"message\":\"jou ma se poes\",\"author\":\"Zerxis654\"}"
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[ citizen-server-impl] server thread hitch warning: timer interval of 156 milliseconds
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
+[   script:stdb-relay] [stdb-relay] 'Joshua Sprigs' (server_id=2) registered with SpacetimeDB
+[   script:stdb-relay] [prop] THROW registered: stash=ground_1774928086392588 src=2
+[   script:stdb-relay] [prop] DELTA deleted for ground stash: ground_1774928086392588
+[   script:stdb-relay] [prop] owner lookup for ground_1774928086392588 = 2
+[   script:stdb-relay] [prop] slot count for ground_1774928086392588 = 0
+[   script:stdb-relay] [prop] FIRING deleteWorldProp -> src=2 stash=ground_1774928086392588
