@@ -1,5 +1,32 @@
-/fivem-server-files/cache
-/fivem-server-files/cache
-/txData/default/logs
-/txData/default/logs
-stdb-modules/target/wasm32-unknown-unknown/release/.fingerprint/stdb-fivem-game-e3a5c2eaa269a9b1/dep-lib-stdb_fivem_game
+# --- FiveM & Server Artifacts ---
+# Ignore the temporary server cache 
+fivem-server-files/cache/
+
+# Ignore the server binaries/core files 
+# These should be downloaded/updated via artifacts, not versioned.
+fxserver/
+
+# Ignore local server data and logs [cite: 348]
+txData/
+
+# --- Web / Frontend (stdb-inventory/web) ---
+# Ignore dependencies 
+**/node_modules/
+# Ignore production builds [cite: 189]
+**/web/dist/
+
+# --- Rust / SpacetimeDB Modules ---
+# Ignore all compilation artifacts [cite: 312]
+target/
+
+# --- .NET (stdb-sidecar) ---
+# Ignore build outputs and temporary object files [cite: 346, 347]
+stdb-sidecar/bin/
+stdb-sidecar/obj/
+
+# --- IDE & System ---
+# Optional: Ignore local editor history, though you may want to keep .cursor/rules [cite: 311, 312]
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
