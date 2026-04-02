@@ -1,1 +1,0 @@
-G:\FivemSTDBProject\HyprFm\stdb-modules\target\wasm32-unknown-unknown\release\libstdb_core.rlib: G:\FivemSTDBProject\HyprFm\stdb-modules\core\spacetimedb\src\instruction.rs G:\FivemSTDBProject\HyprFm\stdb-modules\core\spacetimedb\src\lib.rs G:\FivemSTDBProject\HyprFm\stdb-modules\core\spacetimedb\src\opcodes.rs
