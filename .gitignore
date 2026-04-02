@@ -1,13 +1,13 @@
 # --- FiveM & Server Artifacts ---
 # Ignore the temporary server cache 
-fivem-server-files/cache/
+**/fivem-server-files/cache/
 
 # Ignore the server binaries/core files 
 # These should be downloaded/updated via artifacts, not versioned.
-fxserver/
+**/fxserver/
 
 # Ignore local server data and logs [cite: 348]
-txData/
+**/txData/
 
 # --- Web / Frontend (stdb-inventory/web) ---
 # Ignore dependencies 
