@@ -63,6 +63,3 @@ To develop or host HyprFM, you must have the following installed:
 ## 📄 License & Usage
 
 HyprFM follows an **Open-Core** model. The base architecture and essential systems are free for adoption. Advanced modules and pre-configured RP experiences are available via the tiered subscription model.
-
----
-*Built with ❤️ for the FiveM Developer Community.*
