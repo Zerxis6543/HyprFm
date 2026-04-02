@@ -13,7 +13,7 @@ HyprFM is a next-generation FiveM roleplay framework built on the **Sovereign St
 
 ```text
 HyprFm/
-├── stdb-modules/          # Rust logic for SpacetimeDB (Inventory, Characters, Vehicles)
+├── stdb-modules/          # Rust logic for SpacetimeDB (Inventory, Characters, Vehicles, etc.)
 ├── stdb-sidecar/          # .NET bridge and FiveM resource logic
 ├── fivem-server-files/    # FiveM server resources
 └── FivemSTDBProject.sln   # Visual Studio Solution
