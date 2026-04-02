@@ -20,10 +20,6 @@ HyprFm/
 ├── stdb-modules/          # Rust logic for SpacetimeDB (Inventory, Characters, Vehicles)
 ├── stdb-sidecar/          # .NET bridge and FiveM resource logic
 ├── fivem-server-files/    # FiveM server resources
-│   └── resources/
-│       └── [core]/
-│           └── stdb-inventory/
-│               └── web/   # React 18 NUI Source
 └── FivemSTDBProject.sln   # Visual Studio Solution
 ```
 
@@ -45,7 +41,7 @@ To develop or host HyprFM, you must have the following installed:
 
 1.  **Clone the Repository**
     ```bash
-    git clone https://github.com/your-username/HyprFm.git
+    git clone https://github.com/Zerxis6543/HyprFm.git
     cd HyprFm
     ```
 
