@@ -1,7 +1,3 @@
-This README is designed to reflect the **HyprFM** architecture: a high-performance "Sovereign State" framework utilizing **SpacetimeDB** as the real-time engine, a **C# Sidecar** for FiveM integration, and a **React 18** NUI.
-
-***
-
 # HyprFM Framework
 
 HyprFM is a next-generation FiveM roleplay framework built on the **Sovereign State** pattern. Unlike traditional frameworks that rely on standard SQL databases and heavy main-thread processing, HyprFM offloads game state to **SpacetimeDB**, allowing for sub-millisecond execution (approx. 0.14ms for complex inventory interactions) and a highly scalable backend.
