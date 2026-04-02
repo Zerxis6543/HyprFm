@@ -17,21 +17,21 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "active_session";
 
-            public sealed class IdentityUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
+            public sealed class SteamHexUniqueIndex : UniqueIndexBase<string>
             {
-                protected override SpacetimeDB.Identity GetKey(ActiveSession row) => row.Identity;
+                protected override string GetKey(ActiveSession row) => row.SteamHex;
 
-                public IdentityUniqueIndex(ActiveSessionHandle table) : base(table) { }
+                public SteamHexUniqueIndex(ActiveSessionHandle table) : base(table) { }
             }
 
-            public readonly IdentityUniqueIndex Identity;
+            public readonly SteamHexUniqueIndex SteamHex;
 
             internal ActiveSessionHandle(DbConnection conn) : base(conn)
             {
-                Identity = new(this);
+                SteamHex = new(this);
             }
 
-            protected override object GetPrimaryKey(ActiveSession row) => row.Identity;
+            protected override object GetPrimaryKey(ActiveSession row) => row.SteamHex;
         }
 
         public readonly ActiveSessionHandle ActiveSession;
@@ -39,14 +39,14 @@ namespace SpacetimeDB.Types
 
     public sealed class ActiveSessionCols
     {
-        public global::SpacetimeDB.Col<ActiveSession, SpacetimeDB.Identity> Identity { get; }
+        public global::SpacetimeDB.Col<ActiveSession, string> SteamHex { get; }
         public global::SpacetimeDB.Col<ActiveSession, uint> ServerId { get; }
         public global::SpacetimeDB.Col<ActiveSession, uint> NetId { get; }
         public global::SpacetimeDB.Col<ActiveSession, SpacetimeDB.Timestamp> ConnectedAt { get; }
 
         public ActiveSessionCols(string tableName)
         {
-            Identity = new global::SpacetimeDB.Col<ActiveSession, SpacetimeDB.Identity>(tableName, "identity");
+            SteamHex = new global::SpacetimeDB.Col<ActiveSession, string>(tableName, "steam_hex");
             ServerId = new global::SpacetimeDB.Col<ActiveSession, uint>(tableName, "server_id");
             NetId = new global::SpacetimeDB.Col<ActiveSession, uint>(tableName, "net_id");
             ConnectedAt = new global::SpacetimeDB.Col<ActiveSession, SpacetimeDB.Timestamp>(tableName, "connected_at");
@@ -55,11 +55,11 @@ namespace SpacetimeDB.Types
 
     public sealed class ActiveSessionIxCols
     {
-        public global::SpacetimeDB.IxCol<ActiveSession, SpacetimeDB.Identity> Identity { get; }
+        public global::SpacetimeDB.IxCol<ActiveSession, string> SteamHex { get; }
 
         public ActiveSessionIxCols(string tableName)
         {
-            Identity = new global::SpacetimeDB.IxCol<ActiveSession, SpacetimeDB.Identity>(tableName, "identity");
+            SteamHex = new global::SpacetimeDB.IxCol<ActiveSession, string>(tableName, "steam_hex");
         }
     }
 }

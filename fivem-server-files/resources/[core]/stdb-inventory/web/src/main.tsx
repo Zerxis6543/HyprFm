@@ -281,6 +281,11 @@ window.addEventListener('message', (e: MessageEvent) => {
 })
 
 
+;(window as any).__hyprfm ??= {}
+;(window as any).__hyprfm.registerEquipMapping = (itemId: string, equipKey: string) => {
+  useInventoryStore.getState().registerEquipMapping(itemId, equipKey)
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />

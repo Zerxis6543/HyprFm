@@ -1,11 +1,11 @@
 ================================================================
-======== Log Rotated - 2026/03/31, 02:08:59                     
+======== Log Rotated - 2026/04/02, 09:17:28                     
 ================================================================
 ║             TXADMIN║ ================================================================
-║             TXADMIN║ ======== [11888] FXServer Starting - 2026/03/31, 02:09:01       
+║             TXADMIN║ ======== [18552] FXServer Starting - 2026/04/02, 09:17:29       
 ║             TXADMIN║ ================================================================
 [           resources] Scanning resources.
-[           resources] Found 31 resources.
+[           resources] Found 32 resources.
 [          svadhesive] Authenticating server license key...
 [          svadhesive] Server license key authentication succeeded. Welcome!
 [    c-scripting-core] Creating script environments for monitor
@@ -29,6 +29,46 @@
 [resources:FiveM-Peak] Warning: could not find server_script `**/*Server.lua` (defined in fxmanifest.lua:8)
 [           resources] Started resource FiveM-Peak-Check (1 warning)
 [           resources] Started resource bob74_ipl
+[           resources] Started resource fivem-pvp
+[           resources] Started resource mnr_cayo
+[   script:mapmanager] Started map fivem-map-hipster
+[           resources] Started resource fivem-map-hipster
+[ citizen-server-impl]         fff                          
+[ citizen-server-impl]   cccc ff   xx  xx     rr rr    eee  
+[ citizen-server-impl] cc     ffff   xx       rrr  r ee   e 
+[ citizen-server-impl] cc     ff     xx   ... rr     eeeee  
+[ citizen-server-impl]  ccccc ff   xx  xx ... rr      eeeee 
+[ citizen-server-impl]                                      
+[ citizen-server-impl] Authenticated with cfx.re Nucleus: https://zerxis654-yog959.users.cfx.re/
+║             TXADMIN║ ================================================================
+║             TXADMIN║ ======== [29996] FXServer Starting - 2026/04/02, 16:44:06       
+║             TXADMIN║ ================================================================
+[           resources] Scanning resources.
+[           resources] Found 32 resources.
+[          svadhesive] Authenticating server license key...
+[          svadhesive] Server license key authentication succeeded. Welcome!
+[    c-scripting-core] Creating script environments for monitor
+[      script:monitor] [txAdmin] Resource v8.0.1 threads and commands set up. All Ready.
+[           resources] Started resource monitor
+[    c-scripting-core] Creating script environments for mapmanager
+[           resources] Started resource mapmanager
+[    c-scripting-core] Creating script environments for chat
+[           resources] Started resource chat
+[           resources] Started resource spawnmanager
+[    c-scripting-core] Creating script environments for sessionmanager
+[           resources] Started resource sessionmanager
+[   script:mapmanager] Started gametype Freeroam
+[           resources] Started resource basic-gamemode
+[    c-scripting-core] Creating script environments for hardcap
+[           resources] Started resource hardcap
+[    c-scripting-core] Creating script environments for stdb-relay
+[   script:stdb-relay] [stdb-relay] SERVER MAIN LOADED
+[           resources] Started resource stdb-relay
+[           resources] Started resource stdb-inventory
+[resources:FiveM-Peak] Warning: could not find server_script `**/*Server.lua` (defined in fxmanifest.lua:8)
+[           resources] Started resource FiveM-Peak-Check (1 warning)
+[           resources] Started resource bob74_ipl
+[           resources] Started resource fivem-pvp
 [           resources] Started resource mnr_cayo
 [   script:mapmanager] Started map fivem-map-hipster
 [           resources] Started resource fivem-map-hipster
@@ -41,25 +81,4 @@
 [ citizen-server-impl] Authenticated with cfx.re Nucleus: https://zerxis654-yog959.users.cfx.re/
 [      script:hardcap] Connecting: Joshua Sprigs
 [   script:stdb-relay] [stdb-relay] 'Joshua Sprigs' (server_id=1) registered with SpacetimeDB
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[ citizen-server-impl] server thread hitch warning: timer interval of 186 milliseconds
-║           Zerxis654║ restart stdb-inventory
-[           resources] Stopping resource stdb-inventory
-[           resources] Started resource stdb-inventory
-[   script:stdb-relay] [prop] THROW registered: stash=ground_1774916672149079 src=1
-[   script:stdb-relay] [prop] DELTA deleted for ground stash: ground_1774916672149079
-[   script:stdb-relay] [prop] owner lookup for ground_1774916672149079 = 1
-[   script:stdb-relay] [prop] slot count for ground_1774916672149079 = 0
-[   script:stdb-relay] [prop] FIRING deleteWorldProp -> src=1 stash=ground_1774916672149079
-[      script:hardcap] Connecting: Joshua Sprigs
-[   script:stdb-relay] [stdb-relay] 'Joshua Sprigs' (server_id=2) registered with SpacetimeDB
-[   script:stdb-relay] [prop] THROW registered: stash=ground_1774928086392588 src=2
-[   script:stdb-relay] [prop] DELTA deleted for ground stash: ground_1774928086392588
-[   script:stdb-relay] [prop] owner lookup for ground_1774928086392588 = 2
-[   script:stdb-relay] [prop] slot count for ground_1774928086392588 = 0
-[   script:stdb-relay] [prop] FIRING deleteWorldProp -> src=2 stash=ground_1774928086392588
+[   script:stdb-relay] [stdb-relay] stdb:moveItem: cannot resolve identity for server_id=1; player may not have opened their inventory yet

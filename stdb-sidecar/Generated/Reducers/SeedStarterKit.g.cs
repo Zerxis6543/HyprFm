@@ -12,17 +12,17 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void OnPlayerDisconnectHandler(ReducerEventContext ctx, string steamHex);
-        public event OnPlayerDisconnectHandler? OnOnPlayerDisconnect;
+        public delegate void SeedStarterKitHandler(ReducerEventContext ctx, string itemId, uint quantity);
+        public event SeedStarterKitHandler? OnSeedStarterKit;
 
-        public void OnPlayerDisconnect(string steamHex)
+        public void SeedStarterKit(string itemId, uint quantity)
         {
-            conn.InternalCallReducer(new Reducer.OnPlayerDisconnect(steamHex));
+            conn.InternalCallReducer(new Reducer.SeedStarterKit(itemId, quantity));
         }
 
-        public bool InvokeOnPlayerDisconnect(ReducerEventContext ctx, Reducer.OnPlayerDisconnect args)
+        public bool InvokeSeedStarterKit(ReducerEventContext ctx, Reducer.SeedStarterKit args)
         {
-            if (OnOnPlayerDisconnect == null)
+            if (OnSeedStarterKit == null)
             {
                 if (InternalOnUnhandledReducerError != null)
                 {
@@ -34,9 +34,10 @@ namespace SpacetimeDB.Types
                 }
                 return false;
             }
-            OnOnPlayerDisconnect(
+            OnSeedStarterKit(
                 ctx,
-                args.SteamHex
+                args.ItemId,
+                args.Quantity
             );
             return true;
         }
@@ -46,22 +47,28 @@ namespace SpacetimeDB.Types
     {
         [SpacetimeDB.Type]
         [DataContract]
-        public sealed partial class OnPlayerDisconnect : Reducer, IReducerArgs
+        public sealed partial class SeedStarterKit : Reducer, IReducerArgs
         {
-            [DataMember(Name = "steam_hex")]
-            public string SteamHex;
+            [DataMember(Name = "item_id")]
+            public string ItemId;
+            [DataMember(Name = "quantity")]
+            public uint Quantity;
 
-            public OnPlayerDisconnect(string SteamHex)
+            public SeedStarterKit(
+                string ItemId,
+                uint Quantity
+            )
             {
-                this.SteamHex = SteamHex;
+                this.ItemId = ItemId;
+                this.Quantity = Quantity;
             }
 
-            public OnPlayerDisconnect()
+            public SeedStarterKit()
             {
-                this.SteamHex = "";
+                this.ItemId = "";
             }
 
-            string IReducerArgs.ReducerName => "on_player_disconnect";
+            string IReducerArgs.ReducerName => "seed_starter_kit";
         }
     }
 }

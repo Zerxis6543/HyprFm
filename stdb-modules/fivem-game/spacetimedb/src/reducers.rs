@@ -43,121 +43,124 @@ pub fn on_player_connect(
     display_name: String,
     server_id:    u32,
     net_id:       u32,
-    _heading: f32,
+    _heading:     f32,
 ) {
-    let identity = ctx.sender();
-
-    if let Some(mut p) = ctx.db.player().identity().find(identity) {
+    if let Some(mut p) = ctx.db.player().steam_hex().find(&steam_hex) {
         p.last_seen    = ctx.timestamp;
         p.display_name = display_name;
-        ctx.db.player().identity().update(p);
+        ctx.db.player().steam_hex().update(p);
     } else {
         ctx.db.player().insert(Player {
-            identity,
-            steam_hex,
-            display_name,
-            money_cash: 5000,
-            money_bank: 0,
-            job:        "unemployed".to_string(),
-            created_at: ctx.timestamp,
-            last_seen:  ctx.timestamp,
+            steam_hex:    steam_hex.clone(),
+            display_name: display_name.clone(),
+            money_cash:   500,
+            money_bank:   0,
+            job:          "unemployed".to_string(),
+            created_at:   ctx.timestamp,
+            last_seen:    ctx.timestamp,
         });
 
-        // Give starter items to new players
-        let owner_id = identity.to_hex().to_string();
-        let starters: &[(&str, u32)] = &[
-            ("phone",         1),
-            ("id_card",       1),
-            ("water_bottle",  2),
-            ("food_burger",   1),
-            ("bandage",       5),
-            ("cash",          500),
-            ("backpack",      1),
-            ("weapon_pistol", 1),
-            ("ammo_pistol",   50),
-            ("parachute",     1),
-            ("body_armour",   1),
-        ];
- 
-        for (idx, (item_id, quantity)) in starters.iter().enumerate() {
-            if let Some(def) = ctx.db.item_definition().item_id().find(&item_id.to_string()) {
+        let starters: Vec<StarterKitEntry> = ctx.db.starter_kit_entry().iter().collect();
+        for (idx, entry) in starters.iter().enumerate() {
+            if let Some(def) = ctx.db.item_definition().item_id().find(&entry.item_id) {
                 let used: Vec<u32> = ctx.db.inventory_slot().iter()
-                    .filter(|s| s.owner_id == owner_id)
+                    .filter(|s| s.owner_id == steam_hex)
                     .map(|s| s.slot_index)
                     .collect();
                 let slot_index = (0u32..).find(|i| !used.contains(i)).unwrap_or(0);
- 
-                // build_starter_metadata generates weapon serials; returns "{}" otherwise
-                let metadata = build_starter_metadata(ctx, &def, idx as u32);
- 
+                let metadata   = build_starter_metadata(ctx, &def, idx as u32);
                 ctx.db.inventory_slot().insert(InventorySlot {
-                    id: 0,
-                    owner_id:   owner_id.clone(),
+                    id: 0, owner_id: steam_hex.clone(),
                     owner_type: "player".to_string(),
-                    item_id:    item_id.to_string(),
-                    quantity:   *quantity,
-                    metadata,
-                    slot_index,
+                    item_id: entry.item_id.clone(),
+                    quantity: entry.quantity,
+                    metadata, slot_index,
                 });
             }
         }
-        log::info!("[player] New player {}, gave starter items", identity);
+        log::info!("[player] New player {} — {} starter items given", steam_hex, starters.len());
     }
-
-    ctx.db.active_session().identity().delete(identity);
+    // Session refresh — unchanged
+    ctx.db.active_session().steam_hex().delete(steam_hex.clone());
     ctx.db.active_session().insert(ActiveSession {
-        identity,
-        server_id,
-        net_id,
-        connected_at: ctx.timestamp,
+        steam_hex: steam_hex.clone(), server_id, net_id, connected_at: ctx.timestamp,
     });
 
-    log::info!("[player] {} connected (server_id={})", identity, server_id);
+    log::info!("[player] {} connected (server_id={})", steam_hex, server_id);
+}
+#[spacetimedb::reducer]
+pub fn on_player_disconnect(ctx: &ReducerContext, steam_hex: String) {
+    ctx.db.active_session().steam_hex().delete(steam_hex.clone());
+    log::info!("[player] {} session cleared", steam_hex);
+}
+
+#[spacetimedb::table(accessor = starter_kit_entry, public)]
+#[derive(Clone, Debug)]
+pub struct StarterKitEntry {
+    #[primary_key]
+    #[auto_inc]
+    pub id:       u64,
+    pub item_id:  String,
+    pub quantity: u32,
 }
 
 #[spacetimedb::reducer]
-pub fn on_player_disconnect(ctx: &ReducerContext) {
-    ctx.db.active_session().identity().delete(ctx.sender());
-    log::info!("[player] {} session cleared", ctx.sender());
+pub fn seed_starter_kit(ctx: &ReducerContext, item_id: String, quantity: u32) {
+    if ctx.db.starter_kit_entry().iter()
+        .any(|e| e.item_id == item_id) { return; }
+    ctx.db.starter_kit_entry().insert(StarterKitEntry {
+        id: 0, item_id, quantity,
+    });
 }
 
 #[spacetimedb::reducer]
 pub fn request_spawn(
-    ctx:      &ReducerContext,
-    spawn_x:  f32,
-    spawn_y:  f32,
-    spawn_z:  f32,
-    _heading: f32,
+    ctx:       &ReducerContext,
+    steam_hex: String,   // now passed explicitly, not derived from ctx.sender()
+    spawn_x:   f32,
+    spawn_y:   f32,
+    spawn_z:   f32,
+    _heading:  f32,
 ) {
-    let identity = ctx.sender();
-    let session  = match ctx.db.active_session().identity().find(identity) {
+    // Look up session by steam_hex — the new primary key
+    let session = match ctx.db.active_session().steam_hex().find(&steam_hex) {
         Some(s) => s,
-        None => { log::warn!("[player] request_spawn: no session for {}", identity); return; }
+        None => {
+            log::warn!("[player] request_spawn: no session for {}", steam_hex);
+            return;
+        }
     };
 
     if spawn_x < -8000.0 || spawn_x > 8000.0 || spawn_y < -8000.0 || spawn_y > 8000.0 {
-        log::warn!("[player] request_spawn: coords out of bounds"); return;
+        log::warn!("[player] request_spawn: coords out of bounds");
+        return;
     }
 
     ctx.db.instruction_queue().insert(InstructionQueue {
-        id: 0, target_entity_net_id: session.net_id,
-        opcode: opcodes::entity::SET_COORDS,
-        payload: json!([spawn_x, spawn_y, spawn_z, false, false, true]).to_string(),
-        queued_at: ctx.timestamp, consumed: false,
+        id: 0,
+        target_entity_net_id: session.net_id,
+        opcode:    opcodes::entity::SET_COORDS,
+        payload:   json!([spawn_x, spawn_y, spawn_z, false, false, true]).to_string(),
+        queued_at: ctx.timestamp,
+        consumed:  false,
     });
     ctx.db.instruction_queue().insert(InstructionQueue {
-        id: 0, target_entity_net_id: session.net_id,
-        opcode: opcodes::entity::SET_FROZEN,
-        payload: json!([false]).to_string(),
-        queued_at: ctx.timestamp, consumed: false,
+        id: 0,
+        target_entity_net_id: session.net_id,
+        opcode:    opcodes::entity::SET_FROZEN,
+        payload:   json!([false]).to_string(),
+        queued_at: ctx.timestamp,
+        consumed:  false,
     });
 
-    log::info!("[player] Spawn queued for {} at ({},{},{})", identity, spawn_x, spawn_y, spawn_z);
+    log::info!("[player] Spawn queued for {} at ({},{},{})", steam_hex, spawn_x, spawn_y, spawn_z);
 }
 
 // ── INVENTORY ─────────────────────────────────────────────────────────────────
+fn backpack_stash_id(bag_slot_id: u64) -> String {
+    format!("backpack_slot_{}", bag_slot_id)
+}
 
-/// Seed an item definition. Idempotent — skips if item_id already exists.
 #[spacetimedb::reducer]
 pub fn seed_item(
     ctx: &ReducerContext,
@@ -512,11 +515,18 @@ pub fn give_item_to_identity(
         })
         .sum();
 
+    let max_weight: f32 = ctx.db.player_config()
+        .steam_hex()
+        .find(&owner_identity_hex)
+        .map(|c| c.max_carry_weight)
+        .unwrap_or(85.0);
+
     let incoming_weight = def.weight * quantity as f32;
-    if current_weight + incoming_weight > 85.0 {
+    if current_weight + incoming_weight > max_weight {
         return Err(format!(
-            "WEIGHT_LIMIT|{:.2}|85.00",
-            current_weight + incoming_weight
+            "WEIGHT_LIMIT|{:.2}|{:.2}",
+            current_weight + incoming_weight,
+            max_weight
         ));
     }
 
@@ -552,6 +562,24 @@ pub fn give_item_to_identity(
     });
 
     Ok(())
+}
+
+/// Set a player's max carry weight
+#[spacetimedb::reducer]
+pub fn set_player_max_weight(
+    ctx:       &ReducerContext,
+    steam_hex: String,
+    max_kg:    f32,
+) {
+    if let Some(mut cfg) = ctx.db.player_config().steam_hex().find(&steam_hex) {
+        cfg.max_carry_weight = max_kg;
+        ctx.db.player_config().steam_hex().update(cfg);
+    } else {
+        ctx.db.player_config().insert(PlayerConfig {
+            steam_hex,
+            max_carry_weight: max_kg,
+        });
+    }
 }
 
 // ── DROP ITEM TO GROUND ───────────────────────────────────────────────────────

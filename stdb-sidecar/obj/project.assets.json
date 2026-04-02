@@ -75,11 +75,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "G:\\FivemSTDBProject\\HyprFm\\stdb-sidecar\\StdbSidecar.csproj",
+      "projectUniqueName": "G:\\FIVEMSTDBPROJECT\\HyprFm\\stdb-sidecar\\StdbSidecar.csproj",
       "projectName": "StdbSidecar",
-      "projectPath": "G:\\FivemSTDBProject\\HyprFm\\stdb-sidecar\\StdbSidecar.csproj",
+      "projectPath": "G:\\FIVEMSTDBPROJECT\\HyprFm\\stdb-sidecar\\StdbSidecar.csproj",
       "packagesPath": "C:\\Users\\zerxi\\.nuget\\packages\\",
-      "outputPath": "G:\\FivemSTDBProject\\HyprFm\\stdb-sidecar\\obj\\",
+      "outputPath": "G:\\FIVEMSTDBPROJECT\\HyprFm\\stdb-sidecar\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\zerxi\\AppData\\Roaming\\NuGet\\NuGet.Config",
@@ -131,6 +131,9 @@
         "assetTargetFallback": true,
         "warn": true,
         "frameworkReferences": {
+          "Microsoft.AspNetCore.App": {
+            "privateAssets": "none"
+          },
           "Microsoft.NETCore.App": {
             "privateAssets": "all"
           }

@@ -11,31 +11,23 @@ namespace SpacetimeDB.Types
 {
     [SpacetimeDB.Type]
     [DataContract]
-    public sealed partial class ActiveSession
+    public sealed partial class PlayerConfig
     {
         [DataMember(Name = "steam_hex")]
         public string SteamHex;
-        [DataMember(Name = "server_id")]
-        public uint ServerId;
-        [DataMember(Name = "net_id")]
-        public uint NetId;
-        [DataMember(Name = "connected_at")]
-        public SpacetimeDB.Timestamp ConnectedAt;
+        [DataMember(Name = "max_carry_weight")]
+        public float MaxCarryWeight;
 
-        public ActiveSession(
+        public PlayerConfig(
             string SteamHex,
-            uint ServerId,
-            uint NetId,
-            SpacetimeDB.Timestamp ConnectedAt
+            float MaxCarryWeight
         )
         {
             this.SteamHex = SteamHex;
-            this.ServerId = ServerId;
-            this.NetId = NetId;
-            this.ConnectedAt = ConnectedAt;
+            this.MaxCarryWeight = MaxCarryWeight;
         }
 
-        public ActiveSession()
+        public PlayerConfig()
         {
             this.SteamHex = "";
         }

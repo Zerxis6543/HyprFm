@@ -12,17 +12,17 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void OnPlayerDisconnectHandler(ReducerEventContext ctx, string steamHex);
-        public event OnPlayerDisconnectHandler? OnOnPlayerDisconnect;
+        public delegate void SetPlayerMaxWeightHandler(ReducerEventContext ctx, string steamHex, float maxKg);
+        public event SetPlayerMaxWeightHandler? OnSetPlayerMaxWeight;
 
-        public void OnPlayerDisconnect(string steamHex)
+        public void SetPlayerMaxWeight(string steamHex, float maxKg)
         {
-            conn.InternalCallReducer(new Reducer.OnPlayerDisconnect(steamHex));
+            conn.InternalCallReducer(new Reducer.SetPlayerMaxWeight(steamHex, maxKg));
         }
 
-        public bool InvokeOnPlayerDisconnect(ReducerEventContext ctx, Reducer.OnPlayerDisconnect args)
+        public bool InvokeSetPlayerMaxWeight(ReducerEventContext ctx, Reducer.SetPlayerMaxWeight args)
         {
-            if (OnOnPlayerDisconnect == null)
+            if (OnSetPlayerMaxWeight == null)
             {
                 if (InternalOnUnhandledReducerError != null)
                 {
@@ -34,9 +34,10 @@ namespace SpacetimeDB.Types
                 }
                 return false;
             }
-            OnOnPlayerDisconnect(
+            OnSetPlayerMaxWeight(
                 ctx,
-                args.SteamHex
+                args.SteamHex,
+                args.MaxKg
             );
             return true;
         }
@@ -46,22 +47,28 @@ namespace SpacetimeDB.Types
     {
         [SpacetimeDB.Type]
         [DataContract]
-        public sealed partial class OnPlayerDisconnect : Reducer, IReducerArgs
+        public sealed partial class SetPlayerMaxWeight : Reducer, IReducerArgs
         {
             [DataMember(Name = "steam_hex")]
             public string SteamHex;
+            [DataMember(Name = "max_kg")]
+            public float MaxKg;
 
-            public OnPlayerDisconnect(string SteamHex)
+            public SetPlayerMaxWeight(
+                string SteamHex,
+                float MaxKg
+            )
             {
                 this.SteamHex = SteamHex;
+                this.MaxKg = MaxKg;
             }
 
-            public OnPlayerDisconnect()
+            public SetPlayerMaxWeight()
             {
                 this.SteamHex = "";
             }
 
-            string IReducerArgs.ReducerName => "on_player_disconnect";
+            string IReducerArgs.ReducerName => "set_player_max_weight";
         }
     }
 }

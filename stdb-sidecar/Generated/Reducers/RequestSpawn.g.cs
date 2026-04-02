@@ -12,12 +12,12 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void RequestSpawnHandler(ReducerEventContext ctx, float spawnX, float spawnY, float spawnZ, float heading);
+        public delegate void RequestSpawnHandler(ReducerEventContext ctx, string steamHex, float spawnX, float spawnY, float spawnZ, float heading);
         public event RequestSpawnHandler? OnRequestSpawn;
 
-        public void RequestSpawn(float spawnX, float spawnY, float spawnZ, float heading)
+        public void RequestSpawn(string steamHex, float spawnX, float spawnY, float spawnZ, float heading)
         {
-            conn.InternalCallReducer(new Reducer.RequestSpawn(spawnX, spawnY, spawnZ, heading));
+            conn.InternalCallReducer(new Reducer.RequestSpawn(steamHex, spawnX, spawnY, spawnZ, heading));
         }
 
         public bool InvokeRequestSpawn(ReducerEventContext ctx, Reducer.RequestSpawn args)
@@ -36,6 +36,7 @@ namespace SpacetimeDB.Types
             }
             OnRequestSpawn(
                 ctx,
+                args.SteamHex,
                 args.SpawnX,
                 args.SpawnY,
                 args.SpawnZ,
@@ -51,6 +52,8 @@ namespace SpacetimeDB.Types
         [DataContract]
         public sealed partial class RequestSpawn : Reducer, IReducerArgs
         {
+            [DataMember(Name = "steam_hex")]
+            public string SteamHex;
             [DataMember(Name = "spawn_x")]
             public float SpawnX;
             [DataMember(Name = "spawn_y")]
@@ -61,12 +64,14 @@ namespace SpacetimeDB.Types
             public float Heading;
 
             public RequestSpawn(
+                string SteamHex,
                 float SpawnX,
                 float SpawnY,
                 float SpawnZ,
                 float Heading
             )
             {
+                this.SteamHex = SteamHex;
                 this.SpawnX = SpawnX;
                 this.SpawnY = SpawnY;
                 this.SpawnZ = SpawnZ;
@@ -75,6 +80,7 @@ namespace SpacetimeDB.Types
 
             public RequestSpawn()
             {
+                this.SteamHex = "";
             }
 
             string IReducerArgs.ReducerName => "request_spawn";

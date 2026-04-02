@@ -13,10 +13,14 @@ class Program
 {
     static DbConnection? _db;
     static readonly int _sidecarPort = 27200;
+    
+    static readonly string API_VERSION = "1.0.0";
     static readonly ConcurrentQueue<InstructionQueue> _pending = new();
     static readonly SemaphoreSlim _syncGate = new SemaphoreSlim(0, 1);
 
     static readonly ConcurrentQueue<object> _deltaQueue = new();
+
+    static readonly ConcurrentDictionary<uint, string> _steamHexByServerId = new();
 
     static async Task Main(string[] args)
     {
@@ -112,18 +116,23 @@ class Program
         Console.WriteLine("[Sidecar] Seeding item definitions...");
         foreach (var item in ItemSeed.Items)
         {
-            try
-            {
-                _db!.Reducers.SeedItem(
-                    item.Id, item.Label, item.Weight,
-                    item.Stackable, item.Usable, item.MaxStack,
-                    item.Category, item.PropModel,
-                    item.MagCapacity, item.StoredCapacity, item.AmmoType);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[Sidecar] Seed error for {item.Id}: {ex.Message}");
-            }
+            try { _db!.Reducers.SeedItem(item.Id, item.Label, item.Weight,
+                item.Stackable, item.Usable, item.MaxStack, item.Category,
+                item.PropModel, item.MagCapacity, item.StoredCapacity, item.AmmoType); }
+            catch (Exception ex) { Console.WriteLine($"[Sidecar] Seed error for {item.Id}: {ex.Message}"); }
+        }
+
+        // Starter kit seeding — configurable without touching Rust source
+        var starterKit = new[] {
+            ("phone", 1u), ("id_card", 1u), ("water_bottle", 2u),
+            ("food_burger", 1u), ("bandage", 5u), ("cash", 500u),
+            ("backpack", 1u),
+        };
+        Console.WriteLine("[Sidecar] Seeding starter kit...");
+        foreach (var (itemId, qty) in starterKit)
+        {
+            try { _db!.Reducers.SeedStarterKit(itemId, qty); }
+            catch (Exception ex) { Console.WriteLine($"[Sidecar] StarterKit seed error for {itemId}: {ex.Message}"); }
         }
         Console.WriteLine("[Sidecar] Seeding complete.");
     }
@@ -157,7 +166,17 @@ class Program
         {
             string path = ctx.Request.Url?.AbsolutePath ?? "";
 
-            // ── GET /instructions — Lua polls for pending native instructions ──
+            if (_db == null && path != "/version")
+                    {
+                        ctx.Response.StatusCode = 503;
+                        var notReady = System.Text.Encoding.UTF8.GetBytes(
+                            "{\"error\":\"sidecar_not_ready\",\"message\":\"SpacetimeDB connection pending\"}");
+                        ctx.Response.ContentType = "application/json";
+                        await ctx.Response.OutputStream.WriteAsync(notReady);
+                        ctx.Response.Close();
+                        return;
+                    }
+
             if (ctx.Request.HttpMethod == "GET" && path == "/instructions")
             {
                 var batch = new List<object>();
@@ -174,6 +193,37 @@ class Program
                 return;
             }
 
+            if (ctx.Request.HttpMethod == "POST" && path == "/seed-item")
+                {
+                    using var reader = new System.IO.StreamReader(ctx.Request.InputStream);
+                    string body = await reader.ReadToEndAsync();
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(body);
+                        var r = doc.RootElement;
+                        _db!.Reducers.SeedItem(
+                            r.GetProperty("item_id").GetString()    ?? "",
+                            r.GetProperty("label").GetString()      ?? "",
+                            (float)r.GetProperty("weight").GetDouble(),
+                            r.GetProperty("stackable").GetBoolean(),
+                            r.GetProperty("usable").GetBoolean(),
+                            r.GetProperty("max_stack").GetUInt32(),
+                            r.GetProperty("category").GetString()   ?? "misc",
+                            r.TryGetProperty("prop_model",      out var pm) ? pm.GetString()  ?? "prop_cs_cardbox_01" : "prop_cs_cardbox_01",
+                            r.TryGetProperty("mag_capacity",    out var mc) ? mc.GetInt32()    : 0,
+                            r.TryGetProperty("stored_capacity", out var sc) ? sc.GetInt32()    : 0,
+                            r.TryGetProperty("ammo_type",       out var at) ? at.GetString() ?? "" : ""
+                        );
+                        ctx.Response.StatusCode = 200; ctx.Response.Close();
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[Sidecar] /seed-item error: {ex.Message}");
+                        ctx.Response.StatusCode = 400; ctx.Response.Close();
+                    }
+                    return;
+                }
+
             if (ctx.Request.HttpMethod == "GET" && path == "/slot-deltas")
             {
                 var deltas = new List<object>();
@@ -182,6 +232,31 @@ class Program
                     deltas.Add(delta);
                 }
                 await WriteJson(ctx, deltas);
+                return;
+            }
+
+            if (ctx.Request.HttpMethod == "GET" && path == "/item-count")
+{
+                var qs      = System.Web.HttpUtility.ParseQueryString(ctx.Request.Url?.Query ?? "");
+                string ownId = qs["owner_id"] ?? "";
+                string itmId = qs["item_id"]  ?? "";
+
+                if (string.IsNullOrEmpty(ownId) || string.IsNullOrEmpty(itmId))
+                {
+                    ctx.Response.StatusCode = 400; ctx.Response.Close(); return;
+                }
+
+                uint count = 0;
+                if (_db != null)
+                {
+                    foreach (var slot in _db.Db.InventorySlot.Iter()
+                        .Where(s => s.OwnerId == ownId && s.ItemId == itmId))
+                    {
+                        count += slot.Quantity;
+                    }
+                }
+
+                await WriteJson(ctx, new { owner_id = ownId, item_id = itmId, count, has_item = count > 0 });
                 return;
             }
 
@@ -217,28 +292,50 @@ class Program
                 switch (name)
                 {
                     // ── Player ─────────────────────────────────────────────────
-                    case "on_player_connect":
-                        _db.Reducers.OnPlayerConnect(
-                            args.GetProperty("steam_hex").GetString()    ?? "",
-                            args.GetProperty("display_name").GetString() ?? "",
-                            args.GetProperty("server_id").GetUInt32(),
-                            args.GetProperty("net_id").GetUInt32(),
-                            args.TryGetProperty("heading", out var h) ? h.GetSingle() : 0.0f
-                        );
-                        break;
+                        case "on_player_connect":
+                            var connectServerId = args.GetProperty("server_id").GetUInt32();
+                            var connectHex      = args.GetProperty("steam_hex").GetString() ?? "";
+                            _db.Reducers.OnPlayerConnect(
+                                connectHex,
+                                args.GetProperty("display_name").GetString() ?? "",
+                                connectServerId,
+                                args.GetProperty("net_id").GetUInt32(),
+                                args.TryGetProperty("heading", out var h) ? h.GetSingle() : 0.0f
+                            );
+                            // Track steam_hex so disconnect can find the right player
+                            if (!string.IsNullOrEmpty(connectHex))
+                                _steamHexByServerId[connectServerId] = connectHex;
+                            break;
 
-                    case "on_player_disconnect":
-                        _db.Reducers.OnPlayerDisconnect();
-                        break;
+                        case "on_player_disconnect":
+                        {
+                            uint discServerId = args.TryGetProperty("server_id", out var sidEl)
+                                ? sidEl.GetUInt32() : 0;
+                            if (discServerId > 0 && _steamHexByServerId.TryRemove(discServerId, out var discHex))
+                            {
+                                _db.Reducers.OnPlayerDisconnect(discHex);
+                            }
+                            break;
+                        }
 
-                    case "request_spawn":
-                        _db.Reducers.RequestSpawn(
-                            args.GetProperty("spawn_x").GetSingle(),
-                            args.GetProperty("spawn_y").GetSingle(),
-                            args.GetProperty("spawn_z").GetSingle(),
-                            args.GetProperty("heading").GetSingle()
-                        );
-                        break;
+                        case "request_spawn":
+                        {
+                            // Resolve steam_hex from the active session map using server_id
+                            uint spawnServerId = args.GetProperty("server_id").GetUInt32();
+                            if (!_steamHexByServerId.TryGetValue(spawnServerId, out var spawnHex))
+                            {
+                                Console.WriteLine($"[Sidecar] request_spawn: no steam_hex for server_id={spawnServerId}");
+                                ctx.Response.StatusCode = 400; ctx.Response.Close(); return;
+                            }
+                            _db.Reducers.RequestSpawn(
+                                spawnHex,
+                                args.GetProperty("spawn_x").GetSingle(),
+                                args.GetProperty("spawn_y").GetSingle(),
+                                args.GetProperty("spawn_z").GetSingle(),
+                                args.GetProperty("heading").GetSingle()
+                            );
+                            break;
+                        }
 
                     // ── Inventory ──────────────────────────────────────────────
                     case "move_item":
@@ -271,8 +368,7 @@ class Program
                                 return;
                             }
                         
-                            var tIdentity = tSession.Identity.ToString().ToLower();
-                            if (tIdentity.StartsWith("0x")) tIdentity = tIdentity.Substring(2);
+                            var tIdentity = tSession.SteamHex;
                         
                             var tSlot = _db!.Db.InventorySlot.Iter().FirstOrDefault(s => s.Id == tSlotId);
                             if (tSlot == null || string.IsNullOrEmpty(tSlot.OwnerId))
@@ -403,12 +499,10 @@ class Program
 
                             if (session != null)
                             {
-                                var identityStr = session.Identity.ToString().ToLower();
-                                if (identityStr.StartsWith("0x")) identityStr = identityStr.Substring(2);
-                                ownerId = identityStr;
+                                 ownerId = session.SteamHex;
 
                                 foreach (var s in _db!.Db.InventorySlot.Iter()
-                                    .Where(s => s.OwnerId == identityStr && s.OwnerType == "player"))
+                                    .Where(s => s.OwnerId == ownerId && s.OwnerType == "player"))
                                 {
                                     slots.Add(new {
                                         id         = s.Id,
@@ -422,7 +516,7 @@ class Program
                                 }
 
                                 foreach (var s in _db!.Db.InventorySlot.Iter()
-                                    .Where(s => s.OwnerId.StartsWith(identityStr + "_equip_") && s.OwnerType == "equip"))
+                                    .Where(s => s.OwnerId.StartsWith(ownerId + "_equip_") && s.OwnerType == "equip"))
                                 {
                                     equippedSlots.Add(new {
                                         id         = s.Id,
@@ -432,7 +526,7 @@ class Program
                                         quantity   = s.Quantity,
                                         metadata   = s.Metadata,
                                         slot_index = s.SlotIndex,
-                                        equip_key  = s.OwnerId.Replace(identityStr + "_equip_", ""),
+                                        equip_key  = s.OwnerId.Replace(ownerId + "_equip_", ""),
                                     });
                                 }
                             }
@@ -626,31 +720,72 @@ class Program
 
                     case "open_backpack":
                     {
-                        string bpIdentity = args.GetProperty("owner_identity").GetString() ?? "";
-                        string bagItemId  = args.GetProperty("bag_item_id").GetString()    ?? "backpack";
-                        ulong  bagSlotId  = args.TryGetProperty("bag_slot_id", out var bsid) ? bsid.GetUInt64() : 0;
-                        string bpStashId  = bagSlotId > 0 ? $"backpack_slot_{bagSlotId}" : $"backpack_{bpIdentity}";
-                        uint   bpSlots    = bagItemId == "duffel_bag" ? 30u : 20u;
-                        float  bpWeight   = bagItemId == "duffel_bag" ? 50f  : 30f;
-                        string bpLabel    = bagItemId == "duffel_bag" ? "DUFFEL BAG" : "BACKPACK";
-                        try { _db!.Reducers.CreateStash(bpStashId, "backpack", bpLabel, bpSlots, bpWeight, bpIdentity, 0f, 0f, 0f); } catch { }
+                        string bpOwnerId  = args.GetProperty("owner_identity").GetString() ?? "";
+                        string bpItemId   = args.GetProperty("bag_item_id").GetString()    ?? "backpack";
+                        ulong  bpSlotId   = args.TryGetProperty("bag_slot_id", out var bsid) ? bsid.GetUInt64() : 0;
 
-                        var bpSlotList = _db!.Db.InventorySlot.Iter()
-                            .Where(s => (s.OwnerId == bpStashId || s.OwnerId == $"backpack_{bpIdentity}") && s.OwnerType == "stash")
+                        string bpStashId = bpSlotId > 0
+                            ? $"backpack_slot_{bpSlotId}"
+                            : $"backpack_{bpOwnerId}";
+
+                        uint   bpMaxSlots  = bpItemId == "duffel_bag" ? 30u  : 20u;
+                        float  bpMaxWeight = bpItemId == "duffel_bag" ? 50f  : 30f;
+                        string bpLabel     = bpItemId == "duffel_bag" ? "DUFFEL BAG" : "BACKPACK";
+
+                        try
+                        {
+                            _db!.Reducers.CreateStash(
+                                bpStashId, "backpack", bpLabel,
+                                bpMaxSlots, bpMaxWeight,
+                                bpOwnerId,
+                                0f, 0f, 0f
+                            );
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[Sidecar] open_backpack CreateStash error: {ex.Message}");
+                        }
+
+                        string bpLegacyId = $"backpack_{bpOwnerId}";
+                        var bpSlots = _db!.Db.InventorySlot.Iter()
+                            .Where(s =>
+                                (s.OwnerId == bpStashId || s.OwnerId == bpLegacyId)
+                                && s.OwnerType == "stash")
                             .Select(s => (object)new {
-                                id = s.Id, owner_id = s.OwnerId, owner_type = s.OwnerType,
-                                item_id = s.ItemId, quantity = s.Quantity,
-                                metadata = s.Metadata, slot_index = s.SlotIndex,
+                                id         = s.Id,
+                                owner_id   = s.OwnerId,
+                                owner_type = s.OwnerType,
+                                item_id    = s.ItemId,
+                                quantity   = s.Quantity,
+                                metadata   = s.Metadata,
+                                slot_index = s.SlotIndex,
                             }).ToList();
+
                         var bpDefs = _db!.Db.ItemDefinition.Iter()
-                            .ToDictionary(d => d.ItemId, d => (object)new {
-                                item_id = d.ItemId, label = d.Label, weight = d.Weight,
-                                stackable = d.Stackable, usable = d.Usable, max_stack = d.MaxStack, category = d.Category,
-                            });
+                            .ToDictionary(
+                                d => d.ItemId,
+                                d => (object)new {
+                                    item_id         = d.ItemId,
+                                    label           = d.Label,
+                                    weight          = d.Weight,
+                                    stackable       = d.Stackable,
+                                    usable          = d.Usable,
+                                    max_stack       = d.MaxStack,
+                                    category        = d.Category,
+                                    prop_model      = d.PropModel,
+                                    mag_capacity    = d.MagCapacity,
+                                    stored_capacity = d.StoredCapacity,
+                                    ammo_type       = d.AmmoType,
+                                });
+
                         await WriteJson(ctx, new {
-                            stash_id = bpStashId, label = bpLabel,
-                            max_weight = bpWeight, max_slots = (int)bpSlots,
-                            slots = bpSlotList, item_defs = bpDefs,
+                            stash_id   = bpStashId,
+                            label      = bpLabel,
+                            max_weight = bpMaxWeight,
+                            max_slots  = (int)bpMaxSlots,
+                            slots      = bpSlots,
+                            item_defs  = bpDefs,
+                            ok         = true,
                         });
                         return;
                     }
@@ -776,8 +911,7 @@ class Program
                                     return;
                                 }
                         
-                            var gIdentity = gSession.Identity.ToString().ToLower();
-                            if (gIdentity.StartsWith("0x")) gIdentity = gIdentity.Substring(2);
+                            var gIdentity = gSession.SteamHex;
                         
                             // ── Delegate everything else to Rust
                             // Passing "{}" signals give_item_to_identity to auto-generate weapon metadata.
@@ -827,22 +961,21 @@ class Program
         }
     }
 
-    static async Task WriteJson(HttpListenerContext ctx, object data)
-    {
-        var json  = JsonSerializer.Serialize(data);
-        var bytes = Encoding.UTF8.GetBytes(json);
-        ctx.Response.ContentType = "application/json";
-        ctx.Response.StatusCode  = 200;
-        await ctx.Response.OutputStream.WriteAsync(bytes);
-        ctx.Response.Close();
-    }
+        static async Task WriteJson(HttpListenerContext ctx, object data)
+        {
+            var json  = JsonSerializer.Serialize(data);
+            var bytes = Encoding.UTF8.GetBytes(json);
+            ctx.Response.ContentType = "application/json";
+            ctx.Response.StatusCode  = 200;
+            ctx.Response.Headers["X-HyprFM-Version"] = API_VERSION;   // ← add this line
+            await ctx.Response.OutputStream.WriteAsync(bytes);
+            ctx.Response.Close();
+        }
 
-    static async Task SeedItemsWhenReady()
+  static async Task SeedItemsWhenReady()
     {
         await _syncGate.WaitAsync();
         Console.WriteLine("[Sidecar] Seeding item definitions...");
-        
-        // Assuming your existing SeedItems() call
         SeedItems(); 
     }
 }

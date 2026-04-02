@@ -1,7 +1,7 @@
 local config = {
     ["Debug"] = false, --[[ Enable debug spheres (Ignores CheckDelay) ]]
     ["CheckDelay"] = 10, -- [[ Aim check delay (MS) ]]
-    ["DisableFiring"] = true, -- [[ Disable firing instead of moving reticle (BETA) ]]
+    ["DisableFiring"] = false, -- [[ Disable firing instead of moving reticle (BETA) ]]
 }
 
 

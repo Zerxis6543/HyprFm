@@ -296,6 +296,10 @@ AddEventHandler("stdb:playerConnected", function(netId, heading)
         if string.sub(id, 1, 6) == "steam:" then steamHex = id; break end
     end
 
+    if steamHex ~= "" then
+        _identityToServerId[steamHex] = src
+    end
+
     PerformHttpRequest(SIDECAR_URL .. "reducer",
         function(status, _, _)
             if status == 200 then
@@ -318,9 +322,14 @@ end)
 
 -- FiveM built-in event — fires reliably on disconnect / timeout / kick
 AddEventHandler("playerDropped", function(_reason)
-    local src = source
+    local src      = source
+    local steamHex = ""
 
-    -- Remove from all maps so delta-push stops forwarding to this server-id
+    for _, id in ipairs(GetPlayerIdentifiers(src)) do
+        if string.sub(id, 1, 6) == "steam:" then steamHex = id; break end
+    end
+
+    -- Clear all local routing maps for this server_id
     for identity, sid in pairs(_identityToServerId) do
         if sid == src then _identityToServerId[identity] = nil; break end
     end
@@ -331,10 +340,13 @@ AddEventHandler("playerDropped", function(_reason)
         if sid == src then _propOwnerServerId[stashId] = nil end
     end
 
-    -- Clear the active session in SpacetimeDB
+    -- Pass both steam_hex and server_id so the sidecar clears the right session
     PerformHttpRequest(SIDECAR_URL .. "reducer",
         function() end, "POST",
-        json.encode({ name = "on_player_disconnect", args = {} }),
+        json.encode({ name = "on_player_disconnect", args = {
+            steam_hex = steamHex,
+            server_id = src,
+        }}),
         { ["Content-Type"] = "application/json" }
     )
 end)

@@ -39,6 +39,9 @@ interface InventoryStore {
   inspectMode:    boolean
   inspectSlot:    InventorySlot | null
 
+  equipMappings:        Record<string, string>
+  registerEquipMapping: (itemId: string, equipKey: string) => void
+
   openInventory:   (slots: InventorySlot[], itemDefs: Record<string, ItemDefinition>, maxWeight: number, secondary?: Partial<SecondaryContext>) => void
   openBackpack:    (bagItemId: string) => void
   closeInventory:  () => void
@@ -98,6 +101,16 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
   weightFlash:             null,
   inspectMode:             false,
   inspectSlot:             null,
+  equipMappings: {
+    backpack:        'backpack',
+    duffel_bag:      'backpack',
+    body_armour:     'body_armour',
+    phone:           'phone',
+    parachute:       'parachute',
+    weapon_pistol:   'weapon_primary',
+    weapon_knife:    'weapon_secondary',
+    assault_rifle:   'weapon_primary',
+  },
 
   openInventory: (slots, itemDefs, maxWeight, secondary) => set({
     isOpen: true, slots, itemDefs,
@@ -385,6 +398,8 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
 
   startInspect: (slot) => set({ inspectMode: true, inspectSlot: slot }),
   stopInspect:  () => set({ inspectMode: false, inspectSlot: null }),
+  registerEquipMapping: (itemId, equipKey) =>
+    set(s => ({ equipMappings: { ...s.equipMappings, [itemId]: equipKey } })),
 }))
 
 function GetParentResourceName(): string {

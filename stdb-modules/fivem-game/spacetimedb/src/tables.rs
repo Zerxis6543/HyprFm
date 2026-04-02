@@ -1,6 +1,3 @@
-// G:\FIVEMSTDBPROJECT\stdb-modules\fivem-game\spacetimedb\src\tables.rs
-// COMPLETE FILE — replace entire contents
-
 use spacetimedb::{Identity, Timestamp};
 
 // ── CORE ─────────────────────────────────────────────────────────────────────
@@ -24,7 +21,6 @@ pub struct InstructionQueue {
 #[derive(Clone, Debug)]
 pub struct Player {
     #[primary_key]
-    pub identity:     Identity,
     pub steam_hex:    String,
     pub display_name: String,
     pub money_cash:   i64,
@@ -38,25 +34,10 @@ pub struct Player {
 #[derive(Clone, Debug)]
 pub struct ActiveSession {
     #[primary_key]
-    pub identity:     Identity,
+    pub steam_hex:    String,
     pub server_id:    u32,
     pub net_id:       u32,
     pub connected_at: Timestamp,
-}
-
-#[spacetimedb::table(accessor = spawn_request, public)]
-#[derive(Clone, Debug)]
-pub struct SpawnRequest {
-    #[primary_key]
-    #[auto_inc]
-    pub id:            u64,
-    pub identity:      Identity,
-    pub spawn_x:       f32,
-    pub spawn_y:       f32,
-    pub spawn_z:       f32,
-    pub spawn_heading: f32,
-    pub model_hash:    u32,
-    pub fulfilled:     bool,
 }
 
 // ── INVENTORY ─────────────────────────────────────────────────────────────────
@@ -131,4 +112,12 @@ pub struct StashDefinition {
     pub pos_x:      f32,
     pub pos_y:      f32,
     pub pos_z:      f32,
+}
+
+#[spacetimedb::table(accessor = player_config, public)]
+#[derive(Clone, Debug)]
+pub struct PlayerConfig {
+    #[primary_key]
+    pub steam_hex:        String,
+    pub max_carry_weight: f32,   // base 85.0 kg
 }

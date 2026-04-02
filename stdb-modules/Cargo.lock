@@ -755,26 +755,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "stdb-inventory"
-version = "0.1.0"
-dependencies = [
- "log",
- "serde_json",
- "spacetimedb",
- "stdb-core",
-]
-
-[[package]]
-name = "stdb-player"
-version = "0.1.0"
-dependencies = [
- "log",
- "serde_json",
- "spacetimedb",
- "stdb-core",
-]
-
-[[package]]
 name = "syn"
 version = "2.0.117"
 source = "registry+https://github.com/rust-lang/crates.io-index"

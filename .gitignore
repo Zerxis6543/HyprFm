@@ -2,3 +2,4 @@
 /fivem-server-files/cache
 /txData/default/logs
 /txData/default/logs
+stdb-modules/target/wasm32-unknown-unknown/release/.fingerprint/stdb-fivem-game-e3a5c2eaa269a9b1/dep-lib-stdb_fivem_game

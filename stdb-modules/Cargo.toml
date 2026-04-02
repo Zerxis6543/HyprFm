@@ -3,8 +3,6 @@ resolver = "2"
 members  = [
     "core/spacetimedb",
     "fivem-game/spacetimedb",
-    "inventory/spacetimedb",
-    "player/spacetimedb",
 ]
 
 [workspace.dependencies]

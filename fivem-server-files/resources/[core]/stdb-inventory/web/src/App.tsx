@@ -16,16 +16,12 @@ const EQUIP_ALLOWED: Record<string, string[]> = {
   parachute: ['parachute'], weapon_primary: ['weapon'], weapon_secondary: ['weapon'],
   hotkey_1: ['any'], hotkey_2: ['any'], hotkey_3: ['any'], hotkey_4: ['any'], hotkey_5: ['any'],
 }
-const ITEM_EQUIP_MAP: Record<string, string> = {
-  backpack: 'backpack', duffel_bag: 'backpack', body_armour: 'body_armour',
-  phone: 'phone', parachute: 'parachute',
-  weapon_pistol: 'weapon_primary', weapon_knife: 'weapon_secondary', assault_rifle: 'weapon_primary',
-}
 function canEquip(itemId: string, equipKey: string): boolean {
-  const allowed = EQUIP_ALLOWED[equipKey]
+  const allowed  = EQUIP_ALLOWED[equipKey]
   if (!allowed) return false
   if (allowed.includes('any')) return true
-  if (ITEM_EQUIP_MAP[itemId] === equipKey) return true
+  const mappings = useInventoryStore.getState().equipMappings
+  if (mappings[itemId] === equipKey) return true
   return allowed.includes(useInventoryStore.getState().itemDefs[itemId]?.category ?? 'misc')
 }
 

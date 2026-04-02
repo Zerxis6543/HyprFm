@@ -32,7 +32,8 @@ namespace SpacetimeDB.Types
             AddTable(InventorySlot = new(conn));
             AddTable(ItemDefinition = new(conn));
             AddTable(Player = new(conn));
-            AddTable(SpawnRequest = new(conn));
+            AddTable(PlayerConfig = new(conn));
+            AddTable(StarterKitEntry = new(conn));
             AddTable(StashDefinition = new(conn));
             AddTable(VehicleInventory = new(conn));
         }
@@ -536,7 +537,8 @@ namespace SpacetimeDB.Types
             new QueryBuilder().From.InventorySlot().ToSql(),
             new QueryBuilder().From.ItemDefinition().ToSql(),
             new QueryBuilder().From.Player().ToSql(),
-            new QueryBuilder().From.SpawnRequest().ToSql(),
+            new QueryBuilder().From.PlayerConfig().ToSql(),
+            new QueryBuilder().From.StarterKitEntry().ToSql(),
             new QueryBuilder().From.StashDefinition().ToSql(),
             new QueryBuilder().From.VehicleInventory().ToSql(),
         }
@@ -550,7 +552,8 @@ namespace SpacetimeDB.Types
         public global::SpacetimeDB.Table<InventorySlot, InventorySlotCols, InventorySlotIxCols> InventorySlot() => new("inventory_slot", new InventorySlotCols("inventory_slot"), new InventorySlotIxCols("inventory_slot"));
         public global::SpacetimeDB.Table<ItemDefinition, ItemDefinitionCols, ItemDefinitionIxCols> ItemDefinition() => new("item_definition", new ItemDefinitionCols("item_definition"), new ItemDefinitionIxCols("item_definition"));
         public global::SpacetimeDB.Table<Player, PlayerCols, PlayerIxCols> Player() => new("player", new PlayerCols("player"), new PlayerIxCols("player"));
-        public global::SpacetimeDB.Table<SpawnRequest, SpawnRequestCols, SpawnRequestIxCols> SpawnRequest() => new("spawn_request", new SpawnRequestCols("spawn_request"), new SpawnRequestIxCols("spawn_request"));
+        public global::SpacetimeDB.Table<PlayerConfig, PlayerConfigCols, PlayerConfigIxCols> PlayerConfig() => new("player_config", new PlayerConfigCols("player_config"), new PlayerConfigIxCols("player_config"));
+        public global::SpacetimeDB.Table<StarterKitEntry, StarterKitEntryCols, StarterKitEntryIxCols> StarterKitEntry() => new("starter_kit_entry", new StarterKitEntryCols("starter_kit_entry"), new StarterKitEntryIxCols("starter_kit_entry"));
         public global::SpacetimeDB.Table<StashDefinition, StashDefinitionCols, StashDefinitionIxCols> StashDefinition() => new("stash_definition", new StashDefinitionCols("stash_definition"), new StashDefinitionIxCols("stash_definition"));
         public global::SpacetimeDB.Table<VehicleInventory, VehicleInventoryCols, VehicleInventoryIxCols> VehicleInventory() => new("vehicle_inventory", new VehicleInventoryCols("vehicle_inventory"), new VehicleInventoryIxCols("vehicle_inventory"));
     }
@@ -649,6 +652,8 @@ namespace SpacetimeDB.Types
                 Reducer.RemoveItem args => Reducers.InvokeRemoveItem(eventContext, args),
                 Reducer.RequestSpawn args => Reducers.InvokeRequestSpawn(eventContext, args),
                 Reducer.SeedItem args => Reducers.InvokeSeedItem(eventContext, args),
+                Reducer.SeedStarterKit args => Reducers.InvokeSeedStarterKit(eventContext, args),
+                Reducer.SetPlayerMaxWeight args => Reducers.InvokeSetPlayerMaxWeight(eventContext, args),
                 Reducer.SplitStack args => Reducers.InvokeSplitStack(eventContext, args),
                 Reducer.TransferItem args => Reducers.InvokeTransferItem(eventContext, args),
                 Reducer.UpdateItem args => Reducers.InvokeUpdateItem(eventContext, args),

@@ -4,7 +4,32 @@ local currentPlate = nil
 local currentModel = nil
 local currentClass = nil
 local playerStats = { hunger = 100, thirst = 100, health = 200 }
-local worldProps = {}  -- list of { prop, stashId }
+local worldProps = {}
+local _weaponRegistry = {}
+
+local function registerWeapon(itemId, hash, ammoType, equipKey)
+    if type(itemId) ~= "string" or type(hash) ~= "number" then
+        print(("[hyprfm] RegisterWeapon: itemId (string) and hash (number) are required")); return
+    end
+    _weaponRegistry[itemId] = {
+        hash      = hash,
+        ammo_type = ammoType  or "",
+        equip_key = equipKey  or "weapon_primary",
+    }
+end
+
+-- Default weapons shipped with every tier
+registerWeapon("weapon_pistol", GetHashKey("WEAPON_PISTOL"),       "ammo_pistol", "weapon_primary")
+registerWeapon("weapon_knife",  GetHashKey("WEAPON_KNIFE"),        "",            "weapon_secondary")
+registerWeapon("assault_rifle", GetHashKey("WEAPON_ASSAULTRIFLE"), "ammo_rifle",  "weapon_primary")
+
+-- Export so premium resources and community scripts can add weapons without source access
+exports("RegisterWeapon", registerWeapon)
+
+-- Internal helper used by equipWeapon() and the hotkey system
+local function getWeaponDef(itemId)
+    return _weaponRegistry[itemId]
+end  -- list of { prop, stashId }
 
 -- Force-stream throwing dictionaries at resource start
 Citizen.CreateThread(function()
@@ -78,19 +103,14 @@ local function generateVehicleId()
 end
 
 -- ── Weapon system ─────────────────────────────────────────────────────────────
-local WEAPON_HASHES = {
-    weapon_pistol = GetHashKey("WEAPON_PISTOL"),
-    weapon_knife  = GetHashKey("WEAPON_KNIFE"),
-    assault_rifle = GetHashKey("WEAPON_ASSAULTRIFLE"),
-}
-
 local equippedWeapons = {}
 
 local isWeaponAnimating = false
 
 local function equipWeapon(itemId, equipKey)
-    local hash = WEAPON_HASHES[itemId]
-    if not hash then return end
+    local def = getWeaponDef(itemId)
+    if not def then return end
+    local hash = def.hash
     if isWeaponAnimating then return end
     local ped = PlayerPedId()
     Citizen.CreateThread(function()
@@ -128,9 +148,11 @@ local function equipWeapon(itemId, equipKey)
 end
 
 local function unequipWeapon(equipKey)
+    local def = getWeaponDef(itemId)
+    if not def then return end
     local hash = equippedWeapons[equipKey]
-    if not hash then return end
-    if isWeaponAnimating then return end
+        if not hash then return end
+        if isWeaponAnimating then return end
     local ped = PlayerPedId()
     equippedWeapons[equipKey] = nil
     Citizen.CreateThread(function()
@@ -194,11 +216,10 @@ RegisterNUICallback("activateSlot", function(data, cb)
     local itemId   = data.itemId
     if not itemId then cb({ ok = true }); return end
 
-    if WEAPON_HASHES[itemId] then
+    if getWeaponDef(itemId) then
         equipWeapon(itemId, equipKey)
         activeWeaponSlot = equipKey
     else
-        -- Non-weapon: trigger use via server
         TriggerServerEvent("stdb:useItemByKey", equipKey)
     end
     cb({ ok = true })
@@ -326,9 +347,8 @@ Citizen.CreateThread(function()
 end)
 
 -- ── TAB — open inventory ──────────────────────────────────────────────────────
-RegisterCommand("+openInventory", function()
+RegisterCommand("+stdb_inventory", function()
     if isOpen then
-        -- Close path — mirrors the NUI close callback exactly
         isOpen = false
         SetNuiFocus(false, false)
         SetNuiFocusKeepInput(false)
@@ -336,7 +356,6 @@ RegisterCommand("+openInventory", function()
         TriggerServerEvent("stdb:closeInventory")
         return
     end
-    -- Open path — unchanged from original
     if inVehicle then
         Citizen.CreateThread(function()
             local timeout = 0
@@ -361,8 +380,7 @@ RegisterCommand("+openInventory", function()
         TriggerServerEvent("stdb:requestInventory", pos.x, pos.y, pos.z)
     end
 end, false)
--- F2 only — TAB binding removed
-RegisterKeyMapping("+stdb_toggle", "Toggle Inventory", "keyboard", "TAB")
+RegisterKeyMapping("+stdb_inventory", "Toggle Inventory", "keyboard", "TAB")
 
 -- ── Unified open event (used for all inventory types now) ─────────────────────
 RegisterNetEvent("stdb:openInventory")

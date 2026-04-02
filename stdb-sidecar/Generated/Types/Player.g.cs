@@ -13,8 +13,6 @@ namespace SpacetimeDB.Types
     [DataContract]
     public sealed partial class Player
     {
-        [DataMember(Name = "identity")]
-        public SpacetimeDB.Identity Identity;
         [DataMember(Name = "steam_hex")]
         public string SteamHex;
         [DataMember(Name = "display_name")]
@@ -31,7 +29,6 @@ namespace SpacetimeDB.Types
         public SpacetimeDB.Timestamp LastSeen;
 
         public Player(
-            SpacetimeDB.Identity Identity,
             string SteamHex,
             string DisplayName,
             long MoneyCash,
@@ -41,7 +38,6 @@ namespace SpacetimeDB.Types
             SpacetimeDB.Timestamp LastSeen
         )
         {
-            this.Identity = Identity;
             this.SteamHex = SteamHex;
             this.DisplayName = DisplayName;
             this.MoneyCash = MoneyCash;

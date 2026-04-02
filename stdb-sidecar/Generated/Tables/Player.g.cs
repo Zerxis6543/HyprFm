@@ -17,21 +17,21 @@ namespace SpacetimeDB.Types
         {
             protected override string RemoteTableName => "player";
 
-            public sealed class IdentityUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
+            public sealed class SteamHexUniqueIndex : UniqueIndexBase<string>
             {
-                protected override SpacetimeDB.Identity GetKey(Player row) => row.Identity;
+                protected override string GetKey(Player row) => row.SteamHex;
 
-                public IdentityUniqueIndex(PlayerHandle table) : base(table) { }
+                public SteamHexUniqueIndex(PlayerHandle table) : base(table) { }
             }
 
-            public readonly IdentityUniqueIndex Identity;
+            public readonly SteamHexUniqueIndex SteamHex;
 
             internal PlayerHandle(DbConnection conn) : base(conn)
             {
-                Identity = new(this);
+                SteamHex = new(this);
             }
 
-            protected override object GetPrimaryKey(Player row) => row.Identity;
+            protected override object GetPrimaryKey(Player row) => row.SteamHex;
         }
 
         public readonly PlayerHandle Player;
@@ -39,7 +39,6 @@ namespace SpacetimeDB.Types
 
     public sealed class PlayerCols
     {
-        public global::SpacetimeDB.Col<Player, SpacetimeDB.Identity> Identity { get; }
         public global::SpacetimeDB.Col<Player, string> SteamHex { get; }
         public global::SpacetimeDB.Col<Player, string> DisplayName { get; }
         public global::SpacetimeDB.Col<Player, long> MoneyCash { get; }
@@ -50,7 +49,6 @@ namespace SpacetimeDB.Types
 
         public PlayerCols(string tableName)
         {
-            Identity = new global::SpacetimeDB.Col<Player, SpacetimeDB.Identity>(tableName, "identity");
             SteamHex = new global::SpacetimeDB.Col<Player, string>(tableName, "steam_hex");
             DisplayName = new global::SpacetimeDB.Col<Player, string>(tableName, "display_name");
             MoneyCash = new global::SpacetimeDB.Col<Player, long>(tableName, "money_cash");
@@ -63,11 +61,11 @@ namespace SpacetimeDB.Types
 
     public sealed class PlayerIxCols
     {
-        public global::SpacetimeDB.IxCol<Player, SpacetimeDB.Identity> Identity { get; }
+        public global::SpacetimeDB.IxCol<Player, string> SteamHex { get; }
 
         public PlayerIxCols(string tableName)
         {
-            Identity = new global::SpacetimeDB.IxCol<Player, SpacetimeDB.Identity>(tableName, "identity");
+            SteamHex = new global::SpacetimeDB.IxCol<Player, string>(tableName, "steam_hex");
         }
     }
 }
