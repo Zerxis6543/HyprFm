@@ -1,6 +1,6 @@
 # HyprFM Framework
 
-HyprFM is a next-generation FiveM roleplay framework built on the **Sovereign State** pattern. Unlike traditional frameworks that rely on standard SQL databases and heavy main-thread processing, HyprFM offloads game state to **SpacetimeDB**, allowing for sub-millisecond execution (approx. 0.14ms for complex inventory interactions) and a highly scalable backend.
+HyprFM is a next-generation FiveM roleplay framework built on the **Sovereign State** pattern. Unlike traditional frameworks that rely on standard SQL databases and heavy main-thread processing, HyprFM offloads game state to **SpacetimeDB**, allowing for sub-millisecond execution and a highly scalable backend.
 
 ## 🏗 Architecture
 
