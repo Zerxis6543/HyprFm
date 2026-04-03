@@ -7,7 +7,7 @@ HyprFM is a next-generation FiveM roleplay framework built on the **Sovereign St
 -   **State Engine:** SpacetimeDB (Rust) - Handles all relational data and real-time logic.
 -   **Sidecar:** .NET / C# - Provides the bridge between the FiveM client/server and the state engine.
 -   **Frontend:** React 18, TypeScript, and Zustand - A modern, high-performance UI (NUI) layer.
--   **Philosophy:** High-performance, "ready-to-go" out of the box, inspired by the development standards of HIGHLY popular RP servers such as Prodigy RP and NoPixel
+-   **Philosophy:** High-performance, "ready-to-go" out of the box, inspired by the development standards of popular RP servers such as Prodigy RP and NoPixel
 
 ## 📁 Project Structure
 
