@@ -17,6 +17,10 @@ window.addEventListener('message', (e: MessageEvent) => {
         d.itemDefs ?? {},
         d.maxWeight ?? 85,
         d.context  ?? undefined,
+        // Cache the player's steam_hex as the authoritative pockets owner_id.
+        // applySlotDeltas reads this instead of slots[0].owner_id which can be
+        // transiently wrong during cross-panel optimistic updates.
+        d.owner_id ?? '',
       )
       console.log('[inventory] openInventory equippedSlots:', JSON.stringify(d.equippedSlots), 'backpackData:', JSON.stringify(d.backpackData))
       if (d.equippedSlots && Array.isArray(d.equippedSlots)) {
@@ -143,6 +147,13 @@ window.addEventListener('message', (e: MessageEvent) => {
       
         type RawDelta = { type: string; slot?: any; slot_id?: number; owner_id?: string }
         const rawDeltas: RawDelta[] = d.deltas ?? []
+
+        // ── DIAGNOSTIC: log everything we receive and what we derive ──────────
+        console.log('[Delta] applySlotDeltas received', rawDeltas.length, 'delta(s):', JSON.stringify(rawDeltas))
+        console.log('[Delta] state.playerOwnerId:', state.playerOwnerId)
+        console.log('[Delta] state.secondary.id:', state.secondary.id, 'type:', state.secondary.type)
+        console.log('[Delta] state.backpack?.id:', state.backpack?.id)
+        console.log('[Delta] pockets first slot owner_id:', state.slots[0]?.owner_id, 'owner_type:', state.slots[0]?.owner_type)
       
         const added:   typeof state.slots = []
         const updated: typeof state.slots = []
@@ -217,8 +228,22 @@ window.addEventListener('message', (e: MessageEvent) => {
           return result
         }
       
-        const pocketOwnerId = state.slots[0]?.owner_id ?? ''
+        // ── Canonical pocketOwnerId derivation ────────────────────────────────
+        // NEVER use slots[0].owner_id — during a cross-panel optimistic update,
+        // slots[0] may be a just-moved slot that still carries the old panel's
+        // owner_id (e.g. "ground_A" or a vehicle plate). Filter strictly by
+        // owner_type === 'player' to find a slot we KNOW belongs to pockets,
+        // falling back to the cached playerOwnerId, then to '' (accept-all mode).
+        const pocketOwnerId =
+          state.playerOwnerId ||
+          state.slots.find(s => s.owner_type === 'player')?.owner_id ||
+          ''
       
+        console.log('[Delta] pocketOwnerId resolved to:', pocketOwnerId)
+        console.log('[Delta] added[]:', added.map(s => `id=${s.id} owner_id=${s.owner_id} owner_type=${s.owner_type}`))
+        console.log('[Delta] updated[]:', updated.map(s => `id=${s.id} owner_id=${s.owner_id} owner_type=${s.owner_type}`))
+        console.log('[Delta] deletedInfos[]:', deletedInfos.map(d => `slot_id=${d.slot_id} owner_id=${d.owner_id}`))
+
         const newPockets = applyToPanel(state.slots, pocketOwnerId, 'player')
       
         const newSecondarySlots = state.secondary.id !== ''
@@ -234,6 +259,10 @@ window.addEventListener('message', (e: MessageEvent) => {
         const newBackpackSlots = state.backpack
           ? applyToPanel(state.backpack.slots, state.backpack.id, 'stash')
           : null
+
+        console.log('[Delta] pockets:', state.slots.length, '→', newPockets.length,
+          'secondary:', state.secondary.slots.length, '→', newSecondarySlots.length,
+          'backpack:', state.backpack?.slots.length ?? 'N/A', '→', newBackpackSlots?.length ?? 'N/A')
       
         useInventoryStore.setState(s => ({
           slots:     newPockets,
@@ -276,7 +305,16 @@ window.addEventListener('message', (e: MessageEvent) => {
     case 'updateStats':
       // Stats are display-only for now — extend HUD here when ready
       break
-    
+
+    // ── Fired by server when drop/throw creates a new ground stash that differs
+    // from the one currently shown in secondary. Updates secondary.id so the
+    // subsequent applySlotDeltas delta (routed via _openStashToServerId) can
+    // match and add the dropped item to the correct panel.
+    case 'groundStashUpdate': {
+      const store = useInventoryStore.getState()
+      store.updateGroundStash(d.stashId ?? '', d.slots ?? [])
+      break
+    }
   }
 })
 

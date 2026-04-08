@@ -131,6 +131,38 @@ end
 --   SpacetimeDB marks them consumed so they are never replayed.
 -- ═════════════════════════════════════════════════════════════════════════════
 
+-- ── DIAGNOSTICS: poll sidecar every 30s so we can see internal state ─────────
+Citizen.CreateThread(function()
+    while true do
+        Citizen.Wait(30000)
+        PerformHttpRequest(SIDECAR_URL .. "diagnostics",
+            function(status, body, _)
+                if status ~= 200 or not body then
+                    print("[stdb-relay] DIAG: sidecar unreachable")
+                    return
+                end
+                local ok, d = pcall(json.decode, body)
+                if not ok or not d then return end
+                print(("[stdb-relay] DIAG: db=%s deltas_fired=%d queue_pending=%d last_delta=%s slots_in_db=%d"):format(
+                    tostring(d.db_connected),
+                    d.delta_fire_count    or 0,
+                    d.delta_queue_pending or 0,
+                    tostring(d.last_delta_utc),
+                    d.inventory_slot_count or -1
+                ))
+                -- Key signal: if frames > 0 but deltas_fired == 0 after actions,
+                -- the SDK subscription callbacks are not firing.
+                -- If frames == 0, the FrameTick loop has stopped.
+            end,
+            "GET", "", {}
+        )
+    end
+end)
+
+-- ═════════════════════════════════════════════════════════════════════════════
+-- INSTRUCTION POLL LOOP  (100 ms cadence)
+-- ═════════════════════════════════════════════════════════════════════════════
+
 Citizen.CreateThread(function()
     while true do
         Citizen.Wait(100)
@@ -138,7 +170,7 @@ Citizen.CreateThread(function()
         -- ── Phase 1: drain volatile queue (zero HTTP cost) ────────────────────
         if #_volatileQueue > 0 then
             local batch = _volatileQueue
-            _volatileQueue = {}                         -- reset before processing
+            _volatileQueue = {}
             for _, instr in ipairs(batch) do
                 dispatchInstruction(instr)
             end
@@ -157,8 +189,6 @@ Citizen.CreateThread(function()
                     consumed[#consumed + 1] = instr.id
                 end
 
-                -- ACK consumed IDs so SpacetimeDB marks them processed
-                -- This prevents replay on sidecar reconnect
                 if #consumed > 0 then
                     PerformHttpRequest(SIDECAR_URL .. "consumed",
                         function() end, "POST",
@@ -205,9 +235,37 @@ Citizen.CreateThread(function()
                     local oid = delta.owner_id or ""
                     if oid == "" then goto continueDelta end
 
-                    -- Check identity map first (pockets/equip), then stash map
-                    -- (ground stash, glovebox, trunk, backpack)
+                    -- Primary lookup: pre-populated maps
                     local sid = _identityToServerId[oid] or _openStashToServerId[oid]
+
+                    -- Fallback: if oid looks like a steam hex and we have no map entry,
+                    -- scan connected players to find and heal the missing entry.
+                    -- This makes routing resilient to resource restarts where the 500ms
+                    -- deferred scan hasn't finished yet when the first deltas arrive.
+                    if not sid and oid:sub(1, 6) == "steam:" then
+                        for _, playerSrc in ipairs(GetPlayers()) do
+                            local psrc = tonumber(playerSrc)
+                            if psrc then
+                                for _, identifier in ipairs(GetPlayerIdentifiers(psrc)) do
+                                    if identifier == oid then
+                                        sid = psrc
+                                        _identityToServerId[oid] = psrc  -- heal the map
+                                        print(("[stdb-relay] Delta healed identity map: %s → server_id=%d"):format(oid, psrc))
+                                        break
+                                    end
+                                end
+                            end
+                            if sid then break end
+                        end
+                    end
+
+                    -- ── DIAGNOSTIC ────────────────────────────────────────────
+                    print(("[Delta] type=" .. tostring(delta.type) ..
+                           " owner_id=" .. oid ..
+                           " identity_sid=" .. tostring(_identityToServerId[oid]) ..
+                           " stash_sid=" .. tostring(_openStashToServerId[oid]) ..
+                           " routed_to=" .. tostring(sid)))
+
                     if not sid then goto continueDelta end
 
                     if not byServerId[sid] then byServerId[sid] = {} end
@@ -217,6 +275,7 @@ Citizen.CreateThread(function()
                 end
 
                 for serverId, playerDeltas in pairs(byServerId) do
+                    print(("[Delta] Sending " .. #playerDeltas .. " delta(s) to server_id=" .. serverId))
                     TriggerClientEvent("stdb:slotDeltas", serverId, playerDeltas)
                 end
 
@@ -283,6 +342,72 @@ end)
 -- ═════════════════════════════════════════════════════════════════════════════
 -- PLAYER LIFECYCLE
 -- ═════════════════════════════════════════════════════════════════════════════
+
+-- ── Re-populate routing maps on resource start ────────────────────────────────
+-- When this resource is restarted (e.g. after deploying a new main.lua),
+-- _identityToServerId is wiped. Players already in the server will not fire
+-- stdb:playerConnected again because playerSpawned only fires once per session.
+-- This handler re-scans all connected players and restores the map immediately.
+AddEventHandler("onResourceStart", function(resourceName)
+    if resourceName ~= GetCurrentResourceName() then return end
+
+    -- Defer inside a thread so Citizen.Wait is available, and wait 500ms so
+    -- FiveM has finished populating GetPlayerIdentifiers() for connected players.
+    -- Without the wait, GetPlayerIdentifiers() returns an empty table immediately
+    -- on resource start, so steamHex is always "" and the map never gets filled.
+    Citizen.CreateThread(function()
+        Citizen.Wait(500)
+
+        local playerList = GetPlayers()
+        if #playerList == 0 then return end
+
+        print(("[stdb-relay] Resource started — restoring identity map for %d player(s)"):format(#playerList))
+
+        for _, playerSrc in ipairs(playerList) do
+            local src = tonumber(playerSrc)
+            if not src then goto continue end
+
+            local steamHex   = ""
+            local playerName = GetPlayerName(src) or "Unknown"
+
+            for _, id in ipairs(GetPlayerIdentifiers(src)) do
+                if string.sub(id, 1, 6) == "steam:" then steamHex = id; break end
+            end
+
+            if steamHex == "" then
+                print(("[stdb-relay] WARN: no steam identifier for server_id=%d yet"):format(src))
+                goto continue
+            end
+
+            -- Restore the Lua routing map so delta routing works immediately
+            _identityToServerId[steamHex] = src
+            print(("[stdb-relay] Restored: %s → server_id=%d"):format(steamHex, src))
+
+            -- Re-register with the sidecar to restore _steamHexByServerId in C#.
+            -- on_player_connect is idempotent — existing players get last_seen updated.
+            local ped   = GetPlayerPed(src)
+            local netId = (ped and ped ~= 0) and NetworkGetNetworkIdFromEntity(ped) or 0
+            PerformHttpRequest(SIDECAR_URL .. "reducer",
+                function(status, _, _)
+                    if status ~= 200 then
+                        print(("[stdb-relay] WARN: session restore HTTP %d for %s"):format(status or 0, steamHex))
+                    end
+                end,
+                "POST",
+                json.encode({ name = "on_player_connect", args = {
+                    steam_hex    = steamHex,
+                    display_name = playerName,
+                    server_id    = src,
+                    net_id       = netId,
+                    heading      = 0.0,
+                }}),
+                { ["Content-Type"] = "application/json" }
+            )
+
+            ::continue::
+        end
+    end)
+end)
 
 -- Fired by client/spawn.lua once the player's ped has fully spawned and its
 -- net_id is valid. This is the authoritative connect signal for SpacetimeDB.
@@ -397,14 +522,28 @@ AddEventHandler("stdb:requestInventory", function(x, y, z)
                         end
                     end
 
+                    -- ── Re-register backpack stash on every open ──────────────
+                    -- stdb:closeInventory clears ALL _openStashToServerId entries
+                    -- for this player. Without re-registration here, the first
+                    -- "added" delta for a backpack slot after reopen is silently
+                    -- discarded because the stash has no route to reach the client.
+                    if pi.backpack_data and pi.backpack_data.stash_id
+                       and pi.backpack_data.stash_id ~= "" then
+                        _openStashToServerId[pi.backpack_data.stash_id] = src
+                    end
+
                     -- 3. Send everything to the client NUI in one message
+                    -- owner_id is the player's steam_hex — the NUI caches it as
+                    -- playerOwnerId so applySlotDeltas can safely derive pocketOwnerId
+                    -- even when state.slots is transiently empty during a cross-panel drag.
                     TriggerClientEvent("stdb:openInventory", src,
                         pi.slots          or {},
                         pi.item_defs       or {},
                         pi.max_weight      or 85,
                         ground,
                         pi.equipped_slots  or {},
-                        pi.backpack_data
+                        pi.backpack_data,
+                        pi.owner_id        or ""
                     )
                 end,
                 "POST",
@@ -455,6 +594,14 @@ AddEventHandler("stdb:requestGlovebox", function(vehicleId, modelName, vehicleCl
             -- Register plate so glovebox slot deltas reach this player
             _openStashToServerId[plate] = src
 
+            -- Re-register backpack stash for the same reason as requestInventory:
+            -- close clears this entry and glovebox open must restore it so items
+            -- dragged between pockets and backpack while glovebox is open route correctly.
+            if pi.backpack_data and pi.backpack_data.stash_id
+               and pi.backpack_data.stash_id ~= "" then
+                _openStashToServerId[pi.backpack_data.stash_id] = src
+            end
+
             -- Fetch glovebox slots
             PerformHttpRequest(SIDECAR_URL .. "reducer",
                 function(gb_status, gb_body, _)
@@ -475,7 +622,8 @@ AddEventHandler("stdb:requestGlovebox", function(vehicleId, modelName, vehicleCl
                             slots     = gb.slots      or {},
                         },
                         pi.equipped_slots  or {},
-                        pi.backpack_data
+                        pi.backpack_data,
+                        pi.owner_id        or ""
                     )
                 end,
                 "POST",
@@ -526,6 +674,12 @@ AddEventHandler("stdb:requestTrunk", function(vehicleId, modelName, vehicleClass
             -- Register plate so trunk slot deltas reach this player
             _openStashToServerId[plate] = src
 
+            -- Re-register backpack stash — same reasoning as glovebox open above.
+            if pi.backpack_data and pi.backpack_data.stash_id
+               and pi.backpack_data.stash_id ~= "" then
+                _openStashToServerId[pi.backpack_data.stash_id] = src
+            end
+
             PerformHttpRequest(SIDECAR_URL .. "reducer",
                 function(tr_status, tr_body, _)
                     if tr_status ~= 200 or not tr_body then return end
@@ -543,7 +697,8 @@ AddEventHandler("stdb:requestTrunk", function(vehicleId, modelName, vehicleClass
                             maxSlots  = tr.max_slots  or cfg.trunk_slots or 20,
                             slots     = tr.slots      or {},
                         },
-                        pi.equipped_slots or {}, pi.backpack_data
+                        pi.equipped_slots or {}, pi.backpack_data,
+                        pi.owner_id       or ""
                     )
                 end,
                 "POST",
@@ -774,6 +929,16 @@ AddEventHandler("stdb:dropItem", function(slotId, quantity, _itemId, propModel)
             -- so the delta loop can find them even after inventory is closed.
             if data.stash_id and data.stash_id ~= "" then
                 _propOwnerServerId[data.stash_id] = src
+                -- ── CRITICAL: also register in _openStashToServerId ───────────
+                -- _propOwnerServerId is only checked by the prop-cleanup loop,
+                -- NOT by the delta router. Without this, the "added" delta for
+                -- the dropped item has no route and is silently discarded.
+                -- The item then only appears on inventory reopen, not immediately.
+                _openStashToServerId[data.stash_id] = src
+                -- Notify the NUI that the ground stash ID may have changed.
+                -- This updates secondary.id in the store so applySlotDeltas
+                -- routes the incoming "added" delta to the correct panel.
+                TriggerClientEvent("stdb:groundStashUpdate", src, data.stash_id)
                 print(("[prop] DROP registered: stash=%s src=%d"):format(data.stash_id, src))
             end
             TriggerClientEvent("stdb:spawnWorldDrop", src,
@@ -802,6 +967,8 @@ AddEventHandler("stdb:dropItemAt", function(slotId, quantity, _itemId, propModel
             if not ok or not data or not data.ok then return end
             if data.stash_id and data.stash_id ~= "" then
                 _propOwnerServerId[data.stash_id] = src
+                _openStashToServerId[data.stash_id] = src
+                TriggerClientEvent("stdb:groundStashUpdate", src, data.stash_id)
                 print(("[prop] PLACE registered: stash=%s src=%d"):format(data.stash_id, src))
             end
             TriggerClientEvent("stdb:spawnWorldDrop", src,
@@ -830,6 +997,8 @@ AddEventHandler("stdb:finalizeThrow", function(slotId, _itemId, propModel, x, y,
             if not ok or not data or not data.ok then return end
             if data.stash_id and data.stash_id ~= "" then
                 _propOwnerServerId[data.stash_id] = src
+                _openStashToServerId[data.stash_id] = src
+                TriggerClientEvent("stdb:groundStashUpdate", src, data.stash_id)
                 print(("[prop] THROW registered: stash=%s src=%d"):format(data.stash_id, src))
             end
             TriggerClientEvent("stdb:spawnWorldDrop", src,
@@ -997,6 +1166,162 @@ AddEventHandler("stdb:giveItem", function(slotId, targetServerId)
             slot_id   = slotId,
             server_id = targetServerId,
         }}),
+        { ["Content-Type"] = "application/json" }
+    )
+end)
+
+-- ═════════════════════════════════════════════════════════════════════════════
+-- ADMIN: RESET PLAYER INVENTORY
+-- Usage (server console or RCON):
+--   resetinventory              — resets your own inventory (in-game)
+--   resetinventory 1            — resets server_id 1 (admin only)
+--   resetinventory steam:abc    — resets by steam hex (admin only)
+--
+-- Export for use in other resources:
+--   exports['stdb-relay']:ResetInventory(serverId, cb)
+-- ═════════════════════════════════════════════════════════════════════════════
+
+-- Resolve steam_hex from server_id using the local identity map.
+-- This avoids relying on the SpacetimeDB subscription cache which may not
+-- have populated yet when the command is first run after server start.
+local function resolveSteamHex(serverId)
+    for hex, sid in pairs(_identityToServerId) do
+        if sid == serverId then return hex end
+    end
+    return nil
+end
+
+local function doResetInventory(targetSrc, invokerSrc)
+    -- invokerSrc == 0 means server console — always allowed
+    if invokerSrc ~= 0 and invokerSrc ~= targetSrc then
+        if not IsPlayerAceAllowed(tostring(invokerSrc), "stdb.admin") then
+            TriggerClientEvent("chat:addMessage", invokerSrc, {
+                color = { 255, 80, 80 },
+                args  = { "SYSTEM", "You do not have permission to reset other players' inventories." }
+            })
+            return
+        end
+    end
+
+    -- Resolve steam_hex locally first — do not rely on sidecar DB lookup
+    local steamHex = resolveSteamHex(targetSrc)
+    local argsPayload
+
+    if steamHex and steamHex ~= "" then
+        -- Fast path: send hex directly, sidecar skips the ActiveSession lookup
+        argsPayload = { steam_hex = steamHex }
+        print(("[stdb-relay] resetinventory: resolved server_id=%d → %s"):format(targetSrc, steamHex))
+    else
+        -- Fallback: let the sidecar try to resolve via ActiveSession + _steamHexByServerId
+        argsPayload = { server_id = targetSrc }
+        print(("[stdb-relay] resetinventory: no local hex for server_id=%d, sending server_id"):format(targetSrc))
+    end
+
+    PerformHttpRequest(SIDECAR_URL .. "reducer",
+        function(status, body, _)
+            local ok, data = pcall(json.decode, body or "")
+            if status ~= 200 or not ok or not data or not data.ok then
+                local errMsg = (ok and data and data.error) or ("HTTP " .. tostring(status))
+                print(("[stdb-relay] resetinventory failed for server_id=%d: %s"):format(targetSrc, errMsg))
+                if invokerSrc ~= 0 then
+                    TriggerClientEvent("chat:addMessage", invokerSrc, {
+                        color = { 255, 80, 80 },
+                        args  = { "SYSTEM", "Inventory reset failed: " .. errMsg }
+                    })
+                end
+                return
+            end
+
+            print(("[stdb-relay] resetinventory OK: server_id=%d hex=%s removed=%d gave=%d"):format(
+                targetSrc,
+                tostring(data.steam_hex or steamHex or "?"),
+                data.removed or 0,
+                data.given   or 0
+            ))
+
+            -- Force-close the NUI for the target player so they see the fresh state
+            TriggerClientEvent("stdb:forceCloseInventory", targetSrc)
+
+            if invokerSrc ~= 0 then
+                local msg = ("Inventory reset — %d slot(s) cleared, %d starter item(s) given."):format(
+                    data.removed or 0, data.given or 0)
+                TriggerClientEvent("chat:addMessage", invokerSrc, {
+                    color = { 80, 220, 80 },
+                    args  = { "SYSTEM", msg }
+                })
+            end
+        end,
+        "POST",
+        json.encode({ name = "reset_player_inventory", args = argsPayload }),
+        { ["Content-Type"] = "application/json" }
+    )
+end
+
+RegisterCommand("resetinventory", function(src, cmdArgs, _)
+    -- No arg: reset the caller's own inventory
+    -- Arg = number: reset that server_id (admin)
+    -- Arg = steam:...: reset by steam hex (admin)
+    local targetSrc = src  -- default: self
+
+    if cmdArgs[1] then
+        local arg = cmdArgs[1]
+
+        if arg:sub(1, 6) == "steam:" then
+            -- steam hex supplied directly — send to sidecar as-is
+            if src ~= 0 and not IsPlayerAceAllowed(tostring(src), "stdb.admin") then
+                TriggerClientEvent("chat:addMessage", src, {
+                    color = { 255, 80, 80 },
+                    args  = { "SYSTEM", "Permission denied." }
+                })
+                return
+            end
+            PerformHttpRequest(SIDECAR_URL .. "reducer",
+                function(status, body, _)
+                    local ok, data = pcall(json.decode, body or "")
+                    local success   = status == 200 and ok and data and data.ok == true
+                    print(("[stdb-relay] resetinventory %s: ok=%s removed=%d gave=%d"):format(
+                        arg, tostring(success),
+                        (success and data.removed or 0),
+                        (success and data.given   or 0)))
+                end,
+                "POST",
+                json.encode({ name = "reset_player_inventory", args = { steam_hex = arg } }),
+                { ["Content-Type"] = "application/json" }
+            )
+            return
+        end
+
+        local parsed = tonumber(arg)
+        if not parsed then
+            print("[stdb-relay] resetinventory: invalid argument '" .. arg ..
+                  "' — use a server_id number or steam:hex")
+            return
+        end
+        targetSrc = math.floor(parsed)
+    end
+
+    -- src == 0 means server console; require explicit target
+    if targetSrc == 0 then
+        print("[stdb-relay] resetinventory: specify a server_id (e.g. resetinventory 1)")
+        return
+    end
+
+    doResetInventory(targetSrc, src)
+end, true)
+
+exports("ResetInventory", function(serverId, cb)
+    if type(serverId) ~= "number" or serverId <= 0 then
+        if cb then cb(false, "invalid server_id") end
+        return
+    end
+    PerformHttpRequest(SIDECAR_URL .. "reducer",
+        function(status, body, _)
+            local ok, data = pcall(json.decode, body or "")
+            local success   = status == 200 and ok and data and data.ok == true
+            if cb then cb(success, success and data or (data and data.error or "error")) end
+        end,
+        "POST",
+        json.encode({ name = "reset_player_inventory", args = { server_id = serverId } }),
         { ["Content-Type"] = "application/json" }
     )
 end)

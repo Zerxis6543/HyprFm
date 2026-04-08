@@ -44,9 +44,10 @@ static class ItemSeed
         //Police
         new("evidence_bag",  "Evidence Bag",   0.1f,  true,  false, 20,   "misc",      "prop_cs_cardbox_01"),
         new("handcuffs",     "Handcuffs",      0.5f,  false, true,  1,    "misc",      "prop_cs_cardbox_01"),
+        new("encrypted_radio", "Police Radio",   0.3f,  false, true,  1,    "misc",      "prop_cs_cardbox_01"),
 
         //Comms
-        new("radio",         "Police Radio",   0.3f,  false, true,  1,    "misc",      "prop_cs_cardbox_01"),
+        new("radio",         "Radio",   0.3f,  false, true,  1,    "misc",      "prop_cs_cardbox_01"),
 
         //Illegal
         new("weed",          "Weed",           0.1f,  true,  false, 100,  "misc",      "prop_cs_cardbox_01"),

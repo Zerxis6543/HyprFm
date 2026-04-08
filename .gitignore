@@ -1,6 +1,15 @@
 # --- FiveM & Server Artifacts ---
 # Ignore the temporary server cache 
 **/fivem-server-files/cache/
+**/fivem-server-files\resources\[gamemodes]
+**/fivem-server-files\resources\[gameplay]
+**/fivem-server-files\resources\[local]
+**/fivem-server-files\resources\[managers]
+**/fivem-server-files\resources\[mlo]
+**/fivem-server-files\resources\[modules]
+**/fivem-server-files\resources\[standalone]
+**/fivem-server-files\resources\[system]
+**/fivem-server-files\resources\[test]
 
 # Ignore the server binaries/core files 
 # These should be downloaded/updated via artifacts, not versioned.

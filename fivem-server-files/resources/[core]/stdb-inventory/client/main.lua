@@ -382,13 +382,11 @@ RegisterCommand("+stdb_inventory", function()
 end, false)
 RegisterKeyMapping("+stdb_inventory", "Toggle Inventory", "keyboard", "TAB")
 
--- ── Unified open event (used for all inventory types now) ─────────────────────
 RegisterNetEvent("stdb:openInventory")
-AddEventHandler("stdb:openInventory", function(slots, itemDefs, maxWeight, context, equippedSlots, backpackData)
+AddEventHandler("stdb:openInventory", function(slots, itemDefs, maxWeight, context, equippedSlots, backpackData, ownerId)
     isOpen = true
     SetNuiFocus(true, true)
     TriggerScreenblurFadeIn(500)
-    -- Cache prop models from itemDefs
     if itemDefs then
         for id, def in pairs(itemDefs) do
             if def.prop_model then
@@ -404,6 +402,7 @@ AddEventHandler("stdb:openInventory", function(slots, itemDefs, maxWeight, conte
         context        = context,
         equippedSlots  = equippedSlots or {},
         backpackData   = backpackData,
+        owner_id       = ownerId or "",
     })
 end)
 
@@ -1068,6 +1067,11 @@ AddEventHandler("stdb:deleteWorldProp", function(stashId)
     end
     worldProps = remaining
     print(("[prop] worldProps after cleanup=" .. #worldProps))
+end)
+
+RegisterNetEvent("stdb:groundStashUpdate")
+AddEventHandler("stdb:groundStashUpdate", function(stashId)
+    SendNUIMessage({ action = "groundStashUpdate", stashId = stashId, slots = {} })
 end)
 
 RegisterNetEvent("stdb:slotDeltas")

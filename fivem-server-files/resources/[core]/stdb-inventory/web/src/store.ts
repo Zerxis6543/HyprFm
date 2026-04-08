@@ -38,11 +38,15 @@ interface InventoryStore {
   weightFlash:    'pockets' | 'secondary' | null
   inspectMode:    boolean
   inspectSlot:    InventorySlot | null
+  // ── Canonical player identity (steam_hex). Stored on first inventory open.
+  // Used by applySlotDeltas to derive pocketOwnerId without touching slot data,
+  // which can be transiently wrong during optimistic cross-panel updates.
+  playerOwnerId:  string
 
   equipMappings:        Record<string, string>
   registerEquipMapping: (itemId: string, equipKey: string) => void
 
-  openInventory:   (slots: InventorySlot[], itemDefs: Record<string, ItemDefinition>, maxWeight: number, secondary?: Partial<SecondaryContext>) => void
+  openInventory:   (slots: InventorySlot[], itemDefs: Record<string, ItemDefinition>, maxWeight: number, secondary?: Partial<SecondaryContext>, playerOwnerId?: string) => void
   openBackpack:    (bagItemId: string) => void
   closeInventory:  () => void
   updateSlots:     (slots: InventorySlot[]) => void
@@ -53,6 +57,9 @@ interface InventoryStore {
   setTab:             (tab: ActiveTab) => void
   setHealth:       (health: number) => void
   setDragging:     (slot: InventorySlot | null, source: 'pockets' | 'secondary' | 'backpack' | null) => void
+  // Update ground stash id+slots when a drop creates a different stash than
+  // the one currently shown in the secondary panel (player moved > 5m).
+  updateGroundStash: (stashId: string, slots: InventorySlot[]) => void
   moveSlot:        (slotId: number, newIndex: number, sourcePanel?: 'pockets' | 'secondary' | 'backpack', targetPanel?: 'pockets' | 'secondary' | 'backpack', qty?: number) => void
   equipItem:       (slotId: number, equipKey: EquipSlotKey, sourcePanel: 'pockets' | 'secondary' | 'backpack') => void
   unequipItem:     (equipKey: EquipSlotKey, targetPanel: 'pockets' | 'secondary' | 'backpack', targetIndex: number) => void
@@ -101,6 +108,7 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
   weightFlash:             null,
   inspectMode:             false,
   inspectSlot:             null,
+  playerOwnerId:           '',
   equipMappings: {
     backpack:        'backpack',
     duffel_bag:      'backpack',
@@ -112,11 +120,19 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
     assault_rifle:   'weapon_primary',
   },
 
-  openInventory: (slots, itemDefs, maxWeight, secondary) => set({
+  // playerOwnerId is the player's steam_hex, persisted across panel changes.
+  // It is the authoritative source for pocketOwnerId in applySlotDeltas,
+  // replacing the fragile slots[0].owner_id derivation that breaks during
+  // optimistic cross-panel transfers (slots[0] may have a stale foreign owner_id).
+  openInventory: (slots, itemDefs, maxWeight, secondary, playerOwnerId) => set(s => ({
     isOpen: true, slots, itemDefs,
     maxWeight:     maxWeight ?? 85,
     secondary: secondary ? { ...EMPTY_SECONDARY, ...secondary } : EMPTY_SECONDARY,
-  }),
+    // Only update playerOwnerId when a non-empty value is supplied.
+    // This preserves the cached value across glovebox/trunk reopens where
+    // the server does not re-send the player's steam_hex.
+    playerOwnerId: playerOwnerId || s.playerOwnerId,
+  })),
 
   closeInventory: () => {
     set({ isOpen: false, contextMenu: null, contextMenuInitialSplit: false, secondary: EMPTY_SECONDARY, draggingSlot: null, draggingSource: null, backpack: null, inspectMode: false, inspectSlot: null })
@@ -131,6 +147,14 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
   setTab:          (tab)   => set({ activeTab: tab }),
   setHealth:       (h)     => set({ health: h }),
   setDragging:     (slot, source) => set({ draggingSlot: slot, draggingSource: source }),
+
+  // Called by the 'groundStashUpdate' NUI message when a drop/throw creates a
+  // different stash than the one currently shown (player moved > 5m).
+  // Switches secondary.id so applySlotDeltas can route the incoming delta correctly.
+  updateGroundStash: (stashId, slots) => set(s => {
+    if (s.secondary.type !== 'ground') return {}
+    return { secondary: { ...s.secondary, id: stashId, slots } }
+  }),
   openBackpack: (bagItemId) => {
     fetch(`https://${GetParentResourceName()}/openBackpack`, {
       method: 'POST', body: JSON.stringify({ bagItemId })
@@ -245,7 +269,21 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
 
     const oldIndex = moving.slot_index
 
-    // ── Same-panel reorder ────────────────────────────────────────────────────
+    // ── Helper: canonical DB owner_id/owner_type for each panel ──────────────
+    // Stamped onto every optimistically-placed slot so applySlotDeltas can
+    // derive pocketOwnerId from owner_type === 'player' without hitting stale
+    // foreign owner metadata left over from the source panel.
+    const getOwnerMetaForPanel = (p: string) => {
+      if (p === 'pockets') {
+        return { owner_id: state.playerOwnerId || state.slots.find(s => s.owner_type === 'player')?.owner_id || '', owner_type: 'player' }
+      }
+      if (p === 'backpack') {
+        return { owner_id: state.backpack?.id ?? '', owner_type: 'stash' }
+      }
+      const st = state.secondary.type
+      const ot = st === 'glovebox' ? 'vehicle_glovebox' : st === 'trunk' ? 'vehicle_trunk' : 'stash'
+      return { owner_id: state.secondary.id, owner_type: ot }
+    }
     if (sourcePanel === targetPanel) {
       const displaced = srcSlots.find(s => s.slot_index === newIndex && s.id !== slotId)
       const updated = srcSlots.map(s => {
@@ -262,12 +300,19 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
       })
     } else {
       // ── Cross-panel full transfer ─────────────────────────────────────────
+      // Stamp correct owner_id / owner_type on both the moved slot and any
+      // displaced slot. Without this, slots[0].owner_id in applySlotDeltas
+      // could be a stale foreign ID (e.g. "ground_A") when pockets was
+      // previously empty — causing the delta processor to misroute deletions.
+      const tgtMeta = getOwnerMetaForPanel(targetPanel)
+      const srcMeta = getOwnerMetaForPanel(sourcePanel)
+
       const displaced = tgtSlots.find(s => s.slot_index === newIndex)
       let newSrcSlots = srcSlots.filter(s => s.id !== slotId)
-      if (displaced) newSrcSlots = [...newSrcSlots, { ...displaced, slot_index: oldIndex }]
+      if (displaced) newSrcSlots = [...newSrcSlots, { ...displaced, slot_index: oldIndex, ...srcMeta }]
       const newTgtSlots = [
         ...tgtSlots.filter(s => !displaced ? s.slot_index !== newIndex : s.id !== displaced.id),
-        { ...moving, slot_index: newIndex },
+        { ...moving, slot_index: newIndex, ...tgtMeta },
       ]
       setSlotsForPanel(sourcePanel, newSrcSlots)
       setSlotsForPanel(targetPanel, newTgtSlots)
