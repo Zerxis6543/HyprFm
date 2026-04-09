@@ -690,19 +690,36 @@ class Program
                             foreach (var sess in allSessions)
                                 Console.WriteLine($"[Inv]   session: server_id={sess.ServerId} steam_hex={sess.SteamHex}");
 
-                            var session = allSessions.FirstOrDefault(a => a.ServerId == serverId);
-                            if (session != null)
+                            // ── Identity resolution — three levels ────────────────
+                            // Level 1: _steamHexByServerId (in-memory, populated by the
+                            //          real stdb:playerConnected event — always correct).
+                            // Level 2: ActiveSession subscription cache (may have steam_hex=""
+                            //          if on_player_connect was called before identifiers loaded).
+                            // We NEVER use an empty steam_hex — that would return zero slots.
+                            if (_steamHexByServerId.TryGetValue(serverId, out var mappedHex) && !string.IsNullOrEmpty(mappedHex))
                             {
-                                ownerId = session.SteamHex;
+                                ownerId = mappedHex;
+                                Console.WriteLine($"[Inv] resolved via _steamHexByServerId: {ownerId}");
+                            }
+                            else
+                            {
+                                var session = allSessions.FirstOrDefault(a => a.ServerId == serverId && !string.IsNullOrEmpty(a.SteamHex));
+                                if (session != null)
+                                {
+                                    ownerId = session.SteamHex;
+                                    Console.WriteLine($"[Inv] resolved via ActiveSession cache: {ownerId}");
+                                }
+                            }
 
                                 var allSlots = _db.Db.InventorySlot.Iter().ToList();
                                 var playerSlots = allSlots.Where(s => s.OwnerId == ownerId && s.OwnerType == "player").ToList();
                                 Console.WriteLine($"[Inv] owner_id={ownerId} total_slots_in_cache={allSlots.Count} player_slots={playerSlots.Count}");
-                                // Show what owner_ids exist in the cache so we can spot mismatches
                                 var distinctOwners = allSlots.Select(s => $"{s.OwnerId}|{s.OwnerType}").Distinct().Take(10);
                                 foreach (var o in distinctOwners)
                                     Console.WriteLine($"[Inv]   slot owner: {o}");
 
+                            if (!string.IsNullOrEmpty(ownerId))
+                            {
                                 foreach (var s in playerSlots)
                                     slots.Add(new { id = s.Id, owner_id = s.OwnerId, owner_type = s.OwnerType, item_id = s.ItemId, quantity = s.Quantity, metadata = s.Metadata, slot_index = s.SlotIndex });
 
@@ -727,7 +744,7 @@ class Program
                             }
                             else
                             {
-                                Console.WriteLine($"[Inv] WARNING: no active session found for server_id={serverId}");
+                                Console.WriteLine($"[Inv] WARNING: could not resolve owner_id for server_id={serverId}");
                             }
 
                             foreach (var d in _db.Db.ItemDefinition.Iter())
