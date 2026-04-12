@@ -684,19 +684,26 @@ class Program
 
                         try
                         {
-                            // ── Diagnostic: show all active sessions in cache ──────
                             var allSessions = _db.Db.ActiveSession.Iter().ToList();
                             Console.WriteLine($"[Inv] get_player_inventory: server_id={serverId} active_sessions_in_cache={allSessions.Count}");
                             foreach (var sess in allSessions)
                                 Console.WriteLine($"[Inv]   session: server_id={sess.ServerId} steam_hex={sess.SteamHex}");
 
-                            // ── Identity resolution — three levels ────────────────
-                            // Level 1: _steamHexByServerId (in-memory, populated by the
-                            //          real stdb:playerConnected event — always correct).
-                            // Level 2: ActiveSession subscription cache (may have steam_hex=""
-                            //          if on_player_connect was called before identifiers loaded).
-                            // We NEVER use an empty steam_hex — that would return zero slots.
-                            if (_steamHexByServerId.TryGetValue(serverId, out var mappedHex) && !string.IsNullOrEmpty(mappedHex))
+                            // ── Identity resolution — four levels ─────────────────
+                            // Level 0: steam_hex passed directly from Lua (most reliable —
+                            //          Lua reads from _identityToServerId which is populated
+                            //          by the real playerConnected event, never from DB).
+                            // Level 1: _steamHexByServerId in-memory C# map.
+                            // Level 2: ActiveSession cache with non-empty steam_hex.
+                            // A blank steam_hex at any level is NOT used — it would match
+                            // no slots and return an empty inventory.
+                            var passedHex = args.TryGetProperty("steam_hex", out var shArg) ? shArg.GetString() ?? "" : "";
+                            if (!string.IsNullOrEmpty(passedHex))
+                            {
+                                ownerId = passedHex;
+                                Console.WriteLine($"[Inv] resolved via Lua steam_hex arg: {ownerId}");
+                            }
+                            else if (_steamHexByServerId.TryGetValue(serverId, out var mappedHex) && !string.IsNullOrEmpty(mappedHex))
                             {
                                 ownerId = mappedHex;
                                 Console.WriteLine($"[Inv] resolved via _steamHexByServerId: {ownerId}");
@@ -928,10 +935,19 @@ class Program
                         {
                             try
                             {
-                                // Build weapon metadata the same way reducers.rs does it
-                                string meta = "{}";
+                                // Verify the item definition exists before calling AddItem.
+                                // If item_defs haven't seeded yet, AddItem silently returns early
+                                // in Rust (logs a warning but does not throw). This check surfaces
+                                // that failure so we can see it in the console.
                                 var def = _db.Db.ItemDefinition.Iter().FirstOrDefault(d => d.ItemId == itemId);
-                                if (def != null && def.Category == "weapon")
+                                if (def == null)
+                                {
+                                    Console.WriteLine($"[Sidecar] reset: SKIPPED {itemId} — not in item_definition cache (seeding incomplete?)");
+                                    continue;
+                                }
+
+                                string meta = "{}";
+                                if (def.Category == "weapon")
                                 {
                                     var serial = $"WPN-{Guid.NewGuid().ToString("N")[..8].ToUpper()}";
                                     meta = JsonSerializer.Serialize(new

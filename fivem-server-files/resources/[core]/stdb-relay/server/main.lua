@@ -351,60 +351,22 @@ end)
 AddEventHandler("onResourceStart", function(resourceName)
     if resourceName ~= GetCurrentResourceName() then return end
 
-    -- Defer inside a thread so Citizen.Wait is available, and wait 500ms so
-    -- FiveM has finished populating GetPlayerIdentifiers() for connected players.
-    -- Without the wait, GetPlayerIdentifiers() returns an empty table immediately
-    -- on resource start, so steamHex is always "" and the map never gets filled.
     Citizen.CreateThread(function()
         Citizen.Wait(500)
 
         local playerList = GetPlayers()
         if #playerList == 0 then return end
 
-        print(("[stdb-relay] Resource started — restoring identity map for %d player(s)"):format(#playerList))
+        print(("[stdb-relay] Resource started — asking %d connected player(s) to re-announce"):format(#playerList))
 
         for _, playerSrc in ipairs(playerList) do
             local src = tonumber(playerSrc)
-            if not src then goto continue end
-
-            local steamHex   = ""
-            local playerName = GetPlayerName(src) or "Unknown"
-
-            for _, id in ipairs(GetPlayerIdentifiers(src)) do
-                if string.sub(id, 1, 6) == "steam:" then steamHex = id; break end
+            if src then
+                -- Ask the client to re-fire stdb:playerConnected.
+                -- Client-side GetPlayerIdentifiers() is always populated; server-side
+                -- GetPlayerIdentifiers() returns empty on resource start even with delays.
+                TriggerClientEvent("stdb:reconnect", src)
             end
-
-            if steamHex == "" then
-                print(("[stdb-relay] WARN: no steam identifier for server_id=%d yet"):format(src))
-                goto continue
-            end
-
-            -- Restore the Lua routing map so delta routing works immediately
-            _identityToServerId[steamHex] = src
-            print(("[stdb-relay] Restored: %s → server_id=%d"):format(steamHex, src))
-
-            -- Re-register with the sidecar to restore _steamHexByServerId in C#.
-            -- on_player_connect is idempotent — existing players get last_seen updated.
-            local ped   = GetPlayerPed(src)
-            local netId = (ped and ped ~= 0) and NetworkGetNetworkIdFromEntity(ped) or 0
-            PerformHttpRequest(SIDECAR_URL .. "reducer",
-                function(status, _, _)
-                    if status ~= 200 then
-                        print(("[stdb-relay] WARN: session restore HTTP %d for %s"):format(status or 0, steamHex))
-                    end
-                end,
-                "POST",
-                json.encode({ name = "on_player_connect", args = {
-                    steam_hex    = steamHex,
-                    display_name = playerName,
-                    server_id    = src,
-                    net_id       = netId,
-                    heading      = 0.0,
-                }}),
-                { ["Content-Type"] = "application/json" }
-            )
-
-            ::continue::
         end
     end)
 end)
@@ -423,6 +385,10 @@ AddEventHandler("stdb:playerConnected", function(netId, heading)
 
     if steamHex ~= "" then
         _identityToServerId[steamHex] = src
+        -- Persist in FiveM state bag — survives resource restarts because
+        -- FiveM owns this storage, not our Lua globals. Any subsequent
+        -- event handler can read Player(src).state.steamHex reliably.
+        Player(src).state:set("steamHex", steamHex, false)
     end
 
     PerformHttpRequest(SIDECAR_URL .. "reducer",
@@ -476,9 +442,33 @@ AddEventHandler("playerDropped", function(_reason)
     )
 end)
 
--- No-op — client announces readiness; reserved for future server-side init
+-- No-op comment preserved — actual logic below
 RegisterNetEvent("stdb:clientReady")
-AddEventHandler("stdb:clientReady", function() end)
+AddEventHandler("stdb:clientReady", function()
+    -- clientReady fires from onClientResourceStart, which is too early for
+    -- steam authentication to be complete. Do NOT call on_player_connect here.
+    -- That is handled by stdb:playerConnected (after playerSpawned).
+    -- Only read identifiers to pre-populate local routing maps if available.
+    local src      = source
+    local steamHex = ""
+    for _, id in ipairs(GetPlayerIdentifiers(src)) do
+        if string.sub(id, 1, 6) == "steam:" then steamHex = id; break end
+    end
+    if steamHex ~= "" then
+        _identityToServerId[steamHex] = src
+        Player(src).state:set("steamHex", steamHex, false)
+    end
+end)
+
+-- Sent by onResourceStart to ask clients to re-fire their playerConnected event.
+-- The client always has valid identifiers; server-side GetPlayerIdentifiers()
+-- fails on resource start even with delays. Re-firing from the client side
+-- restores _identityToServerId and _steamHexByServerId correctly.
+RegisterNetEvent("stdb:reconnect")
+AddEventHandler("stdb:reconnect", function()
+    -- No-op on server — this is sent TO the client, not received here.
+    -- The actual handler lives in client/spawn.lua (or client/main.lua).
+end)
 
 -- ═════════════════════════════════════════════════════════════════════════════
 -- INVENTORY: OPEN POCKETS + GROUND STASH
@@ -487,6 +477,20 @@ AddEventHandler("stdb:clientReady", function() end)
 RegisterNetEvent("stdb:requestInventory")
 AddEventHandler("stdb:requestInventory", function(x, y, z)
     local src = source
+
+    -- State bag is populated by stdb:playerConnected (after playerSpawned)
+    -- and survives resource restarts. Fall back to GetPlayerIdentifiers if
+    -- the player connected before this resource loaded this session.
+    local steamHex = Player(src).state.steamHex or ""
+    if steamHex == "" then
+        for _, id in ipairs(GetPlayerIdentifiers(src)) do
+            if string.sub(id, 1, 6) == "steam:" then steamHex = id; break end
+        end
+    end
+    if steamHex ~= "" then
+        _identityToServerId[steamHex] = src
+        Player(src).state:set("steamHex", steamHex, false)
+    end
 
     -- 1. Fetch player slots, equipped slots, and backpack data
     PerformHttpRequest(SIDECAR_URL .. "reducer",
@@ -514,28 +518,17 @@ AddEventHandler("stdb:requestInventory", function(x, y, z)
                             ground.maxWeight = gs.max_weight or 999
                             ground.maxSlots  = gs.max_slots  or 50
                             ground.slots     = gs.slots      or {}
-                            -- Register ground stash id so delta-push can route
-                            -- stash-owned slot changes back to this player
                             if ground.id ~= "" then
                                 _openStashToServerId[ground.id] = src
                             end
                         end
                     end
 
-                    -- ── Re-register backpack stash on every open ──────────────
-                    -- stdb:closeInventory clears ALL _openStashToServerId entries
-                    -- for this player. Without re-registration here, the first
-                    -- "added" delta for a backpack slot after reopen is silently
-                    -- discarded because the stash has no route to reach the client.
                     if pi.backpack_data and pi.backpack_data.stash_id
                        and pi.backpack_data.stash_id ~= "" then
                         _openStashToServerId[pi.backpack_data.stash_id] = src
                     end
 
-                    -- 3. Send everything to the client NUI in one message
-                    -- owner_id is the player's steam_hex — the NUI caches it as
-                    -- playerOwnerId so applySlotDeltas can safely derive pocketOwnerId
-                    -- even when state.slots is transiently empty during a cross-panel drag.
                     TriggerClientEvent("stdb:openInventory", src,
                         pi.slots          or {},
                         pi.item_defs       or {},
@@ -552,7 +545,7 @@ AddEventHandler("stdb:requestInventory", function(x, y, z)
             )
         end,
         "POST",
-        json.encode({ name = "get_player_inventory", args = { server_id = src } }),
+        json.encode({ name = "get_player_inventory", args = { server_id = src, steam_hex = steamHex } }),
         { ["Content-Type"] = "application/json" }
     )
 end)
@@ -565,6 +558,17 @@ RegisterNetEvent("stdb:requestGlovebox")
 AddEventHandler("stdb:requestGlovebox", function(vehicleId, modelName, vehicleClass)
     local src   = source
     local plate = tostring(vehicleId)
+
+    local steamHex = Player(src).state.steamHex or ""
+    if steamHex == "" then
+        for _, id in ipairs(GetPlayerIdentifiers(src)) do
+            if string.sub(id, 1, 6) == "steam:" then steamHex = id; break end
+        end
+    end
+    if steamHex ~= "" then
+        _identityToServerId[steamHex] = src
+        Player(src).state:set("steamHex", steamHex, false)
+    end
 
     -- Ensure the vehicle inventory config row exists (idempotent in Rust)
     local cfg = (VehicleConfig and VehicleConfig.GetConfig(modelName or "unknown", vehicleClass or 0))
@@ -635,7 +639,7 @@ AddEventHandler("stdb:requestGlovebox", function(vehicleId, modelName, vehicleCl
             )
         end,
         "POST",
-        json.encode({ name = "get_player_inventory", args = { server_id = src } }),
+        json.encode({ name = "get_player_inventory", args = { server_id = src, steam_hex = steamHex } }),
         { ["Content-Type"] = "application/json" }
     )
 end)
@@ -648,6 +652,17 @@ RegisterNetEvent("stdb:requestTrunk")
 AddEventHandler("stdb:requestTrunk", function(vehicleId, modelName, vehicleClass)
     local src   = source
     local plate = tostring(vehicleId)
+
+    local steamHex = Player(src).state.steamHex or ""
+    if steamHex == "" then
+        for _, id in ipairs(GetPlayerIdentifiers(src)) do
+            if string.sub(id, 1, 6) == "steam:" then steamHex = id; break end
+        end
+    end
+    if steamHex ~= "" then
+        _identityToServerId[steamHex] = src
+        Player(src).state:set("steamHex", steamHex, false)
+    end
 
     local cfg = (VehicleConfig and VehicleConfig.GetConfig(modelName or "unknown", vehicleClass or 0))
         or { trunk_type = "rear", trunk_slots = 20, max_weight = 50 }
@@ -709,7 +724,7 @@ AddEventHandler("stdb:requestTrunk", function(vehicleId, modelName, vehicleClass
             )
         end,
         "POST",
-        json.encode({ name = "get_player_inventory", args = { server_id = src } }),
+        json.encode({ name = "get_player_inventory", args = { server_id = src, steam_hex = steamHex } }),
         { ["Content-Type"] = "application/json" }
     )
 end)
