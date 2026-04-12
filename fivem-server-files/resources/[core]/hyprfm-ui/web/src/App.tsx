@@ -80,8 +80,7 @@ export default function App() {
     setDragging, draggingSlot, draggingSource,
     moveSlot, equipItem, unequipItem, swapEquip,
     backpack, inspectMode,
-    // Character selection
-    characterSelectData, showCharacterSelect, hideCharacterSelect,
+    characterSelectData,
   } = useInventoryStore()
   const z = useZoom()
 

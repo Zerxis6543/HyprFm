@@ -240,7 +240,7 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
         return acc + (d ? d.weight * s.quantity : 0)
       }, 0)
       if (tgtCurrentWeight + movingWeight - displacedWeight > tgtMaxWeight) {
-        set(s => ({ weightFlash: targetPanel === 'pockets' ? 'pockets' : 'secondary' }))
+        set(() => ({ weightFlash: targetPanel === 'pockets' ? 'pockets' : 'secondary' }))
         setTimeout(() => set({ weightFlash: null }), 600)
         return
       }
@@ -329,7 +329,6 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
     if (!moving) return
     const newSrcSlots   = srcSlots.filter(s => s.id !== slotId)
     const newEquipSlots = state.equipSlots.map(s => s.key === equipKey ? { ...s, slot: moving } : s)
-    const closeBackpack = equipKey === 'backpack' ? { backpack: null } : {}
     if (sourcePanel === 'pockets')       set({ slots: newSrcSlots, equipSlots: newEquipSlots })
     else if (sourcePanel === 'backpack') set(s => ({ backpack: s.backpack ? { ...s.backpack, slots: newSrcSlots } : null, equipSlots: newEquipSlots }))
     else                                 set(s => ({ secondary: { ...s.secondary, slots: newSrcSlots }, equipSlots: newEquipSlots }))

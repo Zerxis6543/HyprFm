@@ -245,7 +245,6 @@ export function CharacterSelect({ characters, maxCharacters, onSelect, onCreate,
   const [pendingSlot,   setPendingSlot]   = useState<number | null>(null)
   const [createError,   setCreateError]   = useState<string | null>(null)
 
-  const usedSlots = new Set(characters.map(c => c.slot_index))
   const allSlots  = Array.from({ length: maxCharacters }, (_, i) => i)
 
   const handleCreate = (slotIndex: number, name: string, gender: string) => {
