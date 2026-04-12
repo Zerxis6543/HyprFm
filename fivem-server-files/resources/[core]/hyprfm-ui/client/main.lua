@@ -1089,3 +1089,59 @@ RegisterNUICallback("requestInventory", function(_, cb)
     end
     cb({ ok = true })
 end)
+
+-- Called when the player clicks PLAY → on a character card
+RegisterNUICallback("selectCharacter", function(data, cb)
+    TriggerServerEvent("stdb:selectCharacter", data.characterId)
+    cb({ ok = true })
+end)
+ 
+-- Called when the player submits the create character form
+RegisterNUICallback("createCharacter", function(data, cb)
+    TriggerServerEvent("stdb:createCharacter", data.slotIndex, data.name, data.gender)
+    cb({ ok = true })
+end)
+ 
+-- Called when the player confirms a character delete
+RegisterNUICallback("deleteCharacter", function(data, cb)
+    TriggerServerEvent("stdb:deleteCharacter", data.characterId)
+    cb({ ok = true })
+end)
+
+RegisterNetEvent("stdb:characterSelected")
+AddEventHandler("stdb:characterSelected", function(data)
+    SendNUIMessage({
+        action       = "characterSelected",
+        character_id = data.character_id,
+        owner_id     = data.owner_id,
+        name         = data.name,
+        health       = data.health,
+        hunger       = data.hunger,
+        thirst       = data.thirst,
+        job          = data.job,
+    })
+    -- Apply health to ped
+    local ped = PlayerPedId()
+    SetEntityHealth(ped, math.min(200, math.max(100, data.health or 200)))
+end)
+ 
+-- Server pushes this after create or delete so the list refreshes in-place.
+RegisterNetEvent("stdb:characterListUpdated")
+AddEventHandler("stdb:characterListUpdated", function(characters)
+    SendNUIMessage({
+        action     = "characterListUpdated",
+        characters = characters,
+    })
+end)
+ 
+-- Server pushes this on the initial connect to show the selection screen.
+RegisterNetEvent("stdb:showCharacterSelect")
+AddEventHandler("stdb:showCharacterSelect", function(data)
+    -- Hold NUI focus open during character selection
+    SetNuiFocus(true, true)
+    SendNUIMessage({
+        action         = "showCharacterSelect",
+        characters     = data.characters     or {},
+        max_characters = data.max_characters or 3,
+    })
+end)

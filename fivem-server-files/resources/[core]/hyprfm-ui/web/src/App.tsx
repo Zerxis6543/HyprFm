@@ -5,11 +5,12 @@ import {
   PointerSensor, useSensor, useSensors, pointerWithin,
 } from '@dnd-kit/core'
 import { useInventoryStore, dragState } from './store'
-import { InventoryPanel } from './components/InventoryPanel'
-import { EquipmentPanel } from './components/EquipmentPanel'
-import { ContextMenu } from './components/ContextMenu'
+import { InventoryPanel }   from './components/inventory/InventoryPanel'
+import { EquipmentPanel }   from './components/inventory/EquipmentPanel'
+import { ContextMenu }      from './components/inventory/ContextMenu'
+import { InspectHint }      from './components/inventory/InspectHint'
+import { CharacterSelect }  from './components/character/CharacterSelect'
 import { InventorySlot, itemIcon, EquipSlotKey } from './types'
-import { InspectHint } from './components/InspectHint'
 
 const EQUIP_ALLOWED: Record<string, string[]> = {
   backpack: ['bag'], body_armour: ['armor'], phone: ['phone'],
@@ -79,6 +80,8 @@ export default function App() {
     setDragging, draggingSlot, draggingSource,
     moveSlot, equipItem, unequipItem, swapEquip,
     backpack, inspectMode,
+    // Character selection
+    characterSelectData, showCharacterSelect, hideCharacterSelect,
   } = useInventoryStore()
   const z = useZoom()
 
@@ -89,25 +92,15 @@ export default function App() {
     return () => window.removeEventListener('mousemove', track)
   }, [])
 
-  // Track Ctrl modifier at the window level so we never have to touch dnd-kit's
-  // listeners in ItemSlot. Fires before dnd-kit's sensor, so dragState is set
-  // by the time handleDragStart runs.
   useEffect(() => {
     const onDown = (e: PointerEvent) => {
-      if (e.button === 0 && e.ctrlKey) {
-        dragState.modifier = 'half'
-      } else if (e.button === 0 && e.shiftKey) {
-        // Shift+left is handled as a click in ItemSlot — don't set a modifier
-        dragState.modifier = null
-      } else {
-        dragState.modifier = null
-      }
+      if (e.button === 0 && e.ctrlKey) dragState.modifier = 'half'
+      else dragState.modifier = null
     }
     window.addEventListener('pointerdown', onDown, { capture: true })
     return () => window.removeEventListener('pointerdown', onDown, { capture: true })
   }, [])
 
-  // Single PointerSensor — right-click drag is removed per spec
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   )
@@ -134,6 +127,35 @@ export default function App() {
       return () => clearTimeout(t)
     }
   }, [isOpen])
+
+  // ── Character selection screen — rendered independently of inventory open state
+  if (characterSelectData) {
+    return (
+      <CharacterSelect
+        characters={characterSelectData.characters}
+        maxCharacters={characterSelectData.maxCharacters}
+        onSelect={(characterId) => {
+          // Fire to Lua — Lua calls select_character reducer and then hides the screen
+          fetch(`https://${(window as any).GetParentResourceName()}/selectCharacter`, {
+            method: 'POST',
+            body: JSON.stringify({ characterId }),
+          })
+        }}
+        onCreate={(slotIndex, name, gender) => {
+          fetch(`https://${(window as any).GetParentResourceName()}/createCharacter`, {
+            method: 'POST',
+            body: JSON.stringify({ slotIndex, name, gender }),
+          })
+        }}
+        onDelete={(characterId) => {
+          fetch(`https://${(window as any).GetParentResourceName()}/deleteCharacter`, {
+            method: 'POST',
+            body: JSON.stringify({ characterId }),
+          })
+        }}
+      />
+    )
+  }
 
   if (!rendered && !inspectMode) return null
 
@@ -165,7 +187,6 @@ export default function App() {
     const isEquipSrc  = activeId.startsWith('equip-')
     const equipSrcKey = isEquipSrc ? activeId.replace('equip-', '') as EquipSlotKey : null
 
-    // Read then reset modifier state
     const modifier = dragState.modifier
     dragState.modifier = null
 
@@ -174,7 +195,6 @@ export default function App() {
 
     const el = document.elementFromPoint(mousePos.current.x, mousePos.current.y)
 
-    // Equip → Equip swap
     if (isEquipSrc && equipSrcKey) {
       const equipEl = el?.closest('[data-equip-key]')
       if (equipEl) {
@@ -191,13 +211,11 @@ export default function App() {
       return
     }
 
-    // Inventory → Inventory slot
     const slotEl = el?.closest('[data-slot-index]')
     if (slotEl) {
       const toIndex     = parseInt(slotEl.getAttribute('data-slot-index') ?? '-1')
       const targetPanel = (slotEl.getAttribute('data-panel') ?? 'pockets') as 'pockets' | 'secondary' | 'backpack'
       if (toIndex >= 0 && source) {
-        // Ctrl+drag = half-stack partial move; no modifier = full move
         const effectiveQty = modifier === 'half'
           ? Math.max(1, Math.ceil(slot.quantity / 2))
           : undefined
@@ -206,7 +224,6 @@ export default function App() {
       return
     }
 
-    // Inventory → Equip slot
     const equipEl = el?.closest('[data-equip-key]')
     if (equipEl && source) {
       const equipKey = equipEl.getAttribute('data-equip-key') as EquipSlotKey | null
@@ -243,21 +260,18 @@ export default function App() {
           </button>
         </div>
 
-        {/* Left column — full-height flex container centres panels vertically */}
+        {/* Left column */}
         <div style={{
           position: 'fixed', top: 0, bottom: 0, left: 20,
           display: inspectMode ? 'none' : 'flex',
-          alignItems: 'center',
-          pointerEvents: 'none',   // container is click-through
-          zIndex: 10,
+          alignItems: 'center', pointerEvents: 'none', zIndex: 10,
         }}>
           <div style={{
             ...panelZoom,
             transform: 'perspective(1200px) rotateY(6deg)',
             transformOrigin: 'left center',
             pointerEvents: 'all',
-            display: 'flex', flexDirection: 'column', gap: 8,
-            width: PANEL_W,
+            display: 'flex', flexDirection: 'column', gap: 8, width: PANEL_W,
           }}>
             <InventoryPanel title="POCKETS" panel="pockets" />
             {backpack && (
@@ -268,20 +282,17 @@ export default function App() {
           </div>
         </div>
 
-        {/* Right column — same centering approach */}
+        {/* Right column */}
         <div style={{
           position: 'fixed', top: 0, bottom: 0, right: 20,
           display: inspectMode ? 'none' : 'flex',
-          alignItems: 'center',
-          pointerEvents: 'none',
-          zIndex: 10,
+          alignItems: 'center', pointerEvents: 'none', zIndex: 10,
         }}>
           <div style={{
             ...panelZoom,
             transform: 'perspective(1200px) rotateY(-6deg)',
             transformOrigin: 'right center',
-            pointerEvents: 'all',
-            width: PANEL_W,
+            pointerEvents: 'all', width: PANEL_W,
           }}>
             {activeTab === 'inventories' && <InventoryPanel title="GROUND" panel="secondary" secondary />}
             {activeTab === 'utility'     && <EquipmentPanel />}

@@ -3,25 +3,42 @@ use crate::tables::*;
 use serde_json::json;
 use stdb_core::opcodes;
 
-// ── CORE ──────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// CONSTANTS
+// ─────────────────────────────────────────────────────────────────────────────
 
-#[spacetimedb::reducer]
-pub fn mark_instruction_consumed(ctx: &ReducerContext, id: u64) {
-    if let Some(mut row) = ctx.db.instruction_queue().id().find(id) {
-        row.consumed = true;
-        ctx.db.instruction_queue().id().update(row);
-    }
+const DEFAULT_SPAWN_X:      f32 = -269.0;
+const DEFAULT_SPAWN_Y:      f32 = -955.0;
+const DEFAULT_SPAWN_Z:      f32 =   31.0;
+const DEFAULT_HEADING:      f32 =  205.0;
+const DEFAULT_MAX_CHARACTERS: u32 = 3;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// OWNER ID HELPERS
+//
+// These are the ONLY places that construct owner_id strings for player inventory.
+// All reducers call these functions — never format! owner strings inline.
+// Changing the format here updates every callsite in one compile pass.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Canonical owner_id for a character's pocket inventory slots.
+/// e.g. character_id 42 → "42"
+fn char_owner_id(character_id: u64) -> String {
+    format!("{}", character_id)
 }
 
-/// produce identical metadata shapes
-fn build_starter_metadata(
-    ctx:     &ReducerContext,
-    def:     &ItemDefinition,
-    suffix:  u32,           // unique-per-item counter within the same reducer call
-) -> String {
+/// Canonical owner_id for a character's equipment slot.
+/// e.g. character_id 42, key "weapon_primary" → "42_equip_weapon_primary"
+fn char_equip_owner_id(character_id: u64, equip_key: &str) -> String {
+    format!("{}_equip_{}", character_id, equip_key)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// METADATA HELPER
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn build_starter_metadata(ctx: &ReducerContext, def: &ItemDefinition, suffix: u32) -> String {
     if def.category == "weapon" {
-        // Combine timestamp microseconds + suffix to make serial unique even
-        // when multiple weapons are given in the same reducer transaction.
         let serial = format!(
             "WPN-{:08X}",
             (ctx.timestamp.to_micros_since_unix_epoch() as u32).wrapping_add(suffix)
@@ -34,133 +51,421 @@ fn build_starter_metadata(
         "{}".to_string()
     }
 }
-// ── PLAYER ────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CORE
+// ─────────────────────────────────────────────────────────────────────────────
 
 #[spacetimedb::reducer]
-pub fn on_player_connect(
+pub fn mark_instruction_consumed(ctx: &ReducerContext, id: u64) {
+    if let Some(mut row) = ctx.db.instruction_queue().id().find(id) {
+        row.consumed = true;
+        ctx.db.instruction_queue().id().update(row);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SESSION LIFECYCLE
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Step 1 of 2 in the connect flow.
+/// Validates the account and updates display name.
+/// Does NOT create a CharSession — that happens in select_character (step 2).
+/// Returns Err("BANNED|reason") if the account is banned.
+#[spacetimedb::reducer]
+pub fn session_open(
     ctx:          &ReducerContext,
     steam_hex:    String,
     display_name: String,
+) -> Result<(), String> {
+    if let Some(mut acct) = ctx.db.account().steam_hex().find(&steam_hex) {
+        if acct.is_banned {
+            return Err(format!("BANNED|{}", acct.ban_reason));
+        }
+        acct.display_name = display_name;
+        acct.last_seen    = ctx.timestamp;
+        ctx.db.account().steam_hex().update(acct);
+    } else {
+        ctx.db.account().insert(Account {
+            steam_hex:      steam_hex.clone(),
+            display_name,
+            created_at:     ctx.timestamp,
+            last_seen:      ctx.timestamp,
+            is_banned:      false,
+            ban_reason:     String::new(),
+            max_characters: DEFAULT_MAX_CHARACTERS,
+        });
+        log::info!("[account] New account: {}", steam_hex);
+    }
+    Ok(())
+}
+
+/// Step 2 of 2 in the connect flow.
+/// Called after the player confirms character selection in the NUI.
+/// Writes the CharSession row and the sidecar can then fetch inventory + spawn.
+#[spacetimedb::reducer]
+pub fn select_character(
+    ctx:          &ReducerContext,
+    steam_hex:    String,
+    character_id: u64,
     server_id:    u32,
     net_id:       u32,
-    _heading:     f32,
-) {
-    if let Some(mut p) = ctx.db.player().steam_hex().find(&steam_hex) {
-        p.last_seen    = ctx.timestamp;
-        p.display_name = display_name;
-        ctx.db.player().steam_hex().update(p);
-    } else {
-        ctx.db.player().insert(Player {
-            steam_hex:    steam_hex.clone(),
-            display_name: display_name.clone(),
-            money_cash:   500,
-            money_bank:   0,
-            job:          "unemployed".to_string(),
-            created_at:   ctx.timestamp,
-            last_seen:    ctx.timestamp,
-        });
+) -> Result<(), String> {
+    // Verify ownership and active status
+    let character = ctx.db.character().id().find(character_id)
+        .ok_or("CHAR_NOT_FOUND")?;
+    if character.steam_hex != steam_hex {
+        return Err("CHAR_OWNERSHIP|Character does not belong to this account".to_string());
+    }
+    if character.is_deleted {
+        return Err("CHAR_DELETED|Character has been deleted".to_string());
+    }
 
+    // Clear any stale session (dirty disconnect guard)
+    if let Some(stale) = ctx.db.char_session().steam_hex().find(&steam_hex) {
+        log::warn!(
+            "[session] Clearing stale session for {} (char_id={}, server_id={})",
+            steam_hex, stale.character_id, stale.server_id
+        );
+        ctx.db.char_session().steam_hex().delete(steam_hex.clone());
+    }
+
+    ctx.db.char_session().insert(CharSession {
+        steam_hex:     steam_hex.clone(),
+        character_id,
+        server_id,
+        net_id,
+        connected_at:  ctx.timestamp,
+        inventory_ack: false,
+    });
+
+    log::info!(
+        "[session] {} selected char_id={} '{}' (slot {})",
+        steam_hex, character_id, character.name, character.slot_index
+    );
+    Ok(())
+}
+
+/// Called after get_player_inventory succeeds on the sidecar.
+/// Marks session hydrated and distributes the starter kit to brand-new characters.
+#[spacetimedb::reducer]
+pub fn session_inventory_ack(ctx: &ReducerContext, steam_hex: String) -> Result<(), String> {
+    let mut session = ctx.db.char_session().steam_hex().find(&steam_hex)
+        .ok_or_else(|| format!("No session for {}", steam_hex))?;
+
+    if session.inventory_ack { return Ok(()); }
+
+    let char_id  = session.character_id;
+    let owner_id = char_owner_id(char_id);
+
+    let has_items = ctx.db.inventory_slot().iter()
+        .any(|s| s.owner_id == owner_id && s.owner_type == "player");
+
+    if !has_items {
         let starters: Vec<StarterKitEntry> = ctx.db.starter_kit_entry().iter().collect();
         for (idx, entry) in starters.iter().enumerate() {
             if let Some(def) = ctx.db.item_definition().item_id().find(&entry.item_id) {
-                let used: Vec<u32> = ctx.db.inventory_slot().iter()
-                    .filter(|s| s.owner_id == steam_hex)
+                let used: std::collections::HashSet<u32> = ctx.db.inventory_slot().iter()
+                    .filter(|s| s.owner_id == owner_id)
                     .map(|s| s.slot_index)
                     .collect();
                 let slot_index = (0u32..).find(|i| !used.contains(i)).unwrap_or(0);
                 let metadata   = build_starter_metadata(ctx, &def, idx as u32);
                 ctx.db.inventory_slot().insert(InventorySlot {
-                    id: 0, owner_id: steam_hex.clone(),
+                    id: 0,
+                    owner_id:   owner_id.clone(),
                     owner_type: "player".to_string(),
-                    item_id: entry.item_id.clone(),
-                    quantity: entry.quantity,
-                    metadata, slot_index,
+                    item_id:    entry.item_id.clone(),
+                    quantity:   entry.quantity,
+                    metadata,   slot_index,
                 });
             }
         }
-        log::info!("[player] New player {} — {} starter items given", steam_hex, starters.len());
+        log::info!("[session] Starter kit distributed to char_id={}", char_id);
     }
-    // Session refresh — unchanged
-    ctx.db.active_session().steam_hex().delete(steam_hex.clone());
-    ctx.db.active_session().insert(ActiveSession {
-        steam_hex: steam_hex.clone(), server_id, net_id, connected_at: ctx.timestamp,
+
+    session.inventory_ack = true;
+    ctx.db.char_session().steam_hex().update(session);
+    Ok(())
+}
+
+/// Clean disconnect — persists final vitals and tears down the session.
+/// If this reducer never fires (crash), the Reaper detects the orphan.
+#[spacetimedb::reducer]
+pub fn session_close(
+    ctx:       &ReducerContext,
+    steam_hex: String,
+    pos_x: f32, pos_y: f32, pos_z: f32, heading: f32,
+    health: u32, hunger: u32, thirst: u32,
+) -> Result<(), String> {
+    // Persist final vitals
+    if let Some(mut char) = ctx.db.character().iter().find(|c| c.steam_hex == steam_hex) {
+        char.pos_x    = pos_x;   char.pos_y  = pos_y;  char.pos_z = pos_z;
+        char.heading  = heading; char.health = health;
+        char.hunger   = hunger;  char.thirst = thirst;
+        char.updated_at = ctx.timestamp;
+        ctx.db.character().id().update(char);
+    }
+
+    // Write clean disconnect log (upsert)
+    let session = ctx.db.char_session().steam_hex().find(&steam_hex);
+    if let Some(s) = &session {
+        if ctx.db.disconnect_log().steam_hex().find(&steam_hex).is_some() {
+            ctx.db.disconnect_log().steam_hex().delete(steam_hex.clone());
+        }
+        ctx.db.disconnect_log().insert(DisconnectLog {
+            steam_hex:      steam_hex.clone(),
+            character_id:   s.character_id,
+            last_server_id: s.server_id,
+            last_pos_x:     pos_x, last_pos_y: pos_y, last_pos_z: pos_z,
+            last_health:    health,
+            clean:          true,
+            logged_at:      ctx.timestamp,
+        });
+    }
+
+    ctx.db.char_session().steam_hex().delete(steam_hex.clone());
+    log::info!("[session] {} closed cleanly", steam_hex);
+    Ok(())
+}
+
+/// Periodic vital checkpoint. Called by the sidecar every 60 seconds.
+/// Bounds data loss to ≤60 seconds on a dirty disconnect.
+#[spacetimedb::reducer]
+pub fn checkpoint_vitals(
+    ctx:       &ReducerContext,
+    steam_hex: String,
+    pos_x: f32, pos_y: f32, pos_z: f32, heading: f32,
+    health: u32, hunger: u32, thirst: u32,
+) {
+    if let Some(mut char) = ctx.db.character().iter().find(|c| c.steam_hex == steam_hex) {
+        char.pos_x   = pos_x;  char.pos_y  = pos_y;  char.pos_z = pos_z;
+        char.heading = heading; char.health = health;
+        char.hunger  = hunger;  char.thirst = thirst;
+        char.updated_at = ctx.timestamp;
+        ctx.db.character().id().update(char);
+    }
+}
+
+/// 12-hour Reaper. Detects CharSession rows older than threshold_seconds,
+/// treats them as dirty disconnects, and clears them.
+/// No inventory is modified — InventorySlot rows are durable.
+#[spacetimedb::reducer]
+pub fn reaper_sweep(ctx: &ReducerContext, stale_threshold_seconds: u64) {
+    let now_micros       = ctx.timestamp.to_micros_since_unix_epoch() as u64;
+    let threshold_micros = stale_threshold_seconds * 1_000_000;
+
+    let stale: Vec<CharSession> = ctx.db.char_session().iter()
+        .filter(|s| {
+            let age = now_micros.saturating_sub(
+                s.connected_at.to_micros_since_unix_epoch() as u64
+            );
+            age > threshold_micros
+        })
+        .collect();
+
+    let mut swept = 0u32;
+    for s in stale {
+        log::warn!("[reaper] Sweeping stale session: {} (server_id={})", s.steam_hex, s.server_id);
+        let char_opt = ctx.db.character().id().find(s.character_id);
+        if ctx.db.disconnect_log().steam_hex().find(&s.steam_hex).is_some() {
+            ctx.db.disconnect_log().steam_hex().delete(s.steam_hex.clone());
+        }
+        ctx.db.disconnect_log().insert(DisconnectLog {
+            steam_hex:      s.steam_hex.clone(),
+            character_id:   s.character_id,
+            last_server_id: s.server_id,
+            last_pos_x:     char_opt.as_ref().map(|c| c.pos_x).unwrap_or(0.0),
+            last_pos_y:     char_opt.as_ref().map(|c| c.pos_y).unwrap_or(0.0),
+            last_pos_z:     char_opt.as_ref().map(|c| c.pos_z).unwrap_or(0.0),
+            last_health:    char_opt.as_ref().map(|c| c.health).unwrap_or(200),
+            clean:          false,
+            logged_at:      ctx.timestamp,
+        });
+        ctx.db.char_session().steam_hex().delete(s.steam_hex);
+        swept += 1;
+    }
+    log::info!("[reaper] Sweep complete — cleared {} stale session(s).", swept);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CHARACTER MANAGEMENT
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Create a new character in the given slot (0-based).
+/// Enforces: name length, slot availability, account character cap.
+#[spacetimedb::reducer]
+pub fn create_character(
+    ctx:        &ReducerContext,
+    steam_hex:  String,
+    slot_index: u32,
+    name:       String,
+    gender:     String,
+) -> Result<(), String> {
+    let name = name.trim().to_string();
+    if name.is_empty() || name.len() > 32 {
+        return Err("NAME_INVALID|Character name must be 1–32 characters".to_string());
+    }
+
+    let account = ctx.db.account().steam_hex().find(&steam_hex)
+        .ok_or("ACCOUNT_NOT_FOUND")?;
+    if account.is_banned {
+        return Err(format!("BANNED|{}", account.ban_reason));
+    }
+
+    let existing_chars: Vec<Character> = ctx.db.character().iter()
+        .filter(|c| c.steam_hex == steam_hex && !c.is_deleted)
+        .collect();
+
+    let max_chars = account.max_characters.max(DEFAULT_MAX_CHARACTERS);
+    if existing_chars.len() as u32 >= max_chars {
+        return Err(format!("SLOT_LIMIT|Max {} characters per account", max_chars));
+    }
+    if existing_chars.iter().any(|c| c.slot_index == slot_index) {
+        return Err(format!("SLOT_OCCUPIED|Slot {} is already in use", slot_index));
+    }
+
+    let new_char = ctx.db.character().insert(Character {
+        id:         0,
+        steam_hex:  steam_hex.clone(),
+        slot_index,
+        name:       name.clone(),
+        gender,
+        pos_x:      DEFAULT_SPAWN_X,
+        pos_y:      DEFAULT_SPAWN_Y,
+        pos_z:      DEFAULT_SPAWN_Z,
+        heading:    DEFAULT_HEADING,
+        health:     200,
+        hunger:     100,
+        thirst:     100,
+        money_cash: 500,
+        money_bank: 0,
+        job:        "unemployed".to_string(),
+        job_grade:  0,
+        is_deleted: false,
+        created_at: ctx.timestamp,
+        updated_at: ctx.timestamp,
     });
 
-    log::info!("[player] {} connected (server_id={})", steam_hex, server_id);
-}
-#[spacetimedb::reducer]
-pub fn on_player_disconnect(ctx: &ReducerContext, steam_hex: String) {
-    ctx.db.active_session().steam_hex().delete(steam_hex.clone());
-    log::info!("[player] {} session cleared", steam_hex);
-}
-
-#[spacetimedb::table(accessor = starter_kit_entry, public)]
-#[derive(Clone, Debug)]
-pub struct StarterKitEntry {
-    #[primary_key]
-    #[auto_inc]
-    pub id:       u64,
-    pub item_id:  String,
-    pub quantity: u32,
-}
-
-#[spacetimedb::reducer]
-pub fn seed_starter_kit(ctx: &ReducerContext, item_id: String, quantity: u32) {
-    if ctx.db.starter_kit_entry().iter()
-        .any(|e| e.item_id == item_id) { return; }
-    ctx.db.starter_kit_entry().insert(StarterKitEntry {
-        id: 0, item_id, quantity,
+    // Insert blank appearance row — NUI fills this after creation
+    ctx.db.character_appearance().insert(CharacterAppearance {
+        character_id:    new_char.id,
+        components_json: "{}".to_string(),
+        overlays_json:   "{}".to_string(),
+        updated_at:      ctx.timestamp,
     });
+
+    log::info!(
+        "[character] Created '{}' id={} slot={} for {}",
+        name, new_char.id, slot_index, steam_hex
+    );
+    Ok(())
 }
+
+/// Soft-delete a character. Cannot delete a character with an active session.
+/// Inventory slots are retained for 7 days — the Reaper purges them.
+#[spacetimedb::reducer]
+pub fn delete_character(
+    ctx:          &ReducerContext,
+    steam_hex:    String,
+    character_id: u64,
+) -> Result<(), String> {
+    let mut character = ctx.db.character().id().find(character_id)
+        .ok_or("CHAR_NOT_FOUND")?;
+    if character.steam_hex != steam_hex {
+        return Err("CHAR_OWNERSHIP".to_string());
+    }
+    if character.is_deleted {
+        return Err("CHAR_ALREADY_DELETED".to_string());
+    }
+    if ctx.db.char_session().iter().any(|s| s.character_id == character_id) {
+        return Err("CHAR_ACTIVE|Cannot delete a character that is currently online".to_string());
+    }
+
+    character.is_deleted = true;
+    character.updated_at = ctx.timestamp;
+    ctx.db.character().id().update(character.clone());
+
+    log::info!("[character] Soft-deleted char_id={} '{}' for {}", character_id, character.name, steam_hex);
+    Ok(())
+}
+
+/// Persist ped appearance from the NUI creator or barber shop.
+/// The JSON blobs are opaque — server does not validate their structure.
+#[spacetimedb::reducer]
+pub fn save_appearance(
+    ctx:             &ReducerContext,
+    steam_hex:       String,
+    character_id:    u64,
+    components_json: String,
+    overlays_json:   String,
+) -> Result<(), String> {
+    let character = ctx.db.character().id().find(character_id)
+        .ok_or("CHAR_NOT_FOUND")?;
+    if character.steam_hex != steam_hex {
+        return Err("CHAR_OWNERSHIP".to_string());
+    }
+    if let Some(mut app) = ctx.db.character_appearance().character_id().find(character_id) {
+        app.components_json = components_json;
+        app.overlays_json   = overlays_json;
+        app.updated_at      = ctx.timestamp;
+        ctx.db.character_appearance().character_id().update(app);
+    } else {
+        ctx.db.character_appearance().insert(CharacterAppearance {
+            character_id, components_json, overlays_json, updated_at: ctx.timestamp,
+        });
+    }
+    Ok(())
+}
+
+/// Set per-account max character cap (admin / VIP tool).
+#[spacetimedb::reducer]
+pub fn set_account_max_characters(ctx: &ReducerContext, steam_hex: String, max: u32) {
+    if let Some(mut acct) = ctx.db.account().steam_hex().find(&steam_hex) {
+        acct.max_characters = max;
+        ctx.db.account().steam_hex().update(acct);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SPAWN
+// ─────────────────────────────────────────────────────────────────────────────
 
 #[spacetimedb::reducer]
 pub fn request_spawn(
     ctx:       &ReducerContext,
-    steam_hex: String,   // now passed explicitly, not derived from ctx.sender()
-    spawn_x:   f32,
-    spawn_y:   f32,
-    spawn_z:   f32,
+    steam_hex: String,
+    spawn_x:   f32, spawn_y: f32, spawn_z: f32,
     _heading:  f32,
 ) {
-    // Look up session by steam_hex — the new primary key
-    let session = match ctx.db.active_session().steam_hex().find(&steam_hex) {
+    let session = match ctx.db.char_session().steam_hex().find(&steam_hex) {
         Some(s) => s,
-        None => {
-            log::warn!("[player] request_spawn: no session for {}", steam_hex);
-            return;
-        }
+        None => { log::warn!("[player] request_spawn: no session for {}", steam_hex); return; }
     };
-
     if spawn_x < -8000.0 || spawn_x > 8000.0 || spawn_y < -8000.0 || spawn_y > 8000.0 {
-        log::warn!("[player] request_spawn: coords out of bounds");
-        return;
+        log::warn!("[player] request_spawn: coords out of bounds"); return;
     }
-
     ctx.db.instruction_queue().insert(InstructionQueue {
-        id: 0,
-        target_entity_net_id: session.net_id,
+        id: 0, target_entity_net_id: session.net_id,
         opcode:    opcodes::entity::SET_COORDS,
         payload:   json!([spawn_x, spawn_y, spawn_z, false, false, true]).to_string(),
-        queued_at: ctx.timestamp,
-        consumed:  false,
+        queued_at: ctx.timestamp, consumed: false,
     });
     ctx.db.instruction_queue().insert(InstructionQueue {
-        id: 0,
-        target_entity_net_id: session.net_id,
+        id: 0, target_entity_net_id: session.net_id,
         opcode:    opcodes::entity::SET_FROZEN,
         payload:   json!([false]).to_string(),
-        queued_at: ctx.timestamp,
-        consumed:  false,
+        queued_at: ctx.timestamp, consumed: false,
     });
-
     log::info!("[player] Spawn queued for {} at ({},{},{})", steam_hex, spawn_x, spawn_y, spawn_z);
 }
 
-// ── INVENTORY ─────────────────────────────────────────────────────────────────
-fn backpack_stash_id(bag_slot_id: u64) -> String {
-    format!("backpack_slot_{}", bag_slot_id)
-}
+// ─────────────────────────────────────────────────────────────────────────────
+// INVENTORY — ITEM MANAGEMENT
+// All operations keyed by character_id via char_owner_id().
+// ─────────────────────────────────────────────────────────────────────────────
 
+/// Seed the item catalog. Idempotent — skips if item_id already exists.
 #[spacetimedb::reducer]
 pub fn seed_item(
     ctx: &ReducerContext,
@@ -176,6 +481,7 @@ pub fn seed_item(
     });
 }
 
+/// Update an existing item definition, or insert if it doesn't exist.
 #[spacetimedb::reducer]
 pub fn update_item(
     ctx: &ReducerContext,
@@ -205,7 +511,8 @@ pub fn update_item(
     }
 }
 
-/// Add items to any inventory (player/vehicle/stash) by owner_id.
+/// Add items to any inventory by owner_id. No weight gate — use give_item_to_character
+/// for player inventory so the weight limit is enforced.
 #[spacetimedb::reducer]
 pub fn add_item(
     ctx:        &ReducerContext,
@@ -219,7 +526,6 @@ pub fn add_item(
         Some(d) => d,
         None => { log::warn!("[inventory] add_item: unknown item {}", item_id); return; }
     };
-
     if def.stackable {
         if let Some(mut slot) = ctx.db.inventory_slot().iter()
             .find(|s| s.owner_id == owner_id && s.item_id == item_id)
@@ -229,11 +535,9 @@ pub fn add_item(
             return;
         }
     }
-
     let used: Vec<u32> = ctx.db.inventory_slot().iter()
         .filter(|s| s.owner_id == owner_id).map(|s| s.slot_index).collect();
     let slot_index = (0u32..).find(|i| !used.contains(i)).unwrap_or(0);
-
     ctx.db.inventory_slot().insert(InventorySlot {
         id: 0, owner_id, owner_type, item_id, quantity, metadata, slot_index,
     });
@@ -248,10 +552,7 @@ pub fn remove_item(ctx: &ReducerContext, owner_id: String, item_id: String, quan
         Some(s) => s,
         None => { log::warn!("[inventory] remove_item: {} not found for {}", item_id, owner_id); return; }
     };
-
-    if slot.quantity < quantity {
-        log::warn!("[inventory] remove_item: not enough {}", item_id); return;
-    }
+    if slot.quantity < quantity { log::warn!("[inventory] remove_item: not enough {}", item_id); return; }
     if slot.quantity == quantity {
         ctx.db.inventory_slot().id().delete(slot.id);
     } else {
@@ -260,7 +561,91 @@ pub fn remove_item(ctx: &ReducerContext, owner_id: String, item_id: String, quan
     }
 }
 
-/// Move a slot to a new index. Only the owning player can call this.
+/// Give an item directly to a character with weight gate enforcement.
+/// This is the authoritative grant path for all player-facing item grants.
+#[spacetimedb::reducer]
+pub fn give_item_to_character(
+    ctx:          &ReducerContext,
+    character_id: u64,
+    item_id:      String,
+    quantity:     u32,
+    metadata:     String,
+) -> Result<(), String> {
+    let owner_id = char_owner_id(character_id);
+
+    let def = ctx.db.item_definition().item_id().find(&item_id)
+        .ok_or_else(|| format!("Unknown item: {}", item_id))?;
+
+    let resolved_metadata = if (metadata == "{}" || metadata.is_empty()) && def.category == "weapon" {
+        let serial = format!("WPN-{:08X}", ctx.timestamp.to_micros_since_unix_epoch() as u32);
+        format!(
+            r#"{{"serial":"{}","mag_ammo":0,"stored_ammo":0,"mag_capacity":{},"stored_capacity":{},"durability":100,"ammo_type":"{}"}}"#,
+            serial, def.mag_capacity, def.stored_capacity, def.ammo_type
+        )
+    } else {
+        metadata
+    };
+
+    let current_weight: f32 = ctx.db.inventory_slot().iter()
+        .filter(|s| s.owner_id == owner_id && s.owner_type == "player")
+        .map(|s| ctx.db.item_definition().item_id().find(&s.item_id)
+            .map(|d| d.weight * s.quantity as f32).unwrap_or(0.0))
+        .sum();
+
+    let max_weight: f32 = ctx.db.player_config()
+        .steam_hex().find(&owner_id)
+        .map(|c| c.max_carry_weight)
+        .unwrap_or(85.0);
+
+    let incoming = def.weight * quantity as f32;
+    if current_weight + incoming > max_weight {
+        return Err(format!("WEIGHT_LIMIT|{:.2}|{:.2}", current_weight + incoming, max_weight));
+    }
+
+    if def.stackable {
+        if let Some(mut existing) = ctx.db.inventory_slot().iter()
+            .find(|s| s.owner_id == owner_id && s.item_id == item_id)
+        {
+            existing.quantity = (existing.quantity + quantity).min(def.max_stack);
+            ctx.db.inventory_slot().id().update(existing);
+            return Ok(());
+        }
+    }
+
+    let used: std::collections::HashSet<u32> = ctx.db.inventory_slot().iter()
+        .filter(|s| s.owner_id == owner_id && s.owner_type == "player")
+        .map(|s| s.slot_index)
+        .collect();
+    let slot_index = (0u32..).find(|i| !used.contains(i)).unwrap_or(0);
+
+    ctx.db.inventory_slot().insert(InventorySlot {
+        id: 0,
+        owner_id,
+        owner_type: "player".to_string(),
+        item_id,
+        quantity,
+        metadata: resolved_metadata,
+        slot_index,
+    });
+    Ok(())
+}
+
+/// Legacy alias kept for sidecar compatibility. Resolves steam_hex → active
+/// character_id then calls give_item_to_character.
+#[spacetimedb::reducer]
+pub fn give_item_to_identity(
+    ctx:                &ReducerContext,
+    owner_identity_hex: String,
+    item_id:            String,
+    quantity:           u32,
+    metadata:           String,
+) -> Result<(), String> {
+    let session = ctx.db.char_session().steam_hex().find(&owner_identity_hex)
+        .ok_or_else(|| format!("No active session for {}", owner_identity_hex))?;
+    give_item_to_character(ctx, session.character_id, item_id, quantity, metadata)
+}
+
+/// Move a slot to a new index within the same owner.
 #[spacetimedb::reducer]
 pub fn move_item(ctx: &ReducerContext, slot_id: u64, new_slot_index: u32) {
     let owner_id = ctx.sender().to_hex().to_string();
@@ -268,9 +653,7 @@ pub fn move_item(ctx: &ReducerContext, slot_id: u64, new_slot_index: u32) {
         Some(s) => s,
         None => { log::warn!("[inventory] move_item: slot {} not found", slot_id); return; }
     };
-    if slot.owner_id != owner_id {
-        log::warn!("[inventory] move_item: ownership mismatch"); return;
-    }
+    if slot.owner_id != owner_id { log::warn!("[inventory] move_item: ownership mismatch"); return; }
     slot.slot_index = new_slot_index;
     ctx.db.inventory_slot().id().update(slot);
 }
@@ -294,16 +677,13 @@ pub fn transfer_item(
     Ok(())
 }
 
-/// Merge src stack into dst stack. Deletes src if it fully fits, otherwise leaves remainder.
 #[spacetimedb::reducer]
 pub fn merge_stacks(ctx: &ReducerContext, src_slot_id: u64, dst_slot_id: u64) -> Result<(), String> {
     let src = ctx.db.inventory_slot().id().find(src_slot_id)
         .ok_or_else(|| format!("src slot {} not found", src_slot_id))?;
     let dst = ctx.db.inventory_slot().id().find(dst_slot_id)
         .ok_or_else(|| format!("dst slot {} not found", dst_slot_id))?;
-    if src.item_id != dst.item_id {
-        return Err("Cannot merge different items".to_string());
-    }
+    if src.item_id != dst.item_id { return Err("Cannot merge different items".to_string()); }
     let def = ctx.db.item_definition().item_id().find(&src.item_id)
         .ok_or_else(|| format!("item def {} not found", src.item_id))?;
     let total = src.quantity + dst.quantity;
@@ -318,7 +698,6 @@ pub fn merge_stacks(ctx: &ReducerContext, src_slot_id: u64, dst_slot_id: u64) ->
     Ok(())
 }
 
-/// Split qty items from slot into a new slot at the next free index.
 #[spacetimedb::reducer]
 pub fn split_stack(ctx: &ReducerContext, slot_id: u64, amount: u32) -> Result<(), String> {
     let mut slot = ctx.db.inventory_slot().id().find(slot_id)
@@ -328,8 +707,7 @@ pub fn split_stack(ctx: &ReducerContext, slot_id: u64, amount: u32) -> Result<()
     }
     let used: Vec<u32> = ctx.db.inventory_slot().iter()
         .filter(|s| s.owner_id == slot.owner_id)
-        .map(|s| s.slot_index)
-        .collect();
+        .map(|s| s.slot_index).collect();
     let new_index = (0u32..).find(|i| !used.contains(i)).unwrap_or(0);
     slot.quantity -= amount;
     ctx.db.inventory_slot().id().update(slot.clone());
@@ -345,7 +723,6 @@ pub fn split_stack(ctx: &ReducerContext, slot_id: u64, amount: u32) -> Result<()
     Ok(())
 }
 
-/// Use a consumable/usable item. Only the owning player can call this.
 #[spacetimedb::reducer]
 pub fn use_item(ctx: &ReducerContext, slot_id: u64, net_id: u32) {
     let owner_id = ctx.sender().to_hex().to_string();
@@ -354,7 +731,6 @@ pub fn use_item(ctx: &ReducerContext, slot_id: u64, net_id: u32) {
         None => { log::warn!("[inventory] use_item: slot {} not found", slot_id); return; }
     };
     if slot.owner_id != owner_id { log::warn!("[inventory] use_item: ownership mismatch"); return; }
-
     let def = match ctx.db.item_definition().item_id().find(&slot.item_id) {
         Some(d) => d, None => return,
     };
@@ -369,7 +745,6 @@ pub fn use_item(ctx: &ReducerContext, slot_id: u64, net_id: u32) {
 
     match slot.item_id.as_str() {
         "bandage" => {
-            // Restore 40 HP (GTA health 100-200, 200 = full)
             ctx.db.instruction_queue().insert(InstructionQueue {
                 id: 0, target_entity_net_id: net_id,
                 opcode: opcodes::effect::HEAL,
@@ -379,7 +754,6 @@ pub fn use_item(ctx: &ReducerContext, slot_id: u64, net_id: u32) {
             consume(ctx, slot_id);
         }
         "medkit" => {
-            // Full heal
             ctx.db.instruction_queue().insert(InstructionQueue {
                 id: 0, target_entity_net_id: net_id,
                 opcode: opcodes::effect::HEAL,
@@ -410,34 +784,41 @@ pub fn use_item(ctx: &ReducerContext, slot_id: u64, net_id: u32) {
     }
 }
 
-// ── VEHICLE INVENTORIES ───────────────────────────────────────────────────────
+/// Set a character's max carry weight (admin / job perk tool).
+#[spacetimedb::reducer]
+pub fn set_player_max_weight(ctx: &ReducerContext, owner_id: String, max_kg: f32) {
+    if let Some(mut cfg) = ctx.db.player_config().steam_hex().find(&owner_id) {
+        cfg.max_carry_weight = max_kg;
+        ctx.db.player_config().steam_hex().update(cfg);
+    } else {
+        ctx.db.player_config().insert(PlayerConfig { steam_hex: owner_id, max_carry_weight: max_kg });
+    }
+}
 
-/// Register a vehicle's inventory config. Idempotent — skips if plate exists.
-/// Called by the relay the first time a player accesses a vehicle's inventory.
+// ─────────────────────────────────────────────────────────────────────────────
+// VEHICLE INVENTORIES
+// ─────────────────────────────────────────────────────────────────────────────
+
 #[spacetimedb::reducer]
 pub fn create_vehicle_inventory(
     ctx:              &ReducerContext,
     plate:            String,
     model_hash:       u32,
-    trunk_type:       String,  // "rear" | "front" | "none"
+    trunk_type:       String,
     trunk_slots:      u32,
     trunk_max_weight: f32,
 ) {
     if ctx.db.vehicle_inventory().plate().find(&plate).is_some() { return; }
     ctx.db.vehicle_inventory().insert(VehicleInventory {
-        plate,
-        model_hash,
-        trunk_type,
-        trunk_slots,
-        trunk_max_weight,
-        glovebox_max_weight: 10.0,
+        plate, model_hash, trunk_type, trunk_slots,
+        trunk_max_weight, glovebox_max_weight: 10.0,
     });
 }
 
-// ── STASHES ───────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// STASHES
+// ─────────────────────────────────────────────────────────────────────────────
 
-/// Register a stash. Idempotent — skips if stash_id exists.
-/// owner_id = "" for world/job stashes, identity hex for player-owned.
 #[spacetimedb::reducer]
 pub fn create_stash(
     ctx:        &ReducerContext,
@@ -447,9 +828,7 @@ pub fn create_stash(
     max_slots:  u32,
     max_weight: f32,
     owner_id:   String,
-    pos_x:      f32,
-    pos_y:      f32,
-    pos_z:      f32,
+    pos_x:      f32, pos_y: f32, pos_z: f32,
 ) {
     if ctx.db.stash_definition().stash_id().find(&stash_id).is_some() { return; }
     ctx.db.stash_definition().insert(StashDefinition {
@@ -457,8 +836,6 @@ pub fn create_stash(
     });
 }
 
-/// Delete a player-created stash and all its items.
-/// Only the stash owner can call this.
 #[spacetimedb::reducer]
 pub fn delete_stash(ctx: &ReducerContext, stash_id: String) {
     let caller = ctx.sender().to_hex().to_string();
@@ -471,196 +848,67 @@ pub fn delete_stash(ctx: &ReducerContext, stash_id: String) {
     }
     let slot_ids: Vec<u64> = ctx.db.inventory_slot().iter()
         .filter(|s| s.owner_id == stash_id && s.owner_type == "stash")
-        .map(|s| s.id)
-        .collect();
+        .map(|s| s.id).collect();
     for id in slot_ids { ctx.db.inventory_slot().id().delete(id); }
     ctx.db.stash_definition().stash_id().delete(stash_id);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// STARTER KIT
+// ─────────────────────────────────────────────────────────────────────────────
+
 #[spacetimedb::reducer]
-pub fn give_item_to_identity(
-    ctx:                &ReducerContext,
-    owner_identity_hex: String,
-    item_id:            String,
-    quantity:           u32,
-    metadata:           String,
-) -> Result<(), String> {
-
-    // ── 1. Resolve item definition ────────────────────────────────────────────
-    let def = ctx.db.item_definition().item_id().find(&item_id)
-        .ok_or_else(|| format!("Unknown item: {}", item_id))?;
-
-    // ── 2. Build weapon metadata if the caller passed "{}" ────────────────────
-    // This was previously done with Guid.NewGuid() in C# — domain ID generation
-    // belongs in the authoritative layer, not the bridge layer.
-    let resolved_metadata = if (metadata == "{}" || metadata.is_empty()) && def.category == "weapon" {
-        // Use the reducer timestamp as the unique serial source.
-        // Microsecond precision makes collisions practically impossible.
-        let serial = format!("WPN-{:08X}", ctx.timestamp.to_micros_since_unix_epoch() as u32);
-        format!(
-            r#"{{"serial":"{}","mag_ammo":0,"stored_ammo":0,"mag_capacity":{},"stored_capacity":{},"durability":100,"ammo_type":"{}"}}"#,
-            serial, def.mag_capacity, def.stored_capacity, def.ammo_type
-        )
-    } else {
-        metadata
-    };
-
-    // ── 3. Weight gate ────────────────────────────────────────────────────────
-    let current_weight: f32 = ctx.db.inventory_slot().iter()
-        .filter(|s| s.owner_id == owner_identity_hex && s.owner_type == "player")
-        .map(|s| {
-            ctx.db.item_definition().item_id().find(&s.item_id)
-                .map(|d| d.weight * s.quantity as f32)
-                .unwrap_or(0.0)
-        })
-        .sum();
-
-    let max_weight: f32 = ctx.db.player_config()
-        .steam_hex()
-        .find(&owner_identity_hex)
-        .map(|c| c.max_carry_weight)
-        .unwrap_or(85.0);
-
-    let incoming_weight = def.weight * quantity as f32;
-    if current_weight + incoming_weight > max_weight {
-        return Err(format!(
-            "WEIGHT_LIMIT|{:.2}|{:.2}",
-            current_weight + incoming_weight,
-            max_weight
-        ));
-    }
-
-    // ── 4. Stackable merge ────────────────────────────────────────────────────
-    if def.stackable {
-        if let Some(mut existing) = ctx.db.inventory_slot().iter()
-            .find(|s| s.owner_id == owner_identity_hex && s.item_id == item_id)
-        {
-            existing.quantity = (existing.quantity + quantity).min(def.max_stack);
-            ctx.db.inventory_slot().id().update(existing);
-            return Ok(());
-        }
-    }
-
-    // ── 5. Authoritative next-free-slot finder ────────────────────────────────
-    // This runs inside a SpacetimeDB transaction — concurrent calls are
-    // serialised by the database, making slot collisions impossible.
-    // The C# while-loop had no such guarantee.
-    let used: std::collections::HashSet<u32> = ctx.db.inventory_slot().iter()
-        .filter(|s| s.owner_id == owner_identity_hex && s.owner_type == "player")
-        .map(|s| s.slot_index)
-        .collect();
-    let slot_index = (0u32..).find(|i| !used.contains(i)).unwrap_or(0);
-
-    ctx.db.inventory_slot().insert(InventorySlot {
-        id: 0,
-        owner_id:   owner_identity_hex,
-        owner_type: "player".to_string(),
-        item_id,
-        quantity,
-        metadata:   resolved_metadata,
-        slot_index,
-    });
-
-    Ok(())
+pub fn seed_starter_kit(ctx: &ReducerContext, item_id: String, quantity: u32) {
+    if ctx.db.starter_kit_entry().iter().any(|e| e.item_id == item_id) { return; }
+    ctx.db.starter_kit_entry().insert(StarterKitEntry { id: 0, item_id, quantity });
 }
 
-/// Set a player's max carry weight
-#[spacetimedb::reducer]
-pub fn set_player_max_weight(
-    ctx:       &ReducerContext,
-    steam_hex: String,
-    max_kg:    f32,
-) {
-    if let Some(mut cfg) = ctx.db.player_config().steam_hex().find(&steam_hex) {
-        cfg.max_carry_weight = max_kg;
-        ctx.db.player_config().steam_hex().update(cfg);
-    } else {
-        ctx.db.player_config().insert(PlayerConfig {
-            steam_hex,
-            max_carry_weight: max_kg,
-        });
-    }
-}
-
-// ── DROP ITEM TO GROUND ───────────────────────────────────────────────────────
-//
-// Replaces the entire drop_item_to_ground case in Program.cs.
-// Three algorithms that were in C# now live here:
-//   (a) spatial proximity search (within 5m)
-//   (b) ground stash creation with a deterministic ID
-//   (c) next-free-slot finder for the ground stash
-//
-// After calling this reducer the sidecar queries for the stash near (x,y)
-// to build the response — it never needs to know the stash_id in advance.
+// ─────────────────────────────────────────────────────────────────────────────
+// DROP ITEM TO GROUND
+// ─────────────────────────────────────────────────────────────────────────────
 
 #[spacetimedb::reducer]
 pub fn drop_item_to_ground(
     ctx:      &ReducerContext,
     slot_id:  u64,
     quantity: u32,
-    x:        f32,
-    y:        f32,
-    z:        f32,
+    x: f32, y: f32, z: f32,
 ) -> Result<(), String> {
-
-    // ── 1. Verify the slot exists ─────────────────────────────────────────────
     let slot = ctx.db.inventory_slot().id().find(slot_id)
         .ok_or_else(|| format!("Slot {} not found", slot_id))?;
 
-    // ── 2. Spatial search — find an existing ground stash within 5m ──────────
-    let search_radius_sq: f32 = 25.0; 
+    let search_radius_sq: f32 = 25.0;
     let nearby_stash = ctx.db.stash_definition().iter()
         .filter(|s| s.stash_type == "ground")
-        .filter(|s| {
-            let dx = s.pos_x - x;
-            let dy = s.pos_y - y;
-            dx * dx + dy * dy <= search_radius_sq
-        })
+        .filter(|s| { let dx = s.pos_x - x; let dy = s.pos_y - y; dx*dx + dy*dy <= search_radius_sq })
         .min_by(|a, b| {
-            let da = (a.pos_x - x).powi(2) + (a.pos_y - y).powi(2);
-            let db = (b.pos_x - x).powi(2) + (b.pos_y - y).powi(2);
+            let da = (a.pos_x-x).powi(2) + (a.pos_y-y).powi(2);
+            let db = (b.pos_x-x).powi(2) + (b.pos_y-y).powi(2);
             da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
         });
 
-    // ── 3. Resolve or create the ground stash ────────────────────────────────
     let stash_id = match nearby_stash {
         Some(existing) => existing.stash_id,
         None => {
-            // Fixed: Updated timestamp method name
             let new_id = format!("ground_{}", ctx.timestamp.to_micros_since_unix_epoch());
             ctx.db.stash_definition().insert(StashDefinition {
-                stash_id:   new_id.clone(),
-                stash_type: "ground".to_string(),
-                label:      "GROUND".to_string(),
-                max_slots:  50,
-                max_weight: 999.0,
-                owner_id:   String::new(),
-                pos_x: x, pos_y: y, pos_z: z,
+                stash_id: new_id.clone(), stash_type: "ground".to_string(),
+                label: "GROUND".to_string(), max_slots: 50, max_weight: 999.0,
+                owner_id: String::new(), pos_x: x, pos_y: y, pos_z: z,
             });
             new_id
         }
     };
 
-    // ── 4. Determine actual quantity to drop ──────────────────────────────────
-    let actual_qty = if quantity > 0 && quantity < slot.quantity {
-        quantity
-    } else {
-        slot.quantity
-    };
+    let actual_qty = if quantity > 0 && quantity < slot.quantity { quantity } else { slot.quantity };
 
-    // ── 5. Find the next free slot index in the ground stash ─────────────────
     let used_indices: std::collections::HashSet<u32> = ctx.db.inventory_slot().iter()
-        .filter(|s| s.owner_id == stash_id)
-        .map(|s| s.slot_index)
-        .collect();
+        .filter(|s| s.owner_id == stash_id).map(|s| s.slot_index).collect();
     let new_slot_index = (0u32..).find(|i| !used_indices.contains(i)).unwrap_or(0);
 
-    // Capture item_id for logging BEFORE it might get moved in step 6
     let logged_item_id = slot.item_id.clone();
 
-    // ── 6. Transfer full stack or split partial ───────────────────────────────
     if actual_qty == slot.quantity {
-        // Fixed: Use stash_id.clone() so stash_id is still available for logging
         ctx.db.inventory_slot().id().update(InventorySlot {
             owner_id:   stash_id.clone(),
             owner_type: "stash".to_string(),
@@ -671,81 +919,37 @@ pub fn drop_item_to_ground(
         let mut remaining = slot.clone();
         remaining.quantity -= actual_qty;
         ctx.db.inventory_slot().id().update(remaining);
-
         ctx.db.inventory_slot().insert(InventorySlot {
-            id:         0,
-            // Fixed: Use stash_id.clone() here as well
-            owner_id:   stash_id.clone(),
-            owner_type: "stash".to_string(),
-            item_id:    slot.item_id,
-            quantity:   actual_qty,
-            metadata:   slot.metadata,
-            slot_index: new_slot_index,
+            id: 0, owner_id: stash_id.clone(), owner_type: "stash".to_string(),
+            item_id: slot.item_id, quantity: actual_qty,
+            metadata: slot.metadata, slot_index: new_slot_index,
         });
     }
 
-    // Now uses the cloned versions to avoid "borrow of moved value" errors
-    log::info!(
-        "[stash] Dropped {}x {} to ground stash {} at ({:.1},{:.1})",
-        actual_qty, logged_item_id, stash_id, x, y
-    );
-
+    log::info!("[stash] Dropped {}x {} to {} at ({:.1},{:.1})", actual_qty, logged_item_id, stash_id, x, y);
     Ok(())
 }
 
-// ── FIND OR CREATE GROUND STASH ───────────────────────────────────────────────
-//
-// Replaces the find_or_create_ground_stash case in Program.cs.
-// Used when the player opens their inventory — we need a ground stash to
-// display as the secondary panel, even if it is empty.
-//
-// After calling this reducer the sidecar queries StashDefinition near (x,y)
-// to get the stash_id, then queries InventorySlot for its contents.
-
 #[spacetimedb::reducer]
-pub fn find_or_create_ground_stash(
-    ctx: &ReducerContext,
-    x:   f32,
-    y:   f32,
-    z:   f32,
-) -> Result<(), String> {
-
-    let search_radius_sq: f32 = 25.0; // 5m radius
-
-    // ── Spatial search — identical algorithm to drop_item_to_ground ───────────
-    // Having one authoritative implementation means both paths always agree
-    // on which stash "owns" a given position — previously the two C# copies
-    // could disagree if one was called between the other's search and insert.
+pub fn find_or_create_ground_stash(ctx: &ReducerContext, x: f32, y: f32, z: f32) -> Result<(), String> {
+    let search_radius_sq: f32 = 25.0;
     let nearby = ctx.db.stash_definition().iter()
         .filter(|s| s.stash_type == "ground")
-        .filter(|s| {
-            let dx = s.pos_x - x;
-            let dy = s.pos_y - y;
-            dx * dx + dy * dy <= search_radius_sq
-        })
+        .filter(|s| { let dx = s.pos_x - x; let dy = s.pos_y - y; dx*dx + dy*dy <= search_radius_sq })
         .min_by(|a, b| {
-            let da = (a.pos_x - x).powi(2) + (a.pos_y - y).powi(2);
-            let db = (b.pos_x - x).powi(2) + (b.pos_y - y).powi(2);
+            let da = (a.pos_x-x).powi(2) + (a.pos_y-y).powi(2);
+            let db = (b.pos_x-x).powi(2) + (b.pos_y-y).powi(2);
             da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
         });
 
     if nearby.is_none() {
-        // No stash within 5m — create a fresh one
-        // Updated method name below
         let new_id = format!("ground_{}", ctx.timestamp.to_micros_since_unix_epoch());
         ctx.db.stash_definition().insert(StashDefinition {
-            stash_id:   new_id.clone(),
-            stash_type: "ground".to_string(),
-            label:      "GROUND".to_string(),
-            max_slots:  50,
-            max_weight: 999.0,
-            owner_id:   String::new(),
-            pos_x: x, pos_y: y, pos_z: z,
+            stash_id: new_id.clone(), stash_type: "ground".to_string(),
+            label: "GROUND".to_string(), max_slots: 50, max_weight: 999.0,
+            owner_id: String::new(), pos_x: x, pos_y: y, pos_z: z,
         });
         log::info!("[stash] Created ground stash {} at ({:.1},{:.1})", new_id, x, y);
     }
-    // If a stash already exists nearby, this reducer is a no-op.
-    // The sidecar will query to find it after the frame tick.
-
     Ok(())
 }

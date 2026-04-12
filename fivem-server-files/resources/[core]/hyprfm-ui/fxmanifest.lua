@@ -1,10 +1,9 @@
--- G:\FivemSTDBProject\fivem-server-files\resources\[core]\stdb-inventory\fxmanifest.lua
--- COMPLETE FILE — replace entire contents
+-- hyprfm-ui/fxmanifest.lua
 
 fx_version 'cerulean'
 game 'gta5'
 
-description 'STDB Inventory UI'
+description 'HyprFM UI — unified NUI context for all game panels'
 version '1.0.0'
 
 client_scripts {

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { ActiveTab, EquipSlot, EquipSlotKey, ItemDefinition, InventorySlot } from './types'
+import { CharacterData } from './components/character/CharacterSelect'
 
 export type SecondaryType = 'ground' | 'glovebox' | 'trunk' | 'stash' | null
 
@@ -13,11 +14,16 @@ export interface SecondaryContext {
 }
 
 // ── Drag modifier state ───────────────────────────────────────────────────────
-// Plain mutable object — not reactive state, so no re-renders on every
-// pointer-down. Set in ItemSlot.tsx, read in App.tsx handleDragEnd.
+// Plain mutable object — not reactive, so no re-renders on every pointer-down.
 export const dragState = {
   modifier:      null as null | 'half' | 'single',
   isRightButton: false,
+}
+
+// ── Character selection state ─────────────────────────────────────────────────
+export interface CharacterSelectData {
+  characters:    CharacterData[]
+  maxCharacters: number
 }
 
 interface InventoryStore {
@@ -32,44 +38,54 @@ interface InventoryStore {
   equipSlots:     EquipSlot[]
   health:         number
   contextMenu:    { slotId: number; x: number; y: number } | null
-  contextMenuInitialSplit: boolean   // true  → ContextMenu opens straight to split UI
+  contextMenuInitialSplit: boolean
   draggingSlot:   InventorySlot | null
   draggingSource: 'pockets' | 'secondary' | 'backpack' | null
   weightFlash:    'pockets' | 'secondary' | null
   inspectMode:    boolean
   inspectSlot:    InventorySlot | null
-  // ── Canonical player identity (steam_hex). Stored on first inventory open.
-  // Used by applySlotDeltas to derive pocketOwnerId without touching slot data,
-  // which can be transiently wrong during optimistic cross-panel updates.
-  playerOwnerId:  string
+
+  // ── Identity ──────────────────────────────────────────────────────────────
+  // playerOwnerId is the character_id string ("42") for the active character.
+  // Set on openInventory from the owner_id field returned by get_player_inventory.
+  // Used by applySlotDeltas as the authoritative pockets owner_id, replacing
+  // the fragile slots[0].owner_id derivation that breaks during cross-panel transfers.
+  playerOwnerId: string
+
+  // ── Character selection ───────────────────────────────────────────────────
+  // Populated by stdb:showCharacterSelect, cleared by stdb:characterSelected.
+  // While non-null, CharacterSelect.tsx is rendered in place of the inventory.
+  characterSelectData: CharacterSelectData | null
 
   equipMappings:        Record<string, string>
   registerEquipMapping: (itemId: string, equipKey: string) => void
 
-  openInventory:   (slots: InventorySlot[], itemDefs: Record<string, ItemDefinition>, maxWeight: number, secondary?: Partial<SecondaryContext>, playerOwnerId?: string) => void
-  openBackpack:    (bagItemId: string) => void
-  closeInventory:  () => void
-  updateSlots:     (slots: InventorySlot[]) => void
-  updateSecondary: (slots: InventorySlot[]) => void
+  openInventory:      (slots: InventorySlot[], itemDefs: Record<string, ItemDefinition>, maxWeight: number, secondary?: Partial<SecondaryContext>, playerOwnerId?: string) => void
+  openBackpack:       (bagItemId: string) => void
+  closeInventory:     () => void
+  updateSlots:        (slots: InventorySlot[]) => void
+  updateSecondary:    (slots: InventorySlot[]) => void
   setSecondary:       (ctx: Partial<SecondaryContext>) => void
   openBackpackPanel:  (ctx: Partial<SecondaryContext>) => void
   closeBackpackPanel: () => void
   setTab:             (tab: ActiveTab) => void
-  setHealth:       (health: number) => void
-  setDragging:     (slot: InventorySlot | null, source: 'pockets' | 'secondary' | 'backpack' | null) => void
-  // Update ground stash id+slots when a drop creates a different stash than
-  // the one currently shown in the secondary panel (player moved > 5m).
-  updateGroundStash: (stashId: string, slots: InventorySlot[]) => void
-  moveSlot:        (slotId: number, newIndex: number, sourcePanel?: 'pockets' | 'secondary' | 'backpack', targetPanel?: 'pockets' | 'secondary' | 'backpack', qty?: number) => void
-  equipItem:       (slotId: number, equipKey: EquipSlotKey, sourcePanel: 'pockets' | 'secondary' | 'backpack') => void
-  unequipItem:     (equipKey: EquipSlotKey, targetPanel: 'pockets' | 'secondary' | 'backpack', targetIndex: number) => void
-  swapEquip:       (srcKey: EquipSlotKey, dstKey: EquipSlotKey) => void
-  splitStack:      (slotId: number, amount: number) => void
-  showContext:     (slotId: number, x: number, y: number) => void
-  showContextSplit:(slotId: number, x: number, y: number) => void
-  hideContext:     () => void
-  startInspect:    (slot: InventorySlot) => void
-  stopInspect:     () => void
+  setHealth:          (health: number) => void
+  setDragging:        (slot: InventorySlot | null, source: 'pockets' | 'secondary' | 'backpack' | null) => void
+  updateGroundStash:  (stashId: string, slots: InventorySlot[]) => void
+  moveSlot:           (slotId: number, newIndex: number, sourcePanel?: 'pockets' | 'secondary' | 'backpack', targetPanel?: 'pockets' | 'secondary' | 'backpack', qty?: number) => void
+  equipItem:          (slotId: number, equipKey: EquipSlotKey, sourcePanel: 'pockets' | 'secondary' | 'backpack') => void
+  unequipItem:        (equipKey: EquipSlotKey, targetPanel: 'pockets' | 'secondary' | 'backpack', targetIndex: number) => void
+  swapEquip:          (srcKey: EquipSlotKey, dstKey: EquipSlotKey) => void
+  splitStack:         (slotId: number, amount: number) => void
+  showContext:        (slotId: number, x: number, y: number) => void
+  showContextSplit:   (slotId: number, x: number, y: number) => void
+  hideContext:        () => void
+  startInspect:       (slot: InventorySlot) => void
+  stopInspect:        () => void
+
+  // ── Character selection actions ───────────────────────────────────────────
+  showCharacterSelect: (data: CharacterSelectData) => void
+  hideCharacterSelect: () => void
 }
 
 const EMPTY_SECONDARY: SecondaryContext = {
@@ -109,6 +125,8 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
   inspectMode:             false,
   inspectSlot:             null,
   playerOwnerId:           '',
+  characterSelectData:     null,
+
   equipMappings: {
     backpack:        'backpack',
     duffel_bag:      'backpack',
@@ -120,67 +138,67 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
     assault_rifle:   'weapon_primary',
   },
 
-  // playerOwnerId is the player's steam_hex, persisted across panel changes.
-  // It is the authoritative source for pocketOwnerId in applySlotDeltas,
-  // replacing the fragile slots[0].owner_id derivation that breaks during
-  // optimistic cross-panel transfers (slots[0] may have a stale foreign owner_id).
+  // playerOwnerId is now the character_id string ("42"), not steam_hex.
+  // Only updated when a non-empty value is supplied so glovebox/trunk reopens
+  // don't clobber the cached character_id.
   openInventory: (slots, itemDefs, maxWeight, secondary, playerOwnerId) => set(s => ({
-    isOpen: true, slots, itemDefs,
+    isOpen:        true,
+    slots,
+    itemDefs,
     maxWeight:     maxWeight ?? 85,
-    secondary: secondary ? { ...EMPTY_SECONDARY, ...secondary } : EMPTY_SECONDARY,
-    // Only update playerOwnerId when a non-empty value is supplied.
-    // This preserves the cached value across glovebox/trunk reopens where
-    // the server does not re-send the player's steam_hex.
+    secondary:     secondary ? { ...EMPTY_SECONDARY, ...secondary } : EMPTY_SECONDARY,
     playerOwnerId: playerOwnerId || s.playerOwnerId,
   })),
 
   closeInventory: () => {
-    set({ isOpen: false, contextMenu: null, contextMenuInitialSplit: false, secondary: EMPTY_SECONDARY, draggingSlot: null, draggingSource: null, backpack: null, inspectMode: false, inspectSlot: null })
+    set({
+      isOpen: false, contextMenu: null, contextMenuInitialSplit: false,
+      secondary: EMPTY_SECONDARY, draggingSlot: null, draggingSource: null,
+      backpack: null, inspectMode: false, inspectSlot: null,
+    })
     fetch(`https://${GetParentResourceName()}/close`, { method: 'POST', body: JSON.stringify({}) })
   },
 
-  updateSlots:     (slots) => set({ slots }),
-  updateSecondary: (slots) => set(s => ({ secondary: { ...s.secondary, slots } })),
-  setSecondary:    (ctx)   => set(s => ({ secondary: { ...s.secondary, ...ctx } })),
-  openBackpackPanel: (ctx) => set({ backpack: { ...EMPTY_SECONDARY, ...ctx } }),
-  closeBackpackPanel: () => set({ backpack: null }),
-  setTab:          (tab)   => set({ activeTab: tab }),
-  setHealth:       (h)     => set({ health: h }),
-  setDragging:     (slot, source) => set({ draggingSlot: slot, draggingSource: source }),
+  updateSlots:        (slots)  => set({ slots }),
+  updateSecondary:    (slots)  => set(s => ({ secondary: { ...s.secondary, slots } })),
+  setSecondary:       (ctx)    => set(s => ({ secondary: { ...s.secondary, ...ctx } })),
+  openBackpackPanel:  (ctx)    => set({ backpack: { ...EMPTY_SECONDARY, ...ctx } }),
+  closeBackpackPanel: ()       => set({ backpack: null }),
+  setTab:             (tab)    => set({ activeTab: tab }),
+  setHealth:          (h)      => set({ health: h }),
+  setDragging:        (slot, source) => set({ draggingSlot: slot, draggingSource: source }),
 
-  // Called by the 'groundStashUpdate' NUI message when a drop/throw creates a
-  // different stash than the one currently shown (player moved > 5m).
-  // Switches secondary.id so applySlotDeltas can route the incoming delta correctly.
   updateGroundStash: (stashId, slots) => set(s => {
     if (s.secondary.type !== 'ground') return {}
     return { secondary: { ...s.secondary, id: stashId, slots } }
   }),
+
   openBackpack: (bagItemId) => {
     fetch(`https://${GetParentResourceName()}/openBackpack`, {
       method: 'POST', body: JSON.stringify({ bagItemId })
     })
   },
 
-  // showContext      — normal right-click, opens action list
   showContext:      (slotId, x, y) => set({ contextMenu: { slotId, x, y }, contextMenuInitialSplit: false }),
-  // showContextSplit — shift+right-click, opens directly in split-amount picker
   showContextSplit: (slotId, x, y) => set({ contextMenu: { slotId, x, y }, contextMenuInitialSplit: true }),
-  hideContext:      () => set({ contextMenu: null, contextMenuInitialSplit: false }),
+  hideContext:      ()              => set({ contextMenu: null, contextMenuInitialSplit: false }),
 
-  // ── moveSlot ───────────────────────────────────────────────────────────────
-  // qty is optional. When supplied and less than the slot's total quantity, the
-  // server atomically splits the stack and moves the split portion.
+  // ── Character selection ───────────────────────────────────────────────────
+  showCharacterSelect: (data) => set({ characterSelectData: data, isOpen: false }),
+  hideCharacterSelect: ()     => set({ characterSelectData: null }),
+
+  // ── moveSlot ─────────────────────────────────────────────────────────────
   moveSlot: (slotId, newIndex, sourcePanel = 'pockets', targetPanel = 'pockets', qty) => {
     const state = get()
     const getSlotsForPanel = (p: string) => {
-      if (p === 'pockets')   return state.slots
-      if (p === 'backpack')  return state.backpack?.slots ?? []
+      if (p === 'pockets')  return state.slots
+      if (p === 'backpack') return state.backpack?.slots ?? []
       return state.secondary.slots
     }
     const setSlotsForPanel = (p: string, updated: typeof state.slots) => {
-      if (p === 'pockets')  set({ slots: updated })
+      if (p === 'pockets')       set({ slots: updated })
       else if (p === 'backpack') set(s => ({ backpack: s.backpack ? { ...s.backpack, slots: updated } : null }))
-      else set(s => ({ secondary: { ...s.secondary, slots: updated } }))
+      else                       set(s => ({ secondary: { ...s.secondary, slots: updated } }))
     }
     const getOwnerForPanel = (p: string) => {
       if (p === 'pockets')  return { ownerType: 'player', ownerId: '' }
@@ -192,25 +210,31 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
       if (p === 'backpack') return state.backpack?.maxWeight ?? 30
       return state.secondary.maxWeight
     }
+    const getOwnerMetaForPanel = (p: string) => {
+      if (p === 'pockets') {
+        return { owner_id: state.playerOwnerId || state.slots.find(s => s.owner_type === 'player')?.owner_id || '', owner_type: 'player' }
+      }
+      if (p === 'backpack') return { owner_id: state.backpack?.id ?? '', owner_type: 'stash' }
+      const st = state.secondary.type
+      const ot = st === 'glovebox' ? 'vehicle_glovebox' : st === 'trunk' ? 'vehicle_trunk' : 'stash'
+      return { owner_id: state.secondary.id, owner_type: ot }
+    }
+
     const srcSlots = getSlotsForPanel(sourcePanel)
     const tgtSlots = getSlotsForPanel(targetPanel)
-
-    const moving = srcSlots.find(s => s.id === slotId)
+    const moving   = srcSlots.find(s => s.id === slotId)
     if (!moving) return
 
-    // Resolve effective quantity — partial move when qty < moving.quantity
     const effectiveQty = (qty && qty > 0 && qty < moving.quantity) ? qty : moving.quantity
     const isPartial    = effectiveQty < moving.quantity
 
-    // Weight check — only when moving INTO a different panel
     if (sourcePanel !== targetPanel) {
-      const movingDef    = state.itemDefs[moving.item_id]
-      const movingWeight = movingDef ? movingDef.weight * effectiveQty : 0
-      const displaced    = tgtSlots.find(s => s.slot_index === newIndex && s.id !== slotId)
-      const displacedDef = displaced ? state.itemDefs[displaced.item_id] : null
+      const movingDef       = state.itemDefs[moving.item_id]
+      const movingWeight    = movingDef ? movingDef.weight * effectiveQty : 0
+      const displaced       = tgtSlots.find(s => s.slot_index === newIndex && s.id !== slotId)
+      const displacedDef    = displaced ? state.itemDefs[displaced.item_id] : null
       const displacedWeight = (displacedDef && displaced) ? displacedDef.weight * displaced.quantity : 0
-
-      const tgtMaxWeight     = getMaxWeightForPanel(targetPanel)
+      const tgtMaxWeight    = getMaxWeightForPanel(targetPanel)
       const tgtCurrentWeight = tgtSlots.reduce((acc, s) => {
         const d = state.itemDefs[s.item_id]
         return acc + (d ? d.weight * s.quantity : 0)
@@ -222,21 +246,16 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
       }
     }
 
-    // ── Partial move ──────────────────────────────────────────────────────────
-    // Optimistic: reduce source quantity. The split-off slot at destination
-    // arrives a moment later via the delta push.
     if (isPartial) {
       const reducedSrc = srcSlots.map(s => s.id === slotId ? { ...s, quantity: s.quantity - effectiveQty } : s)
       setSlotsForPanel(sourcePanel, reducedSrc)
       const tgtOwner = getOwnerForPanel(targetPanel)
       fetch(`https://${GetParentResourceName()}/moveItem`, {
-        method: 'POST',
-        body: JSON.stringify({ slotId, newSlotIndex: newIndex, ...tgtOwner, quantity: effectiveQty }),
+        method: 'POST', body: JSON.stringify({ slotId, newSlotIndex: newIndex, ...tgtOwner, quantity: effectiveQty }),
       })
       return
     }
 
-    // ── Stack merge ───────────────────────────────────────────────────────────
     const stackTarget = tgtSlots.find(s => s.slot_index === newIndex && s.id !== slotId && s.item_id === moving.item_id)
     const movingDef   = state.itemDefs[moving.item_id]
     if (stackTarget && movingDef?.stackable) {
@@ -254,9 +273,7 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
           })
         setSlotsForPanel(sourcePanel, updated)
       } else {
-        const newSrc = remainder === 0
-          ? srcSlots.filter(s => s.id !== slotId)
-          : srcSlots.map(s => s.id === slotId ? { ...s, quantity: remainder } : s)
+        const newSrc = remainder === 0 ? srcSlots.filter(s => s.id !== slotId) : srcSlots.map(s => s.id === slotId ? { ...s, quantity: remainder } : s)
         const newTgt = tgtSlots.map(s => s.id === stackTarget.id ? mergedTgt : s)
         setSlotsForPanel(sourcePanel, newSrc)
         setSlotsForPanel(targetPanel, newTgt)
@@ -269,21 +286,6 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
 
     const oldIndex = moving.slot_index
 
-    // ── Helper: canonical DB owner_id/owner_type for each panel ──────────────
-    // Stamped onto every optimistically-placed slot so applySlotDeltas can
-    // derive pocketOwnerId from owner_type === 'player' without hitting stale
-    // foreign owner metadata left over from the source panel.
-    const getOwnerMetaForPanel = (p: string) => {
-      if (p === 'pockets') {
-        return { owner_id: state.playerOwnerId || state.slots.find(s => s.owner_type === 'player')?.owner_id || '', owner_type: 'player' }
-      }
-      if (p === 'backpack') {
-        return { owner_id: state.backpack?.id ?? '', owner_type: 'stash' }
-      }
-      const st = state.secondary.type
-      const ot = st === 'glovebox' ? 'vehicle_glovebox' : st === 'trunk' ? 'vehicle_trunk' : 'stash'
-      return { owner_id: state.secondary.id, owner_type: ot }
-    }
     if (sourcePanel === targetPanel) {
       const displaced = srcSlots.find(s => s.slot_index === newIndex && s.id !== slotId)
       const updated = srcSlots.map(s => {
@@ -292,21 +294,11 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
         return s
       })
       setSlotsForPanel(sourcePanel, updated)
-      fetch(`https://${GetParentResourceName()}/moveItem`, {
-        method: 'POST', body: JSON.stringify({ slotId, newSlotIndex: newIndex })
-      })
-      if (displaced) fetch(`https://${GetParentResourceName()}/moveItem`, {
-        method: 'POST', body: JSON.stringify({ slotId: displaced.id, newSlotIndex: oldIndex })
-      })
+      fetch(`https://${GetParentResourceName()}/moveItem`, { method: 'POST', body: JSON.stringify({ slotId, newSlotIndex: newIndex }) })
+      if (displaced) fetch(`https://${GetParentResourceName()}/moveItem`, { method: 'POST', body: JSON.stringify({ slotId: displaced.id, newSlotIndex: oldIndex }) })
     } else {
-      // ── Cross-panel full transfer ─────────────────────────────────────────
-      // Stamp correct owner_id / owner_type on both the moved slot and any
-      // displaced slot. Without this, slots[0].owner_id in applySlotDeltas
-      // could be a stale foreign ID (e.g. "ground_A") when pockets was
-      // previously empty — causing the delta processor to misroute deletions.
-      const tgtMeta = getOwnerMetaForPanel(targetPanel)
-      const srcMeta = getOwnerMetaForPanel(sourcePanel)
-
+      const tgtMeta  = getOwnerMetaForPanel(targetPanel)
+      const srcMeta  = getOwnerMetaForPanel(sourcePanel)
       const displaced = tgtSlots.find(s => s.slot_index === newIndex)
       let newSrcSlots = srcSlots.filter(s => s.id !== slotId)
       if (displaced) newSrcSlots = [...newSrcSlots, { ...displaced, slot_index: oldIndex, ...srcMeta }]
@@ -317,83 +309,62 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
       setSlotsForPanel(sourcePanel, newSrcSlots)
       setSlotsForPanel(targetPanel, newTgtSlots)
 
-      if (sourcePanel === 'secondary' && state.secondary.type === 'ground' &&
-          state.secondary.id !== '' && newSrcSlots.length === 0) {
-        fetch(`https://${GetParentResourceName()}/groundStashEmpty`, {
-          method: 'POST', body: JSON.stringify({ stashId: state.secondary.id }),
-        })
+      if (sourcePanel === 'secondary' && state.secondary.type === 'ground' && state.secondary.id !== '' && newSrcSlots.length === 0) {
+        fetch(`https://${GetParentResourceName()}/groundStashEmpty`, { method: 'POST', body: JSON.stringify({ stashId: state.secondary.id }) })
       }
 
       const tgtOwner = getOwnerForPanel(targetPanel)
-      fetch(`https://${GetParentResourceName()}/moveItem`, {
-        method: 'POST', body: JSON.stringify({ slotId, newSlotIndex: newIndex, ...tgtOwner })
-      })
+      fetch(`https://${GetParentResourceName()}/moveItem`, { method: 'POST', body: JSON.stringify({ slotId, newSlotIndex: newIndex, ...tgtOwner }) })
       if (displaced) {
         const srcOwner = getOwnerForPanel(sourcePanel)
-        fetch(`https://${GetParentResourceName()}/moveItem`, {
-          method: 'POST', body: JSON.stringify({ slotId: displaced.id, newSlotIndex: oldIndex, ...srcOwner })
-        })
+        fetch(`https://${GetParentResourceName()}/moveItem`, { method: 'POST', body: JSON.stringify({ slotId: displaced.id, newSlotIndex: oldIndex, ...srcOwner }) })
       }
     }
   },
 
   equipItem: (slotId, equipKey, sourcePanel) => {
-    const state = get()
-    const srcSlots = sourcePanel === 'pockets' ? state.slots
-      : sourcePanel === 'backpack' ? (state.backpack?.slots ?? []) : state.secondary.slots
-    const moving = srcSlots.find(s => s.id === slotId)
+    const state    = get()
+    const srcSlots = sourcePanel === 'pockets' ? state.slots : sourcePanel === 'backpack' ? (state.backpack?.slots ?? []) : state.secondary.slots
+    const moving   = srcSlots.find(s => s.id === slotId)
     if (!moving) return
     const newSrcSlots   = srcSlots.filter(s => s.id !== slotId)
     const newEquipSlots = state.equipSlots.map(s => s.key === equipKey ? { ...s, slot: moving } : s)
-    if (sourcePanel === 'pockets') {
-      set({ slots: newSrcSlots, equipSlots: newEquipSlots })
-    } else if (sourcePanel === 'backpack') {
-      set(s => ({ backpack: s.backpack ? { ...s.backpack, slots: newSrcSlots } : null, equipSlots: newEquipSlots }))
-    } else {
-      set(s => ({ secondary: { ...s.secondary, slots: newSrcSlots }, equipSlots: newEquipSlots }))
-    }
-    fetch(`https://${GetParentResourceName()}/equipItem`, {
-      method: 'POST', body: JSON.stringify({ slotId, equipKey, itemId: moving.item_id })
-    })
+    const closeBackpack = equipKey === 'backpack' ? { backpack: null } : {}
+    if (sourcePanel === 'pockets')       set({ slots: newSrcSlots, equipSlots: newEquipSlots })
+    else if (sourcePanel === 'backpack') set(s => ({ backpack: s.backpack ? { ...s.backpack, slots: newSrcSlots } : null, equipSlots: newEquipSlots }))
+    else                                 set(s => ({ secondary: { ...s.secondary, slots: newSrcSlots }, equipSlots: newEquipSlots }))
+    fetch(`https://${GetParentResourceName()}/equipItem`, { method: 'POST', body: JSON.stringify({ slotId, equipKey, itemId: moving.item_id }) })
     if (equipKey === 'backpack' && (moving.item_id === 'backpack' || moving.item_id === 'duffel_bag')) {
       const bpStashId   = `backpack_slot_${moving.id}`
       const bpMaxSlots  = moving.item_id === 'duffel_bag' ? 30 : 20
       const bpMaxWeight = moving.item_id === 'duffel_bag' ? 50 : 30
       const bpLabel     = moving.item_id === 'duffel_bag' ? 'DUFFEL BAG' : 'BACKPACK'
       get().openBackpackPanel({ type: 'stash', label: bpLabel, id: bpStashId, maxWeight: bpMaxWeight, maxSlots: bpMaxSlots, slots: [] })
-      fetch(`https://${GetParentResourceName()}/openBackpack`, {
-        method: 'POST', body: JSON.stringify({ bagItemId: moving.item_id, bagSlotId: moving.id })
-      })
+      fetch(`https://${GetParentResourceName()}/openBackpack`, { method: 'POST', body: JSON.stringify({ bagItemId: moving.item_id, bagSlotId: moving.id }) })
     }
   },
 
   unequipItem: (equipKey, targetPanel, targetIndex) => {
-    const state = get()
-    const equip = state.equipSlots.find(s => s.key === equipKey)
+    const state  = get()
+    const equip  = state.equipSlots.find(s => s.key === equipKey)
     if (!equip?.slot) return
-    const slot = equip.slot
+    const slot          = equip.slot
     const newEquipSlots = state.equipSlots.map(s => s.key === equipKey ? { ...s, slot: null } : s)
     const updatedSlot   = { ...slot, slot_index: targetIndex }
     const closeBackpack = equipKey === 'backpack' ? { backpack: null } : {}
-    if (targetPanel === 'pockets') {
-      set({ equipSlots: newEquipSlots, slots: [...state.slots, updatedSlot], ...closeBackpack })
-    } else if (targetPanel === 'backpack') {
-      set(s => ({ equipSlots: newEquipSlots, backpack: s.backpack ? { ...s.backpack, slots: [...s.backpack.slots, updatedSlot] } : null, ...closeBackpack }))
-    } else {
-      set(s => ({ equipSlots: newEquipSlots, secondary: { ...s.secondary, slots: [...s.secondary.slots, updatedSlot] }, ...closeBackpack }))
-    }
-    fetch(`https://${GetParentResourceName()}/unequipItem`, {
-      method: 'POST', body: JSON.stringify({ slotId: slot.id, equipKey, targetPanel, targetIndex })
-    })
+    if (targetPanel === 'pockets')       set({ equipSlots: newEquipSlots, slots: [...state.slots, updatedSlot], ...closeBackpack })
+    else if (targetPanel === 'backpack') set(s => ({ equipSlots: newEquipSlots, backpack: s.backpack ? { ...s.backpack, slots: [...s.backpack.slots, updatedSlot] } : null, ...closeBackpack }))
+    else                                 set(s => ({ equipSlots: newEquipSlots, secondary: { ...s.secondary, slots: [...s.secondary.slots, updatedSlot] }, ...closeBackpack }))
+    fetch(`https://${GetParentResourceName()}/unequipItem`, { method: 'POST', body: JSON.stringify({ slotId: slot.id, equipKey, targetPanel, targetIndex }) })
   },
 
   swapEquip: (srcKey, dstKey) => {
-    const state = get()
+    const state   = get()
     const srcSlot = state.equipSlots.find(s => s.key === srcKey)?.slot ?? null
     const dstSlot = state.equipSlots.find(s => s.key === dstKey)?.slot ?? null
     const EQUIP_ALLOWED: Record<string, string[]> = {
-      backpack: ['bag'], body_armour: ['armor'], phone: ['phone'],
-      parachute: ['parachute'], weapon_primary: ['weapon'], weapon_secondary: ['weapon'],
+      backpack: ['bag'], body_armour: ['armor'], phone: ['phone'], parachute: ['parachute'],
+      weapon_primary: ['weapon'], weapon_secondary: ['weapon'],
       hotkey_1: ['any'], hotkey_2: ['any'], hotkey_3: ['any'], hotkey_4: ['any'], hotkey_5: ['any'],
     }
     const canFit = (item: typeof srcSlot, key: string) => {
@@ -409,42 +380,30 @@ export const useInventoryStore = create<InventoryStore>((set, get) => ({
       if (s.key === dstKey) return { ...s, slot: srcSlot }
       return s
     })})
-    if (srcSlot) fetch(`https://${GetParentResourceName()}/equipItem`, {
-      method: 'POST', body: JSON.stringify({ slotId: srcSlot.id, equipKey: dstKey })
-    })
-    if (dstSlot) fetch(`https://${GetParentResourceName()}/equipItem`, {
-      method: 'POST', body: JSON.stringify({ slotId: dstSlot.id, equipKey: srcKey })
-    })
+    if (srcSlot) fetch(`https://${GetParentResourceName()}/equipItem`, { method: 'POST', body: JSON.stringify({ slotId: srcSlot.id, equipKey: dstKey }) })
+    if (dstSlot) fetch(`https://${GetParentResourceName()}/equipItem`, { method: 'POST', body: JSON.stringify({ slotId: dstSlot.id, equipKey: srcKey }) })
   },
 
   splitStack: (slotId, amount) => {
-    const state = get()
+    const state      = get()
     const inPockets  = !!state.slots.find(s => s.id === slotId)
     const panelSlots = inPockets ? state.slots : state.secondary.slots
     const slot       = panelSlots.find(s => s.id === slotId)
     if (!slot || amount <= 0 || amount >= slot.quantity) return
-
     const used     = panelSlots.map(s => s.slot_index)
     const newIndex = Array.from({ length: 999 }, (_, i) => i).find(i => !used.includes(i)) ?? 0
     const tempId   = -(Date.now())
     const newSlot  = { ...slot, id: tempId, quantity: amount, slot_index: newIndex }
     const reduced  = { ...slot, quantity: slot.quantity - amount }
     const updateArr = (arr: typeof state.slots) => arr.map(s => s.id === slotId ? reduced : s)
-
-    if (inPockets) {
-      set(s => ({ slots: [...updateArr(s.slots), newSlot] }))
-    } else {
-      set(s => ({ secondary: { ...s.secondary, slots: [...updateArr(s.secondary.slots), newSlot] } }))
-    }
-    fetch(`https://${GetParentResourceName()}/splitStack`, {
-      method: 'POST', body: JSON.stringify({ slotId, amount })
-    })
+    if (inPockets) set(s => ({ slots: [...updateArr(s.slots), newSlot] }))
+    else           set(s => ({ secondary: { ...s.secondary, slots: [...updateArr(s.secondary.slots), newSlot] } }))
+    fetch(`https://${GetParentResourceName()}/splitStack`, { method: 'POST', body: JSON.stringify({ slotId, amount }) })
   },
 
   startInspect: (slot) => set({ inspectMode: true, inspectSlot: slot }),
-  stopInspect:  () => set({ inspectMode: false, inspectSlot: null }),
-  registerEquipMapping: (itemId, equipKey) =>
-    set(s => ({ equipMappings: { ...s.equipMappings, [itemId]: equipKey } })),
+  stopInspect:  ()     => set({ inspectMode: false, inspectSlot: null }),
+  registerEquipMapping: (itemId, equipKey) => set(s => ({ equipMappings: { ...s.equipMappings, [itemId]: equipKey } })),
 }))
 
 function GetParentResourceName(): string {

@@ -13,17 +13,57 @@ class Program
 {
     static DbConnection? _db;
     static readonly int _sidecarPort = 27200;
-
     static readonly string API_VERSION = "1.0.0";
-    static readonly ConcurrentQueue<InstructionQueue> _pending   = new();
-    static readonly ConcurrentQueue<object>           _deltaQueue = new();
-    static readonly SemaphoreSlim                     _syncGate  = new(0, 1);
 
-    static readonly ConcurrentDictionary<uint, string> _steamHexByServerId = new();
+    // Default spawn used as fallback when Character row has zero coords
+    const float DEFAULT_SPAWN_X = -269.0f;
+    const float DEFAULT_SPAWN_Y = -955.0f;
+    const float DEFAULT_SPAWN_Z =   31.0f;
+    const float DEFAULT_HEADING =  205.0f;
+
+    static readonly ConcurrentQueue<InstructionQueue> _pending    = new();
+    static readonly ConcurrentQueue<object>           _deltaQueue = new();
+    static readonly SemaphoreSlim                     _syncGate   = new(0, 1);
 
     // ── Diagnostics ───────────────────────────────────────────────────────────
-    static long     _deltaFireCount  = 0;
-    static DateTime _lastDeltaTime   = DateTime.MinValue;
+    static long     _deltaFireCount = 0;
+    static DateTime _lastDeltaTime  = DateTime.MinValue;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // IDENTITY REGISTRY
+    //
+    // Tracks (steam_hex, character_id) ↔ server_id for every active session.
+    // Populated from two sources in priority order:
+    //   1. on_player_connect call (always happens first — most reliable)
+    //   2. CharSession subscription hydration (handles sidecar restarts)
+    //
+    // Phase 1 connect: character_id = 0 (pending character selection)
+    // Phase 2 connect: character_id = confirmed id from select_character
+    // ─────────────────────────────────────────────────────────────────────────
+
+    record SessionIdentity(string SteamHex, ulong CharacterId);
+
+    static readonly ConcurrentDictionary<uint,   SessionIdentity> _serverIdToSession = new();
+    static readonly ConcurrentDictionary<string, uint>            _hexToServerId      = new();
+
+    static void RegisterSession(string steamHex, ulong characterId, uint serverId)
+    {
+        if (string.IsNullOrEmpty(steamHex) || serverId == 0) return;
+        _serverIdToSession[serverId] = new SessionIdentity(steamHex, characterId);
+        _hexToServerId[steamHex]     = serverId;
+    }
+
+    static void ClearSession(uint serverId)
+    {
+        if (_serverIdToSession.TryRemove(serverId, out var id) && id != null)
+            _hexToServerId.TryRemove(id.SteamHex, out _);
+    }
+
+    static SessionIdentity? ResolveSession(uint serverId)
+        => _serverIdToSession.TryGetValue(serverId, out var id) ? id : null;
+
+    /// Canonical owner_id string for a character's inventory.
+    static string CharOwnerString(ulong characterId) => characterId.ToString();
 
     // ─────────────────────────────────────────────────────────────────────────
     // ENTRY POINT
@@ -82,8 +122,10 @@ class Program
             .Subscribe(new[]
             {
                 "SELECT * FROM instruction_queue WHERE consumed = false",
-                "SELECT * FROM active_session",
-                "SELECT * FROM player",
+                "SELECT * FROM char_session",
+                "SELECT * FROM account",
+                "SELECT * FROM character",
+                "SELECT * FROM character_appearance",
                 "SELECT * FROM inventory_slot",
                 "SELECT * FROM item_definition",
                 "SELECT * FROM vehicle_inventory",
@@ -97,14 +139,22 @@ class Program
 
     static void OnSubscriptionReady(SubscriptionEventContext ctx)
     {
-        Console.WriteLine("[Sidecar] Subscription active.");
+        Console.WriteLine("[Sidecar] Subscription active — hydrating identity registry...");
+
+        // Hydrate session registry from live CharSession rows.
+        // This handles sidecar restarts while players are already connected.
+        foreach (var session in _db!.Db.CharSession.Iter())
+        {
+            if (!string.IsNullOrEmpty(session.SteamHex) && session.ServerId > 0)
+            {
+                RegisterSession(session.SteamHex, session.CharacterId, session.ServerId);
+                Console.WriteLine($"[Sidecar] Hydrated: {session.SteamHex} → char_id={session.CharacterId} server_id={session.ServerId}");
+            }
+        }
 
         _db!.Db.InstructionQueue.OnInsert += OnInstructionInserted;
 
-        // ── SlotShape: serialize as snake_case for the TypeScript NUI ─────────
-        // The SDK generates PascalCase (OwnerId, OwnerType…). JsonSerializer
-        // preserves those names. The NUI reads snake_case (owner_id, owner_type…).
-        // Passing the raw SDK object produces JSON the NUI silently cannot use.
+        // owner_id in deltas is now a character_id string ("42") not a steam_hex
         static object SlotShape(InventorySlot s) => new
         {
             id         = s.Id,
@@ -120,7 +170,7 @@ class Program
         {
             Interlocked.Increment(ref _deltaFireCount);
             _lastDeltaTime = DateTime.UtcNow;
-            Console.WriteLine($"[Delta] ADDED  id={slot.Id} owner_id={slot.OwnerId} owner_type={slot.OwnerType} item={slot.ItemId}");
+            Console.WriteLine($"[Delta] ADDED  id={slot.Id} owner_id={slot.OwnerId} item={slot.ItemId}");
             _deltaQueue.Enqueue(new { type = "added", slot = SlotShape(slot), owner_id = slot.OwnerId });
         };
 
@@ -131,10 +181,9 @@ class Program
             if (oldSlot.OwnerId != newSlot.OwnerId)
             {
                 Console.WriteLine($"[Delta] OWNER CHANGE id={oldSlot.Id} {oldSlot.OwnerId}→{newSlot.OwnerId}");
-                // Emit a deletion for the OLD owner so the source panel removes the slot
                 _deltaQueue.Enqueue(new { type = "deleted", slot_id = oldSlot.Id, owner_id = oldSlot.OwnerId });
             }
-            Console.WriteLine($"[Delta] UPDATED id={newSlot.Id} owner_id={newSlot.OwnerId} owner_type={newSlot.OwnerType}");
+            Console.WriteLine($"[Delta] UPDATED id={newSlot.Id} owner_id={newSlot.OwnerId}");
             _deltaQueue.Enqueue(new { type = "updated", slot = SlotShape(newSlot), owner_id = newSlot.OwnerId });
         };
 
@@ -146,19 +195,10 @@ class Program
             _deltaQueue.Enqueue(new { type = "deleted", slot_id = slot.Id, owner_id = slot.OwnerId });
         };
 
-        // ── Report local cache state immediately after subscription hydrates ──
-        // If slot_count == 0 here but SpacetimeDB has rows, the SELECT subscription
-        // is not returning data — either a schema mismatch or SDK version issue.
         var slotCount   = _db!.Db.InventorySlot.Iter().Count();
-        var playerCount = _db!.Db.Player.Iter().Count();
-        var defCount    = _db!.Db.ItemDefinition.Iter().Count();
-        Console.WriteLine($"[Sidecar] Subscription hydrated: players={playerCount} item_defs={defCount} inventory_slots={slotCount}");
-        if (slotCount == 0 && playerCount > 0)
-        {
-            Console.WriteLine("[Sidecar] WARNING: players exist but inventory_slots=0. " +
-                              "Check that the SpacetimeDB C# SDK version matches the server (spacetimedb = 2.0). " +
-                              "Run: SELECT COUNT(*) FROM inventory_slot in the SpacetimeDB CLI to verify rows exist.");
-        }
+        var charCount   = _db!.Db.Character.Iter().Count();
+        var sessionCount = _db!.Db.CharSession.Iter().Count();
+        Console.WriteLine($"[Sidecar] Hydrated: chars={charCount} sessions={sessionCount} slots={slotCount}");
 
         _syncGate.Release();
     }
@@ -187,10 +227,7 @@ class Program
                     item.Category, item.PropModel,
                     item.MagCapacity, item.StoredCapacity, item.AmmoType);
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[Sidecar] Seed error for {item.Id}: {ex.Message}");
-            }
+            catch (Exception ex) { Console.WriteLine($"[Sidecar] Seed error for {item.Id}: {ex.Message}"); }
         }
         Console.WriteLine("[Sidecar] Seeding complete.");
     }
@@ -211,7 +248,6 @@ class Program
         listener.Prefixes.Add($"http://127.0.0.1:{_sidecarPort}/");
         listener.Start();
         Console.WriteLine($"[Sidecar] HTTP listener on :{_sidecarPort}");
-
         while (true)
         {
             try
@@ -219,10 +255,7 @@ class Program
                 var ctx = await listener.GetContextAsync();
                 _ = Task.Run(() => HandleRequest(ctx));
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[Sidecar] Listener error: {ex.Message}");
-            }
+            catch (Exception ex) { Console.WriteLine($"[Sidecar] Listener error: {ex.Message}"); }
         }
     }
 
@@ -236,24 +269,24 @@ class Program
         {
             string path = ctx.Request.Url?.AbsolutePath ?? "";
 
-            // ── GET /version ─────────────────────────────────────────────────
+            // ── GET /version ──────────────────────────────────────────────────
             if (ctx.Request.HttpMethod == "GET" && path == "/version")
             {
                 await WriteJson(ctx, new { version = API_VERSION, status = "ok" });
                 return;
             }
 
-            // ── GET /diagnostics ─────────────────────────────────────────────
+            // ── GET /diagnostics ──────────────────────────────────────────────
             if (ctx.Request.HttpMethod == "GET" && path == "/diagnostics")
             {
-                int slotCount = _db == null ? -1 : _db.Db.InventorySlot.Iter().Count();
                 await WriteJson(ctx, new
                 {
-                    db_connected        = _db != null,
-                    delta_fire_count    = Interlocked.Read(ref _deltaFireCount),
-                    delta_queue_pending = _deltaQueue.Count,
-                    last_delta_utc      = _lastDeltaTime == DateTime.MinValue ? "never" : _lastDeltaTime.ToString("o"),
-                    inventory_slot_count = slotCount,
+                    db_connected         = _db != null,
+                    delta_fire_count     = Interlocked.Read(ref _deltaFireCount),
+                    delta_queue_pending  = _deltaQueue.Count,
+                    last_delta_utc       = _lastDeltaTime == DateTime.MinValue ? "never" : _lastDeltaTime.ToString("o"),
+                    inventory_slot_count = _db == null ? -1 : _db.Db.InventorySlot.Iter().Count(),
+                    active_sessions      = _serverIdToSession.Count,
                 });
                 return;
             }
@@ -263,16 +296,128 @@ class Program
             {
                 var batch = new List<object>();
                 while (_pending.TryDequeue(out var instr))
-                {
-                    batch.Add(new
-                    {
-                        id                   = instr.Id,
-                        target_entity_net_id = instr.TargetEntityNetId,
-                        opcode               = instr.Opcode,
-                        payload              = instr.Payload,
-                    });
-                }
+                    batch.Add(new { id = instr.Id, target_entity_net_id = instr.TargetEntityNetId, opcode = instr.Opcode, payload = instr.Payload });
                 await WriteJson(ctx, batch);
+                return;
+            }
+
+            // ── GET /slot-deltas ──────────────────────────────────────────────
+            if (ctx.Request.HttpMethod == "GET" && path == "/slot-deltas")
+            {
+                var deltas = new List<object>();
+                while (_deltaQueue.TryDequeue(out var delta)) deltas.Add(delta);
+                if (deltas.Count > 0)
+                    Console.WriteLine($"[Delta] Sending {deltas.Count} delta(s)");
+                await WriteJson(ctx, deltas);
+                return;
+            }
+
+            // ── GET /characters?server_id=X ───────────────────────────────────
+            // Returns the full character list for the account tied to this server_id.
+            // Called by Lua after session_open, before character selection.
+            if (ctx.Request.HttpMethod == "GET" && path == "/characters")
+            {
+                var qs  = System.Web.HttpUtility.ParseQueryString(ctx.Request.Url?.Query ?? "");
+                uint sid = uint.TryParse(qs["server_id"], out var s) ? s : 0u;
+
+                // Resolve steam_hex — may have character_id = 0 (pending selection)
+                string steamHex = ResolveSession(sid)?.SteamHex ?? "";
+                if (string.IsNullOrEmpty(steamHex))
+                    steamHex = _hexToServerId.FirstOrDefault(kv => kv.Value == sid).Key ?? "";
+
+                if (string.IsNullOrEmpty(steamHex)) { ctx.Response.StatusCode = 404; ctx.Response.Close(); return; }
+
+                var account    = _db!.Db.Account.Iter().FirstOrDefault(a => a.SteamHex == steamHex);
+                var characters = _db!.Db.Character.Iter()
+                    .Where(c => c.SteamHex == steamHex && !c.IsDeleted)
+                    .OrderBy(c => c.SlotIndex)
+                    .Select(c =>
+                    {
+                        var appearance = _db!.Db.CharacterAppearance.Iter()
+                            .FirstOrDefault(a => a.CharacterId == c.Id);
+                        return (object)new {
+                            id              = c.Id,
+                            slot_index      = c.SlotIndex,
+                            name            = c.Name,
+                            gender          = c.Gender,
+                            job             = c.Job,
+                            money_cash      = c.MoneyCash,
+                            health          = c.Health,
+                            last_seen       = c.UpdatedAt.ToString(),
+                            components_json = appearance?.ComponentsJson ?? "{}",
+                        };
+                    })
+                    .ToList();
+
+                await WriteJson(ctx, new {
+                    steam_hex      = steamHex,
+                    max_characters = account?.MaxCharacters ?? 3u,
+                    characters,
+                });
+                return;
+            }
+
+            // ── GET /character?server_id=X ────────────────────────────────────
+            // Returns the active character's vitals and spawn position.
+            if (ctx.Request.HttpMethod == "GET" && path == "/character")
+            {
+                var qs  = System.Web.HttpUtility.ParseQueryString(ctx.Request.Url?.Query ?? "");
+                uint sid = uint.TryParse(qs["server_id"], out var sv) ? sv : 0u;
+                var session = ResolveSession(sid);
+                if (session == null || session.CharacterId == 0) { ctx.Response.StatusCode = 404; ctx.Response.Close(); return; }
+
+                var character = _db!.Db.Character.Iter().FirstOrDefault(c => c.Id == session.CharacterId);
+                if (character == null) { ctx.Response.StatusCode = 404; ctx.Response.Close(); return; }
+
+                await WriteJson(ctx, new {
+                    steam_hex    = session.SteamHex,
+                    character_id = session.CharacterId,
+                    owner_id     = CharOwnerString(session.CharacterId),
+                    pos_x        = character.PosX,   pos_y    = character.PosY,
+                    pos_z        = character.PosZ,   heading  = character.Heading,
+                    health       = character.Health,
+                    hunger       = character.Hunger,
+                    thirst       = character.Thirst,
+                    money_cash   = character.MoneyCash,
+                    job          = character.Job,    job_grade = character.JobGrade,
+                    name         = character.Name,
+                });
+                return;
+            }
+
+            // ── GET /item-count ───────────────────────────────────────────────
+            if (ctx.Request.HttpMethod == "GET" && path == "/item-count")
+            {
+                var qs = System.Web.HttpUtility.ParseQueryString(ctx.Request.Url?.Query ?? "");
+                string oi = qs["owner_id"] ?? "";
+                string ii = qs["item_id"]  ?? "";
+                if (string.IsNullOrEmpty(oi) || string.IsNullOrEmpty(ii)) { ctx.Response.StatusCode = 400; ctx.Response.Close(); return; }
+                uint count = _db == null ? 0 : (uint)_db.Db.InventorySlot.Iter()
+                    .Where(s => s.OwnerId == oi && s.ItemId == ii).Sum(s => (long)s.Quantity);
+                await WriteJson(ctx, new { owner_id = oi, item_id = ii, count, has_item = count > 0 });
+                return;
+            }
+
+            // ── POST /checkpoint ──────────────────────────────────────────────
+            if (ctx.Request.HttpMethod == "POST" && path == "/checkpoint")
+            {
+                using var sr = new System.IO.StreamReader(ctx.Request.InputStream);
+                string body  = await sr.ReadToEndAsync();
+                using var doc = JsonDocument.Parse(body);
+                var r = doc.RootElement;
+                string hex = r.TryGetProperty("steam_hex", out var shEl) ? shEl.GetString() ?? "" : "";
+                if (!string.IsNullOrEmpty(hex))
+                {
+                    _db!.Reducers.CheckpointVitals(hex,
+                        (float)r.GetProperty("pos_x").GetDouble(),
+                        (float)r.GetProperty("pos_y").GetDouble(),
+                        (float)r.GetProperty("pos_z").GetDouble(),
+                        (float)r.GetProperty("heading").GetDouble(),
+                        r.GetProperty("health").GetUInt32(),
+                        r.GetProperty("hunger").GetUInt32(),
+                        r.GetProperty("thirst").GetUInt32());
+                }
+                ctx.Response.StatusCode = 200; ctx.Response.Close();
                 return;
             }
 
@@ -293,50 +438,13 @@ class Program
                         r.GetProperty("usable").GetBoolean(),
                         r.GetProperty("max_stack").GetUInt32(),
                         r.GetProperty("category").GetString()   ?? "misc",
-                        r.TryGetProperty("prop_model",      out var pm) ? pm.GetString()  ?? "prop_cs_cardbox_01" : "prop_cs_cardbox_01",
-                        r.TryGetProperty("mag_capacity",    out var mc) ? mc.GetInt32()   : 0,
-                        r.TryGetProperty("stored_capacity", out var sc) ? sc.GetInt32()   : 0,
-                        r.TryGetProperty("ammo_type",       out var at) ? at.GetString()  ?? "" : "");
-                    ctx.Response.StatusCode = 200;
-                    ctx.Response.Close();
+                        r.TryGetProperty("prop_model",      out var pm) ? pm.GetString() ?? "prop_cs_cardbox_01" : "prop_cs_cardbox_01",
+                        r.TryGetProperty("mag_capacity",    out var mc) ? mc.GetInt32()  : 0,
+                        r.TryGetProperty("stored_capacity", out var sc) ? sc.GetInt32()  : 0,
+                        r.TryGetProperty("ammo_type",       out var at) ? at.GetString() ?? "" : "");
+                    ctx.Response.StatusCode = 200; ctx.Response.Close();
                 }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[Sidecar] /seed-item error: {ex.Message}");
-                    ctx.Response.StatusCode = 400;
-                    ctx.Response.Close();
-                }
-                return;
-            }
-
-            // ── GET /slot-deltas ──────────────────────────────────────────────
-            if (ctx.Request.HttpMethod == "GET" && path == "/slot-deltas")
-            {
-                var deltas = new List<object>();
-                while (_deltaQueue.TryDequeue(out var delta))
-                    deltas.Add(delta);
-
-                if (deltas.Count > 0)
-                    Console.WriteLine($"[Delta] Sending {deltas.Count} delta(s): {JsonSerializer.Serialize(deltas)}");
-
-                await WriteJson(ctx, deltas);
-                return;
-            }
-
-            // ── GET /item-count ───────────────────────────────────────────────
-            if (ctx.Request.HttpMethod == "GET" && path == "/item-count")
-            {
-                var qs    = System.Web.HttpUtility.ParseQueryString(ctx.Request.Url?.Query ?? "");
-                string oi = qs["owner_id"] ?? "";
-                string ii = qs["item_id"]  ?? "";
-                if (string.IsNullOrEmpty(oi) || string.IsNullOrEmpty(ii))
-                {
-                    ctx.Response.StatusCode = 400; ctx.Response.Close(); return;
-                }
-                uint count = _db == null ? 0 : (uint)_db.Db.InventorySlot.Iter()
-                    .Where(s => s.OwnerId == oi && s.ItemId == ii)
-                    .Sum(s => (long)s.Quantity);
-                await WriteJson(ctx, new { owner_id = oi, item_id = ii, count, has_item = count > 0 });
+                catch (Exception ex) { Console.WriteLine($"[Sidecar] /seed-item error: {ex.Message}"); ctx.Response.StatusCode = 400; ctx.Response.Close(); }
                 return;
             }
 
@@ -348,8 +456,7 @@ class Program
                 using var doc = JsonDocument.Parse(body);
                 foreach (var item in doc.RootElement.EnumerateArray())
                     _db?.Reducers.MarkInstructionConsumed(item.GetUInt64());
-                ctx.Response.StatusCode = 200;
-                ctx.Response.Close();
+                ctx.Response.StatusCode = 200; ctx.Response.Close();
                 return;
             }
 
@@ -363,44 +470,156 @@ class Program
                 var    args = doc.RootElement.GetProperty("args");
 
                 Console.WriteLine($"[Sidecar] Reducer: {name}");
-
                 if (_db == null) { ctx.Response.StatusCode = 503; ctx.Response.Close(); return; }
 
                 switch (name)
                 {
-                    // ── Player ────────────────────────────────────────────────
+                    // ── ACCOUNT / SESSION ─────────────────────────────────────
 
+                    // Phase 1: Account auth (ban check, display name update).
+                    // Does NOT open a CharSession — that is select_character (phase 2).
                     case "on_player_connect":
                     {
                         var serverId    = args.GetProperty("server_id").GetUInt32();
-                        var steamHex    = args.GetProperty("steam_hex").GetString() ?? "";
-                        _db.Reducers.OnPlayerConnect(
-                            steamHex,
-                            args.GetProperty("display_name").GetString() ?? "",
-                            serverId,
-                            args.GetProperty("net_id").GetUInt32(),
-                            args.TryGetProperty("heading", out var h) ? h.GetSingle() : 0f);
+                        var steamHex    = args.GetProperty("steam_hex").GetString()    ?? "";
+                        var displayName = args.GetProperty("display_name").GetString() ?? "";
+                        var netId       = args.GetProperty("net_id").GetUInt32();
+
+                        // Register immediately with characterId = 0 (pending selection)
                         if (!string.IsNullOrEmpty(steamHex))
-                            _steamHexByServerId[serverId] = steamHex;
-                        break;
+                            RegisterSession(steamHex, 0, serverId);
+
+                        try
+                        {
+                            _db.Reducers.SessionOpen(steamHex, displayName);
+                            await WriteJson(ctx, new { ok = true, steam_hex = steamHex });
+                        }
+                        catch (Exception ex) when (ex.Message.StartsWith("BANNED|"))
+                        {
+                            ClearSession(serverId);
+                            await WriteJson(ctx, new { ok = false, error_code = "BANNED", reason = ex.Message[7..] });
+                        }
+                        return;
+                    }
+
+                    // Phase 2: Character confirmed in NUI → open CharSession.
+                    case "select_character":
+                    {
+                        var serverId    = args.GetProperty("server_id").GetUInt32();
+                        var characterId = args.GetProperty("character_id").GetUInt64();
+                        var netId       = args.GetProperty("net_id").GetUInt32();
+                        var steamHex    = ResolveSession(serverId)?.SteamHex ?? "";
+
+                        if (string.IsNullOrEmpty(steamHex))
+                        { await WriteJson(ctx, new { ok = false, error = "session_not_found" }); return; }
+
+                        try
+                        {
+                            _db.Reducers.SelectCharacter(steamHex, characterId, serverId, netId);
+                            RegisterSession(steamHex, characterId, serverId);
+
+                            var character = _db.Db.Character.Iter().FirstOrDefault(c => c.Id == characterId);
+                            await WriteJson(ctx, new {
+                                ok           = true,
+                                character_id = characterId,
+                                owner_id     = CharOwnerString(characterId),
+                                pos_x        = character?.PosX    ?? DEFAULT_SPAWN_X,
+                                pos_y        = character?.PosY    ?? DEFAULT_SPAWN_Y,
+                                pos_z        = character?.PosZ    ?? DEFAULT_SPAWN_Z,
+                                heading      = character?.Heading ?? DEFAULT_HEADING,
+                                health       = character?.Health  ?? 200u,
+                                hunger       = character?.Hunger  ?? 100u,
+                                thirst       = character?.Thirst  ?? 100u,
+                                name         = character?.Name    ?? "",
+                                job          = character?.Job     ?? "unemployed",
+                            });
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[Sidecar] select_character error: {ex.Message}");
+                            await WriteJson(ctx, new { ok = false, error = ex.Message });
+                        }
+                        return;
+                    }
+
+                    case "create_character":
+                    {
+                        var steamHex  = args.GetProperty("steam_hex").GetString()  ?? "";
+                        var slotIndex = args.GetProperty("slot_index").GetUInt32();
+                        var charName  = args.GetProperty("name").GetString()       ?? "";
+                        var gender    = args.GetProperty("gender").GetString()     ?? "male";
+                        try
+                        {
+                            _db.Reducers.CreateCharacter(steamHex, slotIndex, charName, gender);
+                            await WriteJson(ctx, new { ok = true });
+                        }
+                        catch (Exception ex)
+                        {
+                            var parts = ex.Message.Split('|');
+                            await WriteJson(ctx, new { ok = false, error_code = parts[0], message = parts.Length > 1 ? parts[1] : ex.Message });
+                        }
+                        return;
+                    }
+
+                    case "delete_character":
+                    {
+                        var steamHex    = args.GetProperty("steam_hex").GetString()    ?? "";
+                        var characterId = args.GetProperty("character_id").GetUInt64();
+                        try
+                        {
+                            _db.Reducers.DeleteCharacter(steamHex, characterId);
+                            await WriteJson(ctx, new { ok = true });
+                        }
+                        catch (Exception ex)
+                        {
+                            await WriteJson(ctx, new { ok = false, error = ex.Message });
+                        }
+                        return;
+                    }
+
+                    case "save_appearance":
+                    {
+                        var steamHex       = args.GetProperty("steam_hex").GetString()       ?? "";
+                        var characterId    = args.GetProperty("character_id").GetUInt64();
+                        var componentsJson = args.GetProperty("components_json").GetString()  ?? "{}";
+                        var overlaysJson   = args.GetProperty("overlays_json").GetString()    ?? "{}";
+                        _db.Reducers.SaveAppearance(steamHex, characterId, componentsJson, overlaysJson);
+                        ctx.Response.StatusCode = 200; ctx.Response.Close();
+                        return;
                     }
 
                     case "on_player_disconnect":
                     {
-                        uint sid = args.TryGetProperty("server_id", out var se) ? se.GetUInt32() : 0;
-                        if (sid > 0 && _steamHexByServerId.TryRemove(sid, out var hex))
-                            _db.Reducers.OnPlayerDisconnect(hex);
-                        break;
+                        uint sid = args.TryGetProperty("server_id", out var sidEl) ? sidEl.GetUInt32() : 0;
+                        var hex  = args.TryGetProperty("steam_hex", out var shEl) ? shEl.GetString() ?? "" : "";
+                        if (string.IsNullOrEmpty(hex) && sid > 0)
+                            hex = ResolveSession(sid)?.SteamHex ?? "";
+
+                        float px = args.TryGetProperty("pos_x",   out var pxEl) ? pxEl.GetSingle()  : 0f;
+                        float py = args.TryGetProperty("pos_y",   out var pyEl) ? pyEl.GetSingle()  : 0f;
+                        float pz = args.TryGetProperty("pos_z",   out var pzEl) ? pzEl.GetSingle()  : 0f;
+                        float ph = args.TryGetProperty("heading", out var phEl) ? phEl.GetSingle()  : 0f;
+                        uint  hp = args.TryGetProperty("health",  out var hpEl) ? hpEl.GetUInt32()  : 200u;
+                        uint  hu = args.TryGetProperty("hunger",  out var huEl) ? huEl.GetUInt32()  : 100u;
+                        uint  th = args.TryGetProperty("thirst",  out var thEl) ? thEl.GetUInt32()  : 100u;
+
+                        if (!string.IsNullOrEmpty(hex))
+                        {
+                            _db.Reducers.SessionClose(hex, px, py, pz, ph, hp, hu, th);
+                            if (sid > 0) ClearSession(sid);
+                        }
+                        else Console.WriteLine($"[Sidecar] WARNING: disconnect for server_id={sid} — hex not found");
+
+                        ctx.Response.StatusCode = 200; ctx.Response.Close();
+                        return;
                     }
 
                     case "request_spawn":
                     {
                         uint sid = args.GetProperty("server_id").GetUInt32();
-                        if (!_steamHexByServerId.TryGetValue(sid, out var hex))
-                        {
-                            Console.WriteLine($"[Sidecar] request_spawn: no steam_hex for server_id={sid}");
-                            ctx.Response.StatusCode = 400; ctx.Response.Close(); return;
-                        }
+                        var hex  = ResolveSession(sid)?.SteamHex ?? "";
+                        if (string.IsNullOrEmpty(hex))
+                        { Console.WriteLine($"[Sidecar] request_spawn: no session for server_id={sid}"); ctx.Response.StatusCode = 400; ctx.Response.Close(); return; }
                         _db.Reducers.RequestSpawn(hex,
                             args.GetProperty("spawn_x").GetSingle(),
                             args.GetProperty("spawn_y").GetSingle(),
@@ -409,7 +628,7 @@ class Program
                         break;
                     }
 
-                    // ── Inventory ─────────────────────────────────────────────
+                    // ── INVENTORY ─────────────────────────────────────────────
 
                     case "move_item":
                         _db.Reducers.MoveItem(
@@ -424,33 +643,6 @@ class Program
                             args.GetProperty("new_owner_type").GetString() ?? "player",
                             args.GetProperty("new_slot_index").GetUInt32());
                         break;
-
-                    case "transfer_item_to_player":
-                    {
-                        ulong tSlotId   = args.GetProperty("slot_id").GetUInt64();
-                        uint  tServerId = args.GetProperty("server_id").GetUInt32();
-                        var   tSession  = _db.Db.ActiveSession.Iter().FirstOrDefault(a => a.ServerId == tServerId);
-                        if (tSession == null) { await WriteJson(ctx, new { ok = false, error = "player not online" }); return; }
-                        var tSlot = _db.Db.InventorySlot.Iter().FirstOrDefault(s => s.Id == tSlotId);
-                        if (tSlot == null) { await WriteJson(ctx, new { ok = false, error = "slot not found" }); return; }
-                        try
-                        {
-                            _db.Reducers.RemoveItem(tSlot.OwnerId, tSlot.ItemId, tSlot.Quantity);
-                            _db.Reducers.GiveItemToIdentity(tSession.SteamHex, tSlot.ItemId, tSlot.Quantity, tSlot.Metadata);
-                            await WriteJson(ctx, new { ok = true, owner_id = tSession.SteamHex });
-                        }
-                        catch (Exception ex) when (ex.Message.Contains("WEIGHT_LIMIT"))
-                        {
-                            var p = ex.Message.Split('|');
-                            await WriteJson(ctx, new { ok = false, error_code = "WEIGHT_LIMIT", actual_kg = p.Length > 1 ? p[1] : "?", max_kg = p.Length > 2 ? p[2] : "?" });
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"[Sidecar] transfer_item_to_player error: {ex.Message}");
-                            await WriteJson(ctx, new { ok = false, error_code = "REDUCER_ERROR", message = ex.Message });
-                        }
-                        return;
-                    }
 
                     case "use_item":
                         _db.Reducers.UseItem(
@@ -471,8 +663,7 @@ class Program
                             if (def != null && def.Category == "weapon")
                             {
                                 var serial = $"WPN-{Guid.NewGuid().ToString("N")[..8].ToUpper()}";
-                                aiMeta = JsonSerializer.Serialize(new
-                                {
+                                aiMeta = JsonSerializer.Serialize(new {
                                     serial, mag_ammo = 0, stored_ammo = 0,
                                     mag_capacity    = def.MagCapacity,
                                     stored_capacity = def.StoredCapacity,
@@ -493,19 +684,55 @@ class Program
                             args.GetProperty("quantity").GetUInt32());
                         break;
 
-                    case "merge_stacks":
-                        _db.Reducers.MergeStacks(
-                            args.GetProperty("src_slot_id").GetUInt64(),
-                            args.GetProperty("dst_slot_id").GetUInt64());
-                        await WriteJson(ctx, new { ok = true });
+                    case "give_item_to_player":
+                    {
+                        uint   gSid  = args.GetProperty("server_id").GetUInt32();
+                        string gItem = args.GetProperty("item_id").GetString()  ?? "";
+                        uint   gQty  = args.TryGetProperty("quantity", out var gq) ? gq.GetUInt32() : 1;
+                        var    gSess = ResolveSession(gSid);
+                        if (gSess == null || gSess.CharacterId == 0)
+                        { await WriteJson(ctx, new { ok = false, error = "player not found or no character selected" }); return; }
+                        try
+                        {
+                            _db.Reducers.GiveItemToCharacter(gSess.CharacterId, gItem, gQty, "{}");
+                            await WriteJson(ctx, new { ok = true, owner_id = CharOwnerString(gSess.CharacterId) });
+                        }
+                        catch (Exception ex) when (ex.Message.Contains("WEIGHT_LIMIT"))
+                        { var p = ex.Message.Split('|'); await WriteJson(ctx, new { ok = false, error_code = "WEIGHT_LIMIT", actual_kg = p.Length > 1 ? p[1] : "?", max_kg = p.Length > 2 ? p[2] : "?" }); }
+                        catch (Exception ex)
+                        { await WriteJson(ctx, new { ok = false, error_code = "REDUCER_ERROR", message = ex.Message }); }
                         return;
+                    }
+
+                    case "transfer_item_to_player":
+                    {
+                        ulong  tSlotId   = args.GetProperty("slot_id").GetUInt64();
+                        uint   tServerId = args.GetProperty("server_id").GetUInt32();
+                        var    tTarget   = ResolveSession(tServerId);
+                        if (tTarget == null || tTarget.CharacterId == 0)
+                        { await WriteJson(ctx, new { ok = false, error = "player not online" }); return; }
+                        var tSlot = _db.Db.InventorySlot.Iter().FirstOrDefault(s => s.Id == tSlotId);
+                        if (tSlot == null) { await WriteJson(ctx, new { ok = false, error = "slot not found" }); return; }
+                        try
+                        {
+                            _db.Reducers.RemoveItem(tSlot.OwnerId, tSlot.ItemId, tSlot.Quantity);
+                            _db.Reducers.GiveItemToCharacter(tTarget.CharacterId, tSlot.ItemId, tSlot.Quantity, tSlot.Metadata);
+                            await WriteJson(ctx, new { ok = true, owner_id = CharOwnerString(tTarget.CharacterId) });
+                        }
+                        catch (Exception ex) when (ex.Message.Contains("WEIGHT_LIMIT"))
+                        { var p = ex.Message.Split('|'); await WriteJson(ctx, new { ok = false, error_code = "WEIGHT_LIMIT", actual_kg = p.Length > 1 ? p[1] : "?", max_kg = p.Length > 2 ? p[2] : "?" }); }
+                        catch (Exception ex)
+                        { await WriteJson(ctx, new { ok = false, error_code = "REDUCER_ERROR", message = ex.Message }); }
+                        return;
+                    }
+
+                    case "merge_stacks":
+                        _db.Reducers.MergeStacks(args.GetProperty("src_slot_id").GetUInt64(), args.GetProperty("dst_slot_id").GetUInt64());
+                        await WriteJson(ctx, new { ok = true }); return;
 
                     case "split_stack":
-                        _db.Reducers.SplitStack(
-                            args.GetProperty("slot_id").GetUInt64(),
-                            args.GetProperty("amount").GetUInt32());
-                        await WriteJson(ctx, new { ok = true });
-                        return;
+                        _db.Reducers.SplitStack(args.GetProperty("slot_id").GetUInt64(), args.GetProperty("amount").GetUInt32());
+                        await WriteJson(ctx, new { ok = true }); return;
 
                     case "move_item_partial":
                     {
@@ -535,11 +762,67 @@ class Program
                                 else _db.Reducers.TransferItem(split.Id, mpOwner, mpType, mpIdx);
                             }
                         }
-                        await WriteJson(ctx, new { ok = true });
+                        await WriteJson(ctx, new { ok = true }); return;
+                    }
+
+                    // ── GET PLAYER INVENTORY ──────────────────────────────────
+                    // owner_id is now the character_id string, not steam_hex.
+                    case "get_player_inventory":
+                    {
+                        uint serverId = args.GetProperty("server_id").GetUInt32();
+                        var  session  = ResolveSession(serverId);
+
+                        if (session == null || session.CharacterId == 0)
+                        {
+                            Console.WriteLine($"[Inv] get_player_inventory: no active character for server_id={serverId}");
+                            await WriteJson(ctx, new { slots = Array.Empty<object>(), equipped_slots = Array.Empty<object>(), item_defs = new { }, max_weight = 85, owner_id = "" });
+                            return;
+                        }
+
+                        string ownerId    = CharOwnerString(session.CharacterId);
+                        string equipPrefix = ownerId + "_equip_";
+                        var    allSlots   = _db.Db.InventorySlot.Iter().ToList();
+
+                        var playerSlots = allSlots
+                            .Where(s => s.OwnerId == ownerId && s.OwnerType == "player")
+                            .Select(s => (object)new { id = s.Id, owner_id = s.OwnerId, owner_type = s.OwnerType, item_id = s.ItemId, quantity = s.Quantity, metadata = s.Metadata, slot_index = s.SlotIndex })
+                            .ToList();
+
+                        var equippedSlots = allSlots
+                            .Where(s => s.OwnerId.StartsWith(equipPrefix) && s.OwnerType == "equip")
+                            .Select(s => (object)new { id = s.Id, owner_id = s.OwnerId, owner_type = s.OwnerType, item_id = s.ItemId, quantity = s.Quantity, metadata = s.Metadata, slot_index = s.SlotIndex, equip_key = s.OwnerId.Replace(equipPrefix, "") })
+                            .ToList();
+
+                        // Backpack
+                        object? backpackData = null;
+                        var bpSlot = allSlots.FirstOrDefault(s => s.OwnerId == ownerId + "_equip_backpack" && s.OwnerType == "equip");
+                        if (bpSlot != null)
+                        {
+                            string bpStash   = $"backpack_slot_{bpSlot.Id}";
+                            string bpLegacy  = $"backpack_{session.SteamHex}";
+                            uint   bpSlots2  = bpSlot.ItemId == "duffel_bag" ? 30u : 20u;
+                            float  bpWt      = bpSlot.ItemId == "duffel_bag" ? 50f : 30f;
+                            string bpLbl     = bpSlot.ItemId == "duffel_bag" ? "DUFFEL BAG" : "BACKPACK";
+                            try { _db.Reducers.CreateStash(bpStash, "backpack", bpLbl, bpSlots2, bpWt, ownerId, 0f, 0f, 0f); } catch { }
+                            var bpSlotList = allSlots
+                                .Where(s => (s.OwnerId == bpStash || s.OwnerId == bpLegacy) && s.OwnerType == "stash")
+                                .Select(s => (object)new { id = s.Id, owner_id = s.OwnerId, owner_type = s.OwnerType, item_id = s.ItemId, quantity = s.Quantity, metadata = s.Metadata, slot_index = s.SlotIndex })
+                                .ToList();
+                            backpackData = new { stash_id = bpStash, label = bpLbl, max_weight = bpWt, max_slots = (int)bpSlots2, slots = bpSlotList };
+                        }
+
+                        var defs = _db.Db.ItemDefinition.Iter()
+                            .ToDictionary(d => d.ItemId, d => (object)new { item_id = d.ItemId, label = d.Label, weight = d.Weight, stackable = d.Stackable, usable = d.Usable, max_stack = d.MaxStack, category = d.Category, prop_model = d.PropModel, mag_capacity = d.MagCapacity, stored_capacity = d.StoredCapacity, ammo_type = d.AmmoType });
+
+                        Console.WriteLine($"[Inv] server_id={serverId} owner_id={ownerId} slots={playerSlots.Count} equip={equippedSlots.Count}");
+                        await WriteJson(ctx, new { server_id = serverId, owner_id = ownerId, steam_hex = session.SteamHex, slots = playerSlots, equipped_slots = equippedSlots, backpack_data = backpackData, item_defs = defs, max_weight = 85 });
+
+                        // ACK triggers starter kit for brand-new characters
+                        _db.Reducers.SessionInventoryAck(session.SteamHex);
                         return;
                     }
 
-                    // ── Vehicle inventory ─────────────────────────────────────
+                    // ── VEHICLE INVENTORY ─────────────────────────────────────
 
                     case "create_vehicle_inventory":
                         _db.Reducers.CreateVehicleInventory(
@@ -550,7 +833,26 @@ class Program
                             (float)args.GetProperty("trunk_max_weight").GetDouble());
                         break;
 
-                    // ── Stashes ───────────────────────────────────────────────
+                    case "get_vehicle_inventory":
+                    {
+                        string plate   = args.GetProperty("plate").GetString()          ?? "";
+                        string invType = args.GetProperty("inventory_type").GetString() ?? "glovebox";
+                        var    config  = _db.Db.VehicleInventory.Iter().FirstOrDefault(v => v.Plate == plate);
+                        bool   hasCfg  = config != null;
+                        float  maxWt   = invType == "trunk" ? (hasCfg ? config!.TrunkMaxWeight : 50f) : 10f;
+                        uint   maxSl   = invType == "trunk" ? (hasCfg ? config!.TrunkSlots : 20u)     : 5u;
+                        string ownerTy = invType == "trunk" ? "vehicle_trunk" : "vehicle_glovebox";
+                        var    vSlots  = _db.Db.InventorySlot.Iter()
+                            .Where(s => s.OwnerId == plate && s.OwnerType == ownerTy)
+                            .Select(s => (object)new { id = s.Id, owner_id = s.OwnerId, owner_type = s.OwnerType, item_id = s.ItemId, quantity = s.Quantity, metadata = s.Metadata, slot_index = s.SlotIndex })
+                            .ToList();
+                        var vDefs = _db.Db.ItemDefinition.Iter()
+                            .ToDictionary(d => d.ItemId, d => (object)new { item_id = d.ItemId, label = d.Label, weight = d.Weight, stackable = d.Stackable, usable = d.Usable, max_stack = d.MaxStack, category = d.Category, prop_model = d.PropModel, mag_capacity = d.MagCapacity, stored_capacity = d.StoredCapacity, ammo_type = d.AmmoType });
+                        await WriteJson(ctx, new { plate, inventory_type = invType, trunk_type = hasCfg ? config!.TrunkType : "none", slots = vSlots, item_defs = vDefs, max_weight = maxWt, max_slots = maxSl });
+                        return;
+                    }
+
+                    // ── STASHES ───────────────────────────────────────────────
 
                     case "create_stash":
                         _db.Reducers.CreateStash(
@@ -569,217 +871,17 @@ class Program
                         _db.Reducers.DeleteStash(args.GetProperty("stash_id").GetString() ?? "");
                         break;
 
-                    // ── Backpack ──────────────────────────────────────────────
-
-                    case "open_backpack":
+                    case "get_stash_inventory":
                     {
-                        string bpOwner  = args.GetProperty("owner_identity").GetString() ?? "";
-                        string bpItem   = args.GetProperty("bag_item_id").GetString()    ?? "backpack";
-                        ulong  bpSlotId = args.TryGetProperty("bag_slot_id", out var bs) ? bs.GetUInt64() : 0;
-                        string bpStash  = bpSlotId > 0 ? $"backpack_slot_{bpSlotId}" : $"backpack_{bpOwner}";
-                        uint   bpSlots  = bpItem == "duffel_bag" ? 30u : 20u;
-                        float  bpWt     = bpItem == "duffel_bag" ? 50f : 30f;
-                        string bpLbl    = bpItem == "duffel_bag" ? "DUFFEL BAG" : "BACKPACK";
-                        try { _db.Reducers.CreateStash(bpStash, "backpack", bpLbl, bpSlots, bpWt, bpOwner, 0f, 0f, 0f); } catch { }
-                        var bpLegacy  = $"backpack_{bpOwner}";
-                        var bpSlotList = _db.Db.InventorySlot.Iter()
-                            .Where(s => (s.OwnerId == bpStash || s.OwnerId == bpLegacy) && s.OwnerType == "stash")
+                        string siId    = args.GetProperty("stash_id").GetString() ?? "";
+                        var    siDef   = _db.Db.StashDefinition.Iter().FirstOrDefault(s => s.StashId == siId);
+                        var    siSlots = _db.Db.InventorySlot.Iter()
+                            .Where(s => s.OwnerId == siId && s.OwnerType == "stash")
                             .Select(s => (object)new { id = s.Id, owner_id = s.OwnerId, owner_type = s.OwnerType, item_id = s.ItemId, quantity = s.Quantity, metadata = s.Metadata, slot_index = s.SlotIndex })
                             .ToList();
-                        var bpDefs = _db.Db.ItemDefinition.Iter()
-                            .ToDictionary(d => d.ItemId, d => (object)new { item_id = d.ItemId, label = d.Label, weight = d.Weight, stackable = d.Stackable, usable = d.Usable, max_stack = d.MaxStack, category = d.Category });
-                        await WriteJson(ctx, new { stash_id = bpStash, label = bpLbl, max_weight = bpWt, max_slots = (int)bpSlots, slots = bpSlotList, item_defs = bpDefs });
-                        return;
-                    }
-
-                    // ── Drop/throw to ground ──────────────────────────────────
-                    //
-                    // After calling DropItemToGround we wait 200ms for SpacetimeDB's
-                    // subscription update to propagate into the local SDK cache before
-                    // reading back the stash. This replaces the previous 80ms guess.
-
-                    case "drop_item_to_ground":
-                    {
-                        ulong dropId  = args.GetProperty("slot_id").GetUInt64();
-                        uint  dropQty = args.TryGetProperty("quantity", out var dq) ? dq.GetUInt32() : 0;
-                        float dx = (float)args.GetProperty("x").GetDouble();
-                        float dy = (float)args.GetProperty("y").GetDouble();
-                        float dz = (float)args.GetProperty("z").GetDouble();
-
-                        var preDrop = _db.Db.InventorySlot.Iter().FirstOrDefault(s => s.Id == dropId);
-                        if (preDrop == null)
-                        {
-                            await WriteJson(ctx, new { ok = false, error = "slot not found" });
-                            return;
-                        }
-
-                        try { _db.Reducers.DropItemToGround(dropId, dropQty, dx, dy, dz); }
-                        catch (Exception ex) { await WriteJson(ctx, new { ok = false, error = ex.Message }); return; }
-
-                        // Wait for the local subscription cache to reflect the commit
-                        await Task.Delay(200);
-
-                        float rSq = 25f;
-                        var stash = _db.Db.StashDefinition.Iter()
-                            .Where(s => s.StashType == "ground")
-                            .Where(s => { float ex2 = s.PosX - dx, ey = s.PosY - dy; return ex2*ex2 + ey*ey <= rSq; })
-                            .OrderBy(s => { float ex2 = s.PosX - dx, ey = s.PosY - dy; return ex2*ex2 + ey*ey; })
-                            .FirstOrDefault();
-
-                        if (stash == null)
-                        {
-                            Console.WriteLine($"[Sidecar] drop_item_to_ground: no ground stash found near ({dx},{dy})");
-                            await WriteJson(ctx, new { ok = false, error = "ground stash not found after drop" });
-                            return;
-                        }
-
-                        var newSlot = _db.Db.InventorySlot.Iter()
-                            .Where(s => s.OwnerId == stash.StashId && s.OwnerType == "stash" && s.ItemId == preDrop.ItemId)
-                            .FirstOrDefault();
-
-                        Console.WriteLine($"[Sidecar] drop_item_to_ground: stash={stash.StashId} new_slot_id={newSlot?.Id}");
-                        await WriteJson(ctx, new { ok = true, stash_id = stash.StashId, new_slot_id = newSlot?.Id ?? 0UL });
-                        return;
-                    }
-
-                    case "find_or_create_ground_stash":
-                    {
-                        float gx = (float)args.GetProperty("x").GetDouble();
-                        float gy = (float)args.GetProperty("y").GetDouble();
-                        float gz = (float)args.GetProperty("z").GetDouble();
-                        try { _db.Reducers.FindOrCreateGroundStash(gx, gy, gz); }
-                        catch (Exception ex) { await WriteJson(ctx, new { ok = false, error = ex.Message }); return; }
-
-                        await Task.Delay(200);
-
-                        float gsRSq = 25f;
-                        var gsStash = _db.Db.StashDefinition.Iter()
-                            .Where(s => s.StashType == "ground")
-                            .Where(s => { float ex2 = s.PosX - gx, ey = s.PosY - gy; return ex2*ex2 + ey*ey <= gsRSq; })
-                            .OrderBy(s => { float ex2 = s.PosX - gx, ey = s.PosY - gy; return ex2*ex2 + ey*ey; })
-                            .FirstOrDefault();
-
-                        string gsId    = gsStash?.StashId ?? "";
-                        var    gsSlots = _db.Db.InventorySlot.Iter()
-                            .Where(s => s.OwnerId == gsId && s.OwnerType == "stash")
-                            .Select(s => (object)new { id = s.Id, owner_id = s.OwnerId, owner_type = s.OwnerType, item_id = s.ItemId, quantity = s.Quantity, metadata = s.Metadata, slot_index = s.SlotIndex })
-                            .ToList();
-                        var gsDefs = _db.Db.ItemDefinition.Iter()
-                            .ToDictionary(d => d.ItemId, d => (object)new { item_id = d.ItemId, label = d.Label, weight = d.Weight, stackable = d.Stackable, usable = d.Usable, max_stack = d.MaxStack, category = d.Category, prop_model = d.PropModel });
-
-                        await WriteJson(ctx, new { stash_id = gsId, label = "GROUND", max_weight = 999f, max_slots = 50, slots = gsSlots, item_defs = gsDefs });
-                        return;
-                    }
-
-                    // ── Data queries ──────────────────────────────────────────
-
-                    case "get_player_inventory":
-                    {
-                        uint   serverId      = args.GetProperty("server_id").GetUInt32();
-                        var    slots         = new List<object>();
-                        var    equippedSlots = new List<object>();
-                        var    defs          = new Dictionary<string, object>();
-                        string ownerId       = "";
-                        object? backpackData = null;
-
-                        try
-                        {
-                            var allSessions = _db.Db.ActiveSession.Iter().ToList();
-                            Console.WriteLine($"[Inv] get_player_inventory: server_id={serverId} active_sessions_in_cache={allSessions.Count}");
-                            foreach (var sess in allSessions)
-                                Console.WriteLine($"[Inv]   session: server_id={sess.ServerId} steam_hex={sess.SteamHex}");
-
-                            // ── Identity resolution — four levels ─────────────────
-                            // Level 0: steam_hex passed directly from Lua (most reliable —
-                            //          Lua reads from _identityToServerId which is populated
-                            //          by the real playerConnected event, never from DB).
-                            // Level 1: _steamHexByServerId in-memory C# map.
-                            // Level 2: ActiveSession cache with non-empty steam_hex.
-                            // A blank steam_hex at any level is NOT used — it would match
-                            // no slots and return an empty inventory.
-                            var passedHex = args.TryGetProperty("steam_hex", out var shArg) ? shArg.GetString() ?? "" : "";
-                            if (!string.IsNullOrEmpty(passedHex))
-                            {
-                                ownerId = passedHex;
-                                Console.WriteLine($"[Inv] resolved via Lua steam_hex arg: {ownerId}");
-                            }
-                            else if (_steamHexByServerId.TryGetValue(serverId, out var mappedHex) && !string.IsNullOrEmpty(mappedHex))
-                            {
-                                ownerId = mappedHex;
-                                Console.WriteLine($"[Inv] resolved via _steamHexByServerId: {ownerId}");
-                            }
-                            else
-                            {
-                                var session = allSessions.FirstOrDefault(a => a.ServerId == serverId && !string.IsNullOrEmpty(a.SteamHex));
-                                if (session != null)
-                                {
-                                    ownerId = session.SteamHex;
-                                    Console.WriteLine($"[Inv] resolved via ActiveSession cache: {ownerId}");
-                                }
-                            }
-
-                                var allSlots = _db.Db.InventorySlot.Iter().ToList();
-                                var playerSlots = allSlots.Where(s => s.OwnerId == ownerId && s.OwnerType == "player").ToList();
-                                Console.WriteLine($"[Inv] owner_id={ownerId} total_slots_in_cache={allSlots.Count} player_slots={playerSlots.Count}");
-                                var distinctOwners = allSlots.Select(s => $"{s.OwnerId}|{s.OwnerType}").Distinct().Take(10);
-                                foreach (var o in distinctOwners)
-                                    Console.WriteLine($"[Inv]   slot owner: {o}");
-
-                            if (!string.IsNullOrEmpty(ownerId))
-                            {
-                                foreach (var s in playerSlots)
-                                    slots.Add(new { id = s.Id, owner_id = s.OwnerId, owner_type = s.OwnerType, item_id = s.ItemId, quantity = s.Quantity, metadata = s.Metadata, slot_index = s.SlotIndex });
-
-                                foreach (var s in allSlots.Where(s => s.OwnerId.StartsWith(ownerId + "_equip_") && s.OwnerType == "equip"))
-                                    equippedSlots.Add(new { id = s.Id, owner_id = s.OwnerId, owner_type = s.OwnerType, item_id = s.ItemId, quantity = s.Quantity, metadata = s.Metadata, slot_index = s.SlotIndex, equip_key = s.OwnerId.Replace(ownerId + "_equip_", "") });
-
-                                var bpSlot = allSlots.FirstOrDefault(s => s.OwnerId == ownerId + "_equip_backpack" && s.OwnerType == "equip");
-                                if (bpSlot != null)
-                                {
-                                    string bpStash  = $"backpack_slot_{bpSlot.Id}";
-                                    string bpLegacy = $"backpack_{ownerId}";
-                                    uint   bpSlots2 = bpSlot.ItemId == "duffel_bag" ? 30u : 20u;
-                                    float  bpWt     = bpSlot.ItemId == "duffel_bag" ? 50f : 30f;
-                                    string bpLbl    = bpSlot.ItemId == "duffel_bag" ? "DUFFEL BAG" : "BACKPACK";
-                                    try { _db.Reducers.CreateStash(bpStash, "backpack", bpLbl, bpSlots2, bpWt, ownerId, 0f, 0f, 0f); } catch { }
-                                    var bpSlotList = allSlots
-                                        .Where(s => (s.OwnerId == bpStash || s.OwnerId == bpLegacy) && s.OwnerType == "stash")
-                                        .Select(s => (object)new { id = s.Id, owner_id = s.OwnerId, owner_type = s.OwnerType, item_id = s.ItemId, quantity = s.Quantity, metadata = s.Metadata, slot_index = s.SlotIndex })
-                                        .ToList();
-                                    backpackData = new { stash_id = bpStash, label = bpLbl, max_weight = bpWt, max_slots = (int)bpSlots2, slots = bpSlotList };
-                                }
-                            }
-                            else
-                            {
-                                Console.WriteLine($"[Inv] WARNING: could not resolve owner_id for server_id={serverId}");
-                            }
-
-                            foreach (var d in _db.Db.ItemDefinition.Iter())
-                                defs[d.ItemId] = new { item_id = d.ItemId, label = d.Label, weight = d.Weight, stackable = d.Stackable, usable = d.Usable, max_stack = d.MaxStack, category = d.Category, prop_model = d.PropModel, mag_capacity = d.MagCapacity, stored_capacity = d.StoredCapacity, ammo_type = d.AmmoType };
-                        }
-                        catch (Exception ex) { Console.WriteLine($"[Sidecar] get_player_inventory error: {ex.Message}\n{ex.StackTrace}"); }
-
-                        Console.WriteLine($"[Inv] Returning: owner_id={ownerId} slots={slots.Count} equip={equippedSlots.Count}");
-                        await WriteJson(ctx, new { server_id = serverId, owner_id = ownerId, slots, equipped_slots = equippedSlots, backpack_data = backpackData, item_defs = defs, max_weight = 85 });
-                        return;
-                    }
-
-                    case "get_vehicle_inventory":
-                    {
-                        string plate    = args.GetProperty("plate").GetString()          ?? "";
-                        string invType  = args.GetProperty("inventory_type").GetString() ?? "glovebox";
-                        var    config   = _db.Db.VehicleInventory.Iter().FirstOrDefault(v => v.Plate == plate);
-                        bool   hasCfg   = config != null;
-                        float  maxWt    = invType == "trunk" ? (hasCfg ? config!.TrunkMaxWeight : 50f) : 10f;
-                        uint   maxSl    = invType == "trunk" ? (hasCfg ? config!.TrunkSlots : 20u)     : 5u;
-                        string ownerTy  = invType == "trunk" ? "vehicle_trunk" : "vehicle_glovebox";
-                        var    vSlots   = _db.Db.InventorySlot.Iter()
-                            .Where(s => s.OwnerId == plate && s.OwnerType == ownerTy)
-                            .Select(s => (object)new { id = s.Id, owner_id = s.OwnerId, owner_type = s.OwnerType, item_id = s.ItemId, quantity = s.Quantity, metadata = s.Metadata, slot_index = s.SlotIndex })
-                            .ToList();
-                        var vDefs = _db.Db.ItemDefinition.Iter()
-                            .ToDictionary(d => d.ItemId, d => (object)new { item_id = d.ItemId, label = d.Label, weight = d.Weight, stackable = d.Stackable, usable = d.Usable, max_stack = d.MaxStack, category = d.Category, prop_model = d.PropModel, mag_capacity = d.MagCapacity, stored_capacity = d.StoredCapacity, ammo_type = d.AmmoType });
-                        await WriteJson(ctx, new { plate, inventory_type = invType, trunk_type = hasCfg ? config!.TrunkType : "none", slots = vSlots, item_defs = vDefs, max_weight = maxWt, max_slots = maxSl });
+                        var siDefs = _db.Db.ItemDefinition.Iter()
+                            .ToDictionary(d => d.ItemId, d => (object)new { item_id = d.ItemId, label = d.Label, weight = d.Weight, stackable = d.Stackable, usable = d.Usable, max_stack = d.MaxStack });
+                        await WriteJson(ctx, new { stash_id = siId, label = siDef?.Label ?? siId, max_weight = siDef?.MaxWeight ?? 100f, max_slots = siDef?.MaxSlots ?? 20u, slots = siSlots, item_defs = siDefs });
                         return;
                     }
 
@@ -797,7 +899,7 @@ class Program
 
                     case "get_stash_pos":
                     {
-                        string spId = args.GetProperty("stash_id").GetString() ?? "";
+                        string spId  = args.GetProperty("stash_id").GetString() ?? "";
                         var    spDef = _db.Db.StashDefinition.Iter().FirstOrDefault(s => s.StashId == spId);
                         await WriteJson(ctx, spDef != null
                             ? new { pos_x = spDef.PosX, pos_y = spDef.PosY, pos_z = spDef.PosZ }
@@ -805,192 +907,149 @@ class Program
                         return;
                     }
 
-                    case "get_stash_inventory":
+                    case "open_backpack":
                     {
-                        string siId    = args.GetProperty("stash_id").GetString() ?? "";
-                        var    siDef   = _db.Db.StashDefinition.Iter().FirstOrDefault(s => s.StashId == siId);
-                        var    siSlots = _db.Db.InventorySlot.Iter()
-                            .Where(s => s.OwnerId == siId && s.OwnerType == "stash")
+                        string bpOwner  = args.GetProperty("owner_identity").GetString() ?? "";
+                        string bpItem   = args.GetProperty("bag_item_id").GetString()    ?? "backpack";
+                        ulong  bpSlotId = args.TryGetProperty("bag_slot_id", out var bs) ? bs.GetUInt64() : 0;
+                        string bpStash  = bpSlotId > 0 ? $"backpack_slot_{bpSlotId}" : $"backpack_{bpOwner}";
+                        uint   bpSlots  = bpItem == "duffel_bag" ? 30u : 20u;
+                        float  bpWt     = bpItem == "duffel_bag" ? 50f : 30f;
+                        string bpLbl    = bpItem == "duffel_bag" ? "DUFFEL BAG" : "BACKPACK";
+                        try { _db.Reducers.CreateStash(bpStash, "backpack", bpLbl, bpSlots, bpWt, bpOwner, 0f, 0f, 0f); } catch { }
+                        var allSlots = _db.Db.InventorySlot.Iter().ToList();
+                        var bpSlotList = allSlots
+                            .Where(s => (s.OwnerId == bpStash || s.OwnerId == $"backpack_{bpOwner}") && s.OwnerType == "stash")
                             .Select(s => (object)new { id = s.Id, owner_id = s.OwnerId, owner_type = s.OwnerType, item_id = s.ItemId, quantity = s.Quantity, metadata = s.Metadata, slot_index = s.SlotIndex })
                             .ToList();
-                        var siDefs = _db.Db.ItemDefinition.Iter()
-                            .ToDictionary(d => d.ItemId, d => (object)new { item_id = d.ItemId, label = d.Label, weight = d.Weight, stackable = d.Stackable, usable = d.Usable, max_stack = d.MaxStack });
-                        await WriteJson(ctx, new { stash_id = siId, label = siDef?.Label ?? siId, max_weight = siDef?.MaxWeight ?? 100f, max_slots = siDef?.MaxSlots ?? 20u, slots = siSlots, item_defs = siDefs });
+                        var bpDefs = _db.Db.ItemDefinition.Iter()
+                            .ToDictionary(d => d.ItemId, d => (object)new { item_id = d.ItemId, label = d.Label, weight = d.Weight, stackable = d.Stackable, usable = d.Usable, max_stack = d.MaxStack, category = d.Category });
+                        await WriteJson(ctx, new { stash_id = bpStash, label = bpLbl, max_weight = bpWt, max_slots = (int)bpSlots, slots = bpSlotList, item_defs = bpDefs });
                         return;
                     }
 
-                    case "give_item_to_player":
+                    case "drop_item_to_ground":
                     {
-                        uint   gSid  = args.GetProperty("server_id").GetUInt32();
-                        string gItem = args.GetProperty("item_id").GetString()  ?? "";
-                        uint   gQty  = args.TryGetProperty("quantity", out var gq) ? gq.GetUInt32() : 1;
-                        var    gSess = _db.Db.ActiveSession.Iter().FirstOrDefault(a => a.ServerId == gSid);
-                        if (gSess == null) { await WriteJson(ctx, new { ok = false, error = "player not found" }); return; }
-                        try
-                        {
-                            _db.Reducers.GiveItemToIdentity(gSess.SteamHex, gItem, gQty, "{}");
-                            await WriteJson(ctx, new { ok = true, owner_id = gSess.SteamHex });
-                        }
-                        catch (Exception ex) when (ex.Message.Contains("WEIGHT_LIMIT"))
-                        {
-                            var p = ex.Message.Split('|');
-                            await WriteJson(ctx, new { ok = false, error_code = "WEIGHT_LIMIT", actual_kg = p.Length > 1 ? p[1] : "?", max_kg = p.Length > 2 ? p[2] : "?" });
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"[Sidecar] give_item_to_player error: {ex.Message}");
-                            await WriteJson(ctx, new { ok = false, error_code = "REDUCER_ERROR", message = ex.Message });
-                        }
+                        ulong dropId  = args.GetProperty("slot_id").GetUInt64();
+                        uint  dropQty = args.TryGetProperty("quantity", out var dq) ? dq.GetUInt32() : 0;
+                        float dx = (float)args.GetProperty("x").GetDouble();
+                        float dy = (float)args.GetProperty("y").GetDouble();
+                        float dz = (float)args.GetProperty("z").GetDouble();
+                        var preDrop = _db.Db.InventorySlot.Iter().FirstOrDefault(s => s.Id == dropId);
+                        if (preDrop == null) { await WriteJson(ctx, new { ok = false, error = "slot not found" }); return; }
+                        try { _db.Reducers.DropItemToGround(dropId, dropQty, dx, dy, dz); }
+                        catch (Exception ex) { await WriteJson(ctx, new { ok = false, error = ex.Message }); return; }
+                        await Task.Delay(200);
+                        float rSq = 25f;
+                        var stash = _db.Db.StashDefinition.Iter()
+                            .Where(s => s.StashType == "ground")
+                            .Where(s => { float ex2 = s.PosX - dx, ey = s.PosY - dy; return ex2*ex2 + ey*ey <= rSq; })
+                            .OrderBy(s => { float ex2 = s.PosX - dx, ey = s.PosY - dy; return ex2*ex2 + ey*ey; })
+                            .FirstOrDefault();
+                        if (stash == null) { await WriteJson(ctx, new { ok = false, error = "ground stash not found after drop" }); return; }
+                        var newSlot = _db.Db.InventorySlot.Iter()
+                            .Where(s => s.OwnerId == stash.StashId && s.OwnerType == "stash" && s.ItemId == preDrop.ItemId)
+                            .FirstOrDefault();
+                        await WriteJson(ctx, new { ok = true, stash_id = stash.StashId, new_slot_id = newSlot?.Id ?? 0UL });
+                        return;
+                    }
+
+                    case "find_or_create_ground_stash":
+                    {
+                        float gx = (float)args.GetProperty("x").GetDouble();
+                        float gy = (float)args.GetProperty("y").GetDouble();
+                        float gz = (float)args.GetProperty("z").GetDouble();
+                        try { _db.Reducers.FindOrCreateGroundStash(gx, gy, gz); }
+                        catch (Exception ex) { await WriteJson(ctx, new { ok = false, error = ex.Message }); return; }
+                        await Task.Delay(200);
+                        float gsRSq = 25f;
+                        var gsStash = _db.Db.StashDefinition.Iter()
+                            .Where(s => s.StashType == "ground")
+                            .Where(s => { float ex2 = s.PosX - gx, ey = s.PosY - gy; return ex2*ex2 + ey*ey <= gsRSq; })
+                            .OrderBy(s => { float ex2 = s.PosX - gx, ey = s.PosY - gy; return ex2*ex2 + ey*ey; })
+                            .FirstOrDefault();
+                        string gsId    = gsStash?.StashId ?? "";
+                        var    gsSlots = _db.Db.InventorySlot.Iter()
+                            .Where(s => s.OwnerId == gsId && s.OwnerType == "stash")
+                            .Select(s => (object)new { id = s.Id, owner_id = s.OwnerId, owner_type = s.OwnerType, item_id = s.ItemId, quantity = s.Quantity, metadata = s.Metadata, slot_index = s.SlotIndex })
+                            .ToList();
+                        var gsDefs = _db.Db.ItemDefinition.Iter()
+                            .ToDictionary(d => d.ItemId, d => (object)new { item_id = d.ItemId, label = d.Label, weight = d.Weight, stackable = d.Stackable, usable = d.Usable, max_stack = d.MaxStack, category = d.Category, prop_model = d.PropModel });
+                        await WriteJson(ctx, new { stash_id = gsId, label = "GROUND", max_weight = 999f, max_slots = 50, slots = gsSlots, item_defs = gsDefs });
                         return;
                     }
 
                     case "reset_player_inventory":
                     {
-                        // Resolve steam_hex — three fallback levels:
-                        //   1. Explicit steam_hex in args (sent by Lua when it can resolve locally)
-                        //   2. _steamHexByServerId in-memory map (populated on on_player_connect)
-                        //   3. ActiveSession subscription cache (last resort, may be empty)
                         string resetHex = "";
-
-                        if (args.TryGetProperty("steam_hex", out var shEl))
-                        {
-                            resetHex = shEl.GetString() ?? "";
-                        }
+                        if (args.TryGetProperty("steam_hex", out var shEl2))
+                            resetHex = shEl2.GetString() ?? "";
                         else if (args.TryGetProperty("server_id", out var sidEl2))
                         {
                             uint resetSid = sidEl2.GetUInt32();
-
-                            // Level 2: in-memory map — always populated when player connects
-                            if (_steamHexByServerId.TryGetValue(resetSid, out var mappedHex))
-                            {
-                                resetHex = mappedHex;
-                            }
-                            else
-                            {
-                                // Level 3: subscription cache fallback
-                                var resetSess = _db.Db.ActiveSession.Iter().FirstOrDefault(a => a.ServerId == resetSid);
-                                if (resetSess != null)
-                                    resetHex = resetSess.SteamHex;
-                            }
-
+                            resetHex = ResolveSession(resetSid)?.SteamHex ?? "";
                             if (string.IsNullOrEmpty(resetHex))
-                            {
-                                await WriteJson(ctx, new { ok = false, error = $"no active session for server_id={resetSid}" });
-                                return;
-                            }
+                            { await WriteJson(ctx, new { ok = false, error = $"no session for server_id={resetSid}" }); return; }
                         }
-
                         if (string.IsNullOrEmpty(resetHex))
-                        {
-                            await WriteJson(ctx, new { ok = false, error = "steam_hex or server_id required" });
-                            return;
-                        }
+                        { await WriteJson(ctx, new { ok = false, error = "steam_hex or server_id required" }); return; }
 
-                        Console.WriteLine($"[Sidecar] reset_player_inventory for {resetHex}");
+                        // Resolve active character_id for this account
+                        var activeSession = _db.Db.CharSession.Iter().FirstOrDefault(s => s.SteamHex == resetHex);
+                        if (activeSession == null)
+                        { await WriteJson(ctx, new { ok = false, error = "player has no active session" }); return; }
+                        string ownerId = CharOwnerString(activeSession.CharacterId);
 
-                        // 1. Delete all pocket slots and equip slots.
-                        //    Use RemoveItem per-slot (it looks up by owner+itemId, not by slot ID).
-                        //    Log each result so we can see if any fail.
                         var slotsToRemove = _db.Db.InventorySlot.Iter()
-                            .Where(s => s.OwnerId == resetHex && s.OwnerType == "player")
-                            .ToList();
+                            .Where(s => s.OwnerId == ownerId && s.OwnerType == "player").ToList();
                         var equipToRemove = _db.Db.InventorySlot.Iter()
-                            .Where(s => s.OwnerId.StartsWith(resetHex + "_equip_") && s.OwnerType == "equip")
-                            .ToList();
-
-                        Console.WriteLine($"[Sidecar] reset: found {slotsToRemove.Count} pocket + {equipToRemove.Count} equip slots to remove");
+                            .Where(s => s.OwnerId.StartsWith(ownerId + "_equip_") && s.OwnerType == "equip").ToList();
 
                         int removedCount = 0;
                         foreach (var slot in slotsToRemove.Concat(equipToRemove))
                         {
-                            try
-                            {
-                                _db.Reducers.RemoveItem(slot.OwnerId, slot.ItemId, slot.Quantity);
-                                Console.WriteLine($"[Sidecar] reset: removed slot id={slot.Id} item={slot.ItemId} qty={slot.Quantity}");
-                                removedCount++;
-                            }
-                            catch (Exception ex)
-                            {
-                                Console.WriteLine($"[Sidecar] reset: RemoveItem slot {slot.Id} ({slot.ItemId}) failed: {ex.Message}");
-                            }
+                            try { _db.Reducers.RemoveItem(slot.OwnerId, slot.ItemId, slot.Quantity); removedCount++; }
+                            catch (Exception ex) { Console.WriteLine($"[Sidecar] reset: RemoveItem slot {slot.Id} failed: {ex.Message}"); }
                         }
 
-                        Console.WriteLine($"[Sidecar] reset_player_inventory: removed {removedCount} slot(s) for {resetHex}");
-
-                        // 3. Re-seed using AddItem — simpler reducer with no weight gate.
-                        //    GiveItemToIdentity returns Err() silently on the C# fire-and-forget
-                        //    path; AddItem is the direct insert used by the original starter kit.
-                        //    Weapons get explicit metadata generated here so they have a serial.
                         var starterKit = new (string itemId, uint qty)[]
                         {
-                            ("phone",         1), ("id_card",       1), ("water_bottle",  2),
-                            ("food_burger",   1), ("bandage",       5), ("cash",        500),
-                            ("backpack",      1), ("weapon_pistol", 1), ("ammo_pistol",  50),
-                            ("parachute",     1), ("body_armour",   1),
+                            ("phone",1),("id_card",1),("water_bottle",2),("food_burger",1),
+                            ("bandage",5),("cash",500),("backpack",1),("weapon_pistol",1),
+                            ("ammo_pistol",50),("parachute",1),("body_armour",1),
                         };
-
                         int givenCount = 0;
-                        uint slotIndex = 0;
                         foreach (var (itemId, qty) in starterKit)
                         {
                             try
                             {
-                                // Verify the item definition exists before calling AddItem.
-                                // If item_defs haven't seeded yet, AddItem silently returns early
-                                // in Rust (logs a warning but does not throw). This check surfaces
-                                // that failure so we can see it in the console.
                                 var def = _db.Db.ItemDefinition.Iter().FirstOrDefault(d => d.ItemId == itemId);
-                                if (def == null)
-                                {
-                                    Console.WriteLine($"[Sidecar] reset: SKIPPED {itemId} — not in item_definition cache (seeding incomplete?)");
-                                    continue;
-                                }
-
+                                if (def == null) continue;
                                 string meta = "{}";
                                 if (def.Category == "weapon")
                                 {
                                     var serial = $"WPN-{Guid.NewGuid().ToString("N")[..8].ToUpper()}";
-                                    meta = JsonSerializer.Serialize(new
-                                    {
-                                        serial,
-                                        mag_ammo        = 0,
-                                        stored_ammo     = 0,
-                                        mag_capacity    = def.MagCapacity,
-                                        stored_capacity = def.StoredCapacity,
-                                        durability      = 100,
-                                        ammo_type       = def.AmmoType,
-                                    });
+                                    meta = JsonSerializer.Serialize(new { serial, mag_ammo = 0, stored_ammo = 0, mag_capacity = def.MagCapacity, stored_capacity = def.StoredCapacity, durability = 100, ammo_type = def.AmmoType });
                                 }
-                                _db.Reducers.AddItem(resetHex, "player", itemId, qty, meta);
-                                Console.WriteLine($"[Sidecar] reset: gave {qty}x {itemId} to {resetHex}");
+                                _db.Reducers.AddItem(ownerId, "player", itemId, qty, meta);
                                 givenCount++;
-                                slotIndex++;
                             }
-                            catch (Exception ex)
-                            {
-                                Console.WriteLine($"[Sidecar] reset: AddItem {itemId} failed: {ex.Message}");
-                            }
+                            catch (Exception ex) { Console.WriteLine($"[Sidecar] reset: AddItem {itemId} failed: {ex.Message}"); }
                         }
-
-                        Console.WriteLine($"[Sidecar] reset_player_inventory: gave {givenCount} starter item(s) to {resetHex}");
-                        await WriteJson(ctx, new { ok = true, steam_hex = resetHex, removed = removedCount, given = givenCount });
+                        await WriteJson(ctx, new { ok = true, steam_hex = resetHex, owner_id = ownerId, removed = removedCount, given = givenCount });
                         return;
                     }
 
                     default:
                         Console.WriteLine($"[Sidecar] Unknown reducer: {name}");
-                        ctx.Response.StatusCode = 400;
-                        ctx.Response.Close();
-                        return;
+                        ctx.Response.StatusCode = 400; ctx.Response.Close(); return;
                 }
 
-                ctx.Response.StatusCode = 200;
-                ctx.Response.Close();
+                ctx.Response.StatusCode = 200; ctx.Response.Close();
                 return;
             }
 
-            ctx.Response.StatusCode = 404;
-            ctx.Response.Close();
+            ctx.Response.StatusCode = 404; ctx.Response.Close();
         }
         catch (Exception ex)
         {
@@ -998,10 +1057,6 @@ class Program
             try { ctx.Response.StatusCode = 500; ctx.Response.Close(); } catch { }
         }
     }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // HELPERS
-    // ─────────────────────────────────────────────────────────────────────────
 
     static async Task WriteJson(HttpListenerContext ctx, object data)
     {
