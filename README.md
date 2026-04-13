@@ -1,6 +1,6 @@
 # HyprFM Framework
 
-HyprFM is a next-generation FiveM roleplay framework built on the **Sovereign State** pattern. Unlike traditional frameworks that rely on standard SQL databases and heavy main-thread processing, HyprFM offloads game state to **SpacetimeDB**, allowing for sub-millisecond execution and a highly scalable backend.
+If you've run a serious FiveM RP server, you've hit the wall. A player dupes their inventory because two requests fired at the same time. Someone crashes the server and three minutes of economy activity vanishes. A cheat menu calls a Lua export directly and spawns weapons out of thin air. These aren't edge cases — they're structural problems with how traditional frameworks are built. ESX and QBCore put Lua in charge of game state. Lua is not a database. HyprFM fixes this at the architecture level, not with patches.
 
 ## 🏗 Architecture
 
