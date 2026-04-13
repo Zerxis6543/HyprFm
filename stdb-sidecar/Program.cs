@@ -222,69 +222,58 @@ class Program
         Console.WriteLine($"[Sidecar] Hydrated: chars={charCount} sessions={sessionCount} slots={slotCount}");
 
         WireDynamicOpcodeDeltas();
-
-        // ─────────────────────────────────────────────────────────────────────────────
-
-        static void WireDynamicOpcodeDeltas()
-        {
-            _db!.Db.DynamicOpcode.OnInsert += (_, row) =>
-            {
-                _dynamicOpcodes[(ushort)row.Opcode] = new DynamicOpcodeEntry(
-                    row.Context, row.OwnerSteamHex, row.NetId, row.ExpiresAtMicros);
-
-                Console.WriteLine($"[Opcode] ALLOCATED 0x{row.Opcode:X4} ctx='{row.Context}' permanent={row.ExpiresAtMicros == ulong.MaxValue}");
-
-                // Resolve any HTTP caller awaiting this allocation
-                if (_pendingAllocations.TryRemove(row.Context, out var tcs))
-                    tcs.TrySetResult((ushort)row.Opcode);
-            };
-
-            _db!.Db.DynamicOpcode.OnUpdate += (_, _, newRow) =>
-            {
-                // is_consumed = true → proactive eviction before the Reaper's OnDelete
-                if (newRow.IsConsumed)
-                {
-                    _dynamicOpcodes.TryRemove((ushort)newRow.Opcode, out _);
-                    Console.WriteLine($"[Opcode] CONSUMED  0x{newRow.Opcode:X4} — evicted");
-                }
-                else
-                {
-                    // Update in place (e.g. expiry extension, context change)
-                    _dynamicOpcodes[(ushort)newRow.Opcode] = new DynamicOpcodeEntry(
-                        newRow.Context, newRow.OwnerSteamHex, newRow.NetId, newRow.ExpiresAtMicros);
-                }
-            };
-
-            _db!.Db.DynamicOpcode.OnDelete += (_, row) =>
-            {
-                _dynamicOpcodes.TryRemove((ushort)row.Opcode, out _);
-                Console.WriteLine($"[Opcode] RECYCLED  0x{row.Opcode:X4} ctx='{row.Context}'");
-            };
-
-            // Hydrate from any opcodes that pre-existed this sidecar instance
-            foreach (var row in _db!.Db.DynamicOpcode.Iter())
-                _dynamicOpcodes[(ushort)row.Opcode] = new DynamicOpcodeEntry(
-                    row.Context, row.OwnerSteamHex, row.NetId, row.ExpiresAtMicros);
-
-            Console.WriteLine($"[Opcode] Cache hydrated — {_dynamicOpcodes.Count} active opcodes");
-        }
-
-        /// Fast-path validation. Returns false if unknown OR expiring within 500ms.
-        /// Permanent rows (ExpiresAtMicros == ulong.MaxValue) always pass the time check.
-        static bool ValidateDynamicOpcode(ushort opcode, out DynamicOpcodeEntry? entry)
-        {
-            if (!_dynamicOpcodes.TryGetValue(opcode, out entry)) return false;
-            if (entry.ExpiresAtMicros == ulong.MaxValue) return true; // permanent label
-            var nowMicros = (ulong)(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1_000L);
-            if (entry.ExpiresAtMicros <= nowMicros + 500_000UL)
-            {
-                _dynamicOpcodes.TryRemove(opcode, out _);
-                return false;
+                _syncGate.Release();
             }
-            return true;
-        }
 
-        _syncGate.Release();
+    static void WireDynamicOpcodeDeltas()
+    {
+        _db!.Db.DynamicOpcode.OnInsert += (evCtx, row) =>
+        {
+            _dynamicOpcodes[(ushort)row.Opcode] = new DynamicOpcodeEntry(
+                row.Context, row.OwnerSteamHex, row.NetId, row.ExpiresAtMicros);
+            Console.WriteLine($"[Opcode] ALLOCATED 0x{row.Opcode:X4} ctx='{row.Context}' permanent={row.ExpiresAtMicros == ulong.MaxValue}");
+            if (_pendingAllocations.TryRemove(row.Context, out var tcs))
+                tcs.TrySetResult((ushort)row.Opcode);
+        };
+
+        _db!.Db.DynamicOpcode.OnUpdate += (evCtx, oldRow, newRow) =>
+        {
+            if (newRow.IsConsumed)
+            {
+                _dynamicOpcodes.TryRemove((ushort)newRow.Opcode, out _);
+                Console.WriteLine($"[Opcode] CONSUMED  0x{newRow.Opcode:X4} — evicted");
+            }
+            else
+            {
+                _dynamicOpcodes[(ushort)newRow.Opcode] = new DynamicOpcodeEntry(
+                    newRow.Context, newRow.OwnerSteamHex, newRow.NetId, newRow.ExpiresAtMicros);
+            }
+        };
+
+        _db!.Db.DynamicOpcode.OnDelete += (evCtx, row) =>
+        {
+            _dynamicOpcodes.TryRemove((ushort)row.Opcode, out _);
+            Console.WriteLine($"[Opcode] RECYCLED  0x{row.Opcode:X4} ctx='{row.Context}'");
+        };
+
+        foreach (var row in _db!.Db.DynamicOpcode.Iter())
+            _dynamicOpcodes[(ushort)row.Opcode] = new DynamicOpcodeEntry(
+                row.Context, row.OwnerSteamHex, row.NetId, row.ExpiresAtMicros);
+
+        Console.WriteLine($"[Opcode] Cache hydrated — {_dynamicOpcodes.Count} active opcodes");
+    }
+
+    static bool ValidateDynamicOpcode(ushort opcode, out DynamicOpcodeEntry? entry)
+    {
+        if (!_dynamicOpcodes.TryGetValue(opcode, out entry)) return false;
+        if (entry.ExpiresAtMicros == ulong.MaxValue) return true;
+        var nowMicros = (ulong)(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1_000L);
+        if (entry.ExpiresAtMicros <= nowMicros + 500_000UL)
+        {
+            _dynamicOpcodes.TryRemove(opcode, out _);
+            return false;
+        }
+        return true;
     }
 
     static void OnInstructionInserted(EventContext ctx, InstructionQueue row)

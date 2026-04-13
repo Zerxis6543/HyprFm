@@ -13,6 +13,12 @@ const DEFAULT_SPAWN_Z:        f32 =   31.0;
 const DEFAULT_HEADING:        f32 =  205.0;
 const DEFAULT_MAX_CHARACTERS: u32 = 3;
 
+
+pub fn registered_opcode(ctx: &ReducerContext, label: &str) -> Option<u16> {
+    ctx.db.dynamic_opcode().iter()
+        .find(|o| o.context == label)
+        .map(|o| o.opcode)
+}
 // ─────────────────────────────────────────────────────────────────────────────
 // OWNER ID HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -61,7 +67,7 @@ pub fn init(ctx: &ReducerContext) {
     ctx.db.reaper_schedule().insert(ReaperSchedule {
         scheduled_id: 0,
         scheduled_at: spacetimedb::ScheduleAt::Interval(
-            std::time::Duration::from_secs(12 * 3600)
+            std::time::Duration::from_secs(12 * 3600).into()
         ),
     });
     log::info!("[init] Opcode allocator seeded. Reaper scheduled every 12h.");
@@ -97,25 +103,21 @@ pub fn allocate_opcode(
 
     let scan_start = alloc.next_candidate;
     let mut candidate = scan_start;
-    let mut found: Option<u16> = None;
 
-    loop {
+    let opcode = loop {
         if ctx.db.dynamic_opcode().opcode().find(candidate).is_none() {
-            found = Some(candidate);
             alloc.next_candidate = if candidate >= DOMAIN_MAX {
                 DOMAIN_MIN
             } else {
                 candidate + 1
             };
-            break;
+            break candidate;
         }
         candidate = if candidate >= DOMAIN_MAX { DOMAIN_MIN } else { candidate + 1 };
         if candidate == scan_start {
             return Err("OPCODE_POOL_EXHAUSTED|all 16384 dynamic slots are active".to_string());
         }
-    }
-
-    let opcode = found.unwrap();
+    };
 
     let now_micros = ctx.timestamp.to_micros_since_unix_epoch() as u64;
 

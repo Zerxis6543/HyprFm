@@ -54,15 +54,3 @@ pub mod dynamic {
         opcode >= DOMAIN_MIN && opcode <= DOMAIN_MAX
     }
 }
-
-// ── Label → opcode resolver ───────────────────────────────────────────────────
-// Third-party reducers call this instead of hardcoding numbers.
-
-pub fn registered_opcode(
-    ctx:   &spacetimedb::ReducerContext,
-    label: &str,
-) -> Option<u16> {
-    ctx.db.dynamic_opcode().iter()
-        .find(|o| o.context == label)
-        .map(|o| o.opcode)
-}

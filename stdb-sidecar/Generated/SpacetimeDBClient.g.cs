@@ -32,6 +32,7 @@ namespace SpacetimeDB.Types
             AddTable(Character = new(conn));
             AddTable(CharacterAppearance = new(conn));
             AddTable(DisconnectLog = new(conn));
+            AddTable(DynamicOpcode = new(conn));
             AddTable(InstructionQueue = new(conn));
             AddTable(InventorySlot = new(conn));
             AddTable(ItemDefinition = new(conn));
@@ -540,6 +541,7 @@ namespace SpacetimeDB.Types
             new QueryBuilder().From.Character().ToSql(),
             new QueryBuilder().From.CharacterAppearance().ToSql(),
             new QueryBuilder().From.DisconnectLog().ToSql(),
+            new QueryBuilder().From.DynamicOpcode().ToSql(),
             new QueryBuilder().From.InstructionQueue().ToSql(),
             new QueryBuilder().From.InventorySlot().ToSql(),
             new QueryBuilder().From.ItemDefinition().ToSql(),
@@ -558,6 +560,7 @@ namespace SpacetimeDB.Types
         public global::SpacetimeDB.Table<Character, CharacterCols, CharacterIxCols> Character() => new("character", new CharacterCols("character"), new CharacterIxCols("character"));
         public global::SpacetimeDB.Table<CharacterAppearance, CharacterAppearanceCols, CharacterAppearanceIxCols> CharacterAppearance() => new("character_appearance", new CharacterAppearanceCols("character_appearance"), new CharacterAppearanceIxCols("character_appearance"));
         public global::SpacetimeDB.Table<DisconnectLog, DisconnectLogCols, DisconnectLogIxCols> DisconnectLog() => new("disconnect_log", new DisconnectLogCols("disconnect_log"), new DisconnectLogIxCols("disconnect_log"));
+        public global::SpacetimeDB.Table<DynamicOpcode, DynamicOpcodeCols, DynamicOpcodeIxCols> DynamicOpcode() => new("dynamic_opcode", new DynamicOpcodeCols("dynamic_opcode"), new DynamicOpcodeIxCols("dynamic_opcode"));
         public global::SpacetimeDB.Table<InstructionQueue, InstructionQueueCols, InstructionQueueIxCols> InstructionQueue() => new("instruction_queue", new InstructionQueueCols("instruction_queue"), new InstructionQueueIxCols("instruction_queue"));
         public global::SpacetimeDB.Table<InventorySlot, InventorySlotCols, InventorySlotIxCols> InventorySlot() => new("inventory_slot", new InventorySlotCols("inventory_slot"), new InventorySlotIxCols("inventory_slot"));
         public global::SpacetimeDB.Table<ItemDefinition, ItemDefinitionCols, ItemDefinitionIxCols> ItemDefinition() => new("item_definition", new ItemDefinitionCols("item_definition"), new ItemDefinitionIxCols("item_definition"));
@@ -647,12 +650,15 @@ namespace SpacetimeDB.Types
             return reducer switch
             {
                 Reducer.AddItem args => Reducers.InvokeAddItem(eventContext, args),
+                Reducer.AllocateOpcode args => Reducers.InvokeAllocateOpcode(eventContext, args),
                 Reducer.CheckpointVitals args => Reducers.InvokeCheckpointVitals(eventContext, args),
+                Reducer.ConsumeOpcode args => Reducers.InvokeConsumeOpcode(eventContext, args),
                 Reducer.CreateCharacter args => Reducers.InvokeCreateCharacter(eventContext, args),
                 Reducer.CreateStash args => Reducers.InvokeCreateStash(eventContext, args),
                 Reducer.CreateVehicleInventory args => Reducers.InvokeCreateVehicleInventory(eventContext, args),
                 Reducer.DeleteCharacter args => Reducers.InvokeDeleteCharacter(eventContext, args),
                 Reducer.DeleteStash args => Reducers.InvokeDeleteStash(eventContext, args),
+                Reducer.DeregisterOpcode args => Reducers.InvokeDeregisterOpcode(eventContext, args),
                 Reducer.DropItemToGround args => Reducers.InvokeDropItemToGround(eventContext, args),
                 Reducer.FindOrCreateGroundStash args => Reducers.InvokeFindOrCreateGroundStash(eventContext, args),
                 Reducer.GiveItemToCharacter args => Reducers.InvokeGiveItemToCharacter(eventContext, args),
@@ -661,6 +667,7 @@ namespace SpacetimeDB.Types
                 Reducer.MergeStacks args => Reducers.InvokeMergeStacks(eventContext, args),
                 Reducer.MoveItem args => Reducers.InvokeMoveItem(eventContext, args),
                 Reducer.ReaperSweep args => Reducers.InvokeReaperSweep(eventContext, args),
+                Reducer.ReleaseOpcode args => Reducers.InvokeReleaseOpcode(eventContext, args),
                 Reducer.RemoveItem args => Reducers.InvokeRemoveItem(eventContext, args),
                 Reducer.RequestSpawn args => Reducers.InvokeRequestSpawn(eventContext, args),
                 Reducer.SaveAppearance args => Reducers.InvokeSaveAppearance(eventContext, args),

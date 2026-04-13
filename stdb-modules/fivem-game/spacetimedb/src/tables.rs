@@ -1,4 +1,5 @@
 use spacetimedb::Timestamp;
+use crate::reducers::opcode_reaper_sweep;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DESIGN RULES
@@ -248,7 +249,7 @@ pub struct OpcodeAllocator {
 // SpacetimeDB 2.0 scheduled table. One interval row inserted by init().
 // The runtime re-queues it automatically after each firing.
 
-#[spacetimedb::table(name = reaper_schedule, scheduled(opcode_reaper_sweep))]
+#[spacetimedb::table(accessor = reaper_schedule, scheduled(opcode_reaper_sweep))]
 #[derive(Clone, Debug)]
 pub struct ReaperSchedule {
     #[primary_key]
