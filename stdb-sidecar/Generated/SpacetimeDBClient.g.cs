@@ -27,11 +27,14 @@ namespace SpacetimeDB.Types
     {
         public RemoteTables(DbConnection conn)
         {
-            AddTable(ActiveSession = new(conn));
+            AddTable(Account = new(conn));
+            AddTable(CharSession = new(conn));
+            AddTable(Character = new(conn));
+            AddTable(CharacterAppearance = new(conn));
+            AddTable(DisconnectLog = new(conn));
             AddTable(InstructionQueue = new(conn));
             AddTable(InventorySlot = new(conn));
             AddTable(ItemDefinition = new(conn));
-            AddTable(Player = new(conn));
             AddTable(PlayerConfig = new(conn));
             AddTable(StarterKitEntry = new(conn));
             AddTable(StashDefinition = new(conn));
@@ -532,11 +535,14 @@ namespace SpacetimeDB.Types
 
         internal static string[] AllTablesSqlQueries() => new string[]
         {
-            new QueryBuilder().From.ActiveSession().ToSql(),
+            new QueryBuilder().From.Account().ToSql(),
+            new QueryBuilder().From.CharSession().ToSql(),
+            new QueryBuilder().From.Character().ToSql(),
+            new QueryBuilder().From.CharacterAppearance().ToSql(),
+            new QueryBuilder().From.DisconnectLog().ToSql(),
             new QueryBuilder().From.InstructionQueue().ToSql(),
             new QueryBuilder().From.InventorySlot().ToSql(),
             new QueryBuilder().From.ItemDefinition().ToSql(),
-            new QueryBuilder().From.Player().ToSql(),
             new QueryBuilder().From.PlayerConfig().ToSql(),
             new QueryBuilder().From.StarterKitEntry().ToSql(),
             new QueryBuilder().From.StashDefinition().ToSql(),
@@ -547,11 +553,14 @@ namespace SpacetimeDB.Types
 
     public sealed class From
     {
-        public global::SpacetimeDB.Table<ActiveSession, ActiveSessionCols, ActiveSessionIxCols> ActiveSession() => new("active_session", new ActiveSessionCols("active_session"), new ActiveSessionIxCols("active_session"));
+        public global::SpacetimeDB.Table<Account, AccountCols, AccountIxCols> Account() => new("account", new AccountCols("account"), new AccountIxCols("account"));
+        public global::SpacetimeDB.Table<CharSession, CharSessionCols, CharSessionIxCols> CharSession() => new("char_session", new CharSessionCols("char_session"), new CharSessionIxCols("char_session"));
+        public global::SpacetimeDB.Table<Character, CharacterCols, CharacterIxCols> Character() => new("character", new CharacterCols("character"), new CharacterIxCols("character"));
+        public global::SpacetimeDB.Table<CharacterAppearance, CharacterAppearanceCols, CharacterAppearanceIxCols> CharacterAppearance() => new("character_appearance", new CharacterAppearanceCols("character_appearance"), new CharacterAppearanceIxCols("character_appearance"));
+        public global::SpacetimeDB.Table<DisconnectLog, DisconnectLogCols, DisconnectLogIxCols> DisconnectLog() => new("disconnect_log", new DisconnectLogCols("disconnect_log"), new DisconnectLogIxCols("disconnect_log"));
         public global::SpacetimeDB.Table<InstructionQueue, InstructionQueueCols, InstructionQueueIxCols> InstructionQueue() => new("instruction_queue", new InstructionQueueCols("instruction_queue"), new InstructionQueueIxCols("instruction_queue"));
         public global::SpacetimeDB.Table<InventorySlot, InventorySlotCols, InventorySlotIxCols> InventorySlot() => new("inventory_slot", new InventorySlotCols("inventory_slot"), new InventorySlotIxCols("inventory_slot"));
         public global::SpacetimeDB.Table<ItemDefinition, ItemDefinitionCols, ItemDefinitionIxCols> ItemDefinition() => new("item_definition", new ItemDefinitionCols("item_definition"), new ItemDefinitionIxCols("item_definition"));
-        public global::SpacetimeDB.Table<Player, PlayerCols, PlayerIxCols> Player() => new("player", new PlayerCols("player"), new PlayerIxCols("player"));
         public global::SpacetimeDB.Table<PlayerConfig, PlayerConfigCols, PlayerConfigIxCols> PlayerConfig() => new("player_config", new PlayerConfigCols("player_config"), new PlayerConfigIxCols("player_config"));
         public global::SpacetimeDB.Table<StarterKitEntry, StarterKitEntryCols, StarterKitEntryIxCols> StarterKitEntry() => new("starter_kit_entry", new StarterKitEntryCols("starter_kit_entry"), new StarterKitEntryIxCols("starter_kit_entry"));
         public global::SpacetimeDB.Table<StashDefinition, StashDefinitionCols, StashDefinitionIxCols> StashDefinition() => new("stash_definition", new StashDefinitionCols("stash_definition"), new StashDefinitionIxCols("stash_definition"));
@@ -638,21 +647,30 @@ namespace SpacetimeDB.Types
             return reducer switch
             {
                 Reducer.AddItem args => Reducers.InvokeAddItem(eventContext, args),
+                Reducer.CheckpointVitals args => Reducers.InvokeCheckpointVitals(eventContext, args),
+                Reducer.CreateCharacter args => Reducers.InvokeCreateCharacter(eventContext, args),
                 Reducer.CreateStash args => Reducers.InvokeCreateStash(eventContext, args),
                 Reducer.CreateVehicleInventory args => Reducers.InvokeCreateVehicleInventory(eventContext, args),
+                Reducer.DeleteCharacter args => Reducers.InvokeDeleteCharacter(eventContext, args),
                 Reducer.DeleteStash args => Reducers.InvokeDeleteStash(eventContext, args),
                 Reducer.DropItemToGround args => Reducers.InvokeDropItemToGround(eventContext, args),
                 Reducer.FindOrCreateGroundStash args => Reducers.InvokeFindOrCreateGroundStash(eventContext, args),
+                Reducer.GiveItemToCharacter args => Reducers.InvokeGiveItemToCharacter(eventContext, args),
                 Reducer.GiveItemToIdentity args => Reducers.InvokeGiveItemToIdentity(eventContext, args),
                 Reducer.MarkInstructionConsumed args => Reducers.InvokeMarkInstructionConsumed(eventContext, args),
                 Reducer.MergeStacks args => Reducers.InvokeMergeStacks(eventContext, args),
                 Reducer.MoveItem args => Reducers.InvokeMoveItem(eventContext, args),
-                Reducer.OnPlayerConnect args => Reducers.InvokeOnPlayerConnect(eventContext, args),
-                Reducer.OnPlayerDisconnect args => Reducers.InvokeOnPlayerDisconnect(eventContext, args),
+                Reducer.ReaperSweep args => Reducers.InvokeReaperSweep(eventContext, args),
                 Reducer.RemoveItem args => Reducers.InvokeRemoveItem(eventContext, args),
                 Reducer.RequestSpawn args => Reducers.InvokeRequestSpawn(eventContext, args),
+                Reducer.SaveAppearance args => Reducers.InvokeSaveAppearance(eventContext, args),
                 Reducer.SeedItem args => Reducers.InvokeSeedItem(eventContext, args),
                 Reducer.SeedStarterKit args => Reducers.InvokeSeedStarterKit(eventContext, args),
+                Reducer.SelectCharacter args => Reducers.InvokeSelectCharacter(eventContext, args),
+                Reducer.SessionClose args => Reducers.InvokeSessionClose(eventContext, args),
+                Reducer.SessionInventoryAck args => Reducers.InvokeSessionInventoryAck(eventContext, args),
+                Reducer.SessionOpen args => Reducers.InvokeSessionOpen(eventContext, args),
+                Reducer.SetAccountMaxCharacters args => Reducers.InvokeSetAccountMaxCharacters(eventContext, args),
                 Reducer.SetPlayerMaxWeight args => Reducers.InvokeSetPlayerMaxWeight(eventContext, args),
                 Reducer.SplitStack args => Reducers.InvokeSplitStack(eventContext, args),
                 Reducer.TransferItem args => Reducers.InvokeTransferItem(eventContext, args),

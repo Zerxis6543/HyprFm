@@ -1,9 +1,3 @@
--- ─────────────────────────────────────────────────────────────────────────────
--- HyprFM Relay — the thin bridge between FiveM natives and SpacetimeDB.
--- Principle: This file NEVER decides game state.
---            It routes instructions, forwards events, and nothing else.
--- ─────────────────────────────────────────────────────────────────────────────
-
 print("[stdb-relay] SERVER MAIN LOADED")
 
 local SIDECAR_URL = "http://127.0.0.1:27200/"
@@ -14,33 +8,34 @@ local SIDECAR_URL = "http://127.0.0.1:27200/"
 -- file within the same resource, can safely reference them.
 -- ═════════════════════════════════════════════════════════════════════════════
 
-_volatileQueue       = {}   -- Instructions injected by InvokeNative — no HTTP cost
-_identityToServerId  = {}   -- player identity hex  → FiveM server_id
-_openStashToServerId = {}   -- stash_id / plate     → FiveM server_id
-                            -- Both maps populated when any inventory panel opens
-                            -- and cleared on close/disconnect. Together they cover
-                            -- every panel type the delta push loop needs to reach.
-_propOwnerServerId   = {}   -- ground stash_id → FiveM server_id of the player who
-                            -- DROPPED the item and spawned the world prop.
-                            -- Set when stdb:spawnWorldDrop fires.
-                            -- NEVER cleared by stdb:closeInventory — only cleared
-                            -- when the stash empties and the prop is deleted.
-                            -- This prevents the close-before-delta race condition.
+_volatileQueue       = {}
+_identityToServerId  = {}
+_openStashToServerId = {}
+_propOwnerServerId   = {}
+_syncReady            = false   -- true once the sidecar subscription is live
+_pendingRegistrations = {}
 
--- ═════════════════════════════════════════════════════════════════════════════
+local function _flushPendingRegistrations()
+    _syncReady = true
+    for _, reg in ipairs(_pendingRegistrations) do
+        exports['stdb-relay']:RegisterOpcode(reg.label, reg.handler, reg.cb)
+    end
+    _pendingRegistrations = {}
+end
+
+- ═════════════════════════════════════════════════════════════════════════════
 -- OPCODE DISPATCHER TABLE
 -- Pre-allocated once at resource start; each entry is a pure function.
 -- Mirrors opcodes.rs exactly — add entries here when new opcodes are added.
 -- ═════════════════════════════════════════════════════════════════════════════
 
--- Helper: resolve net_id → owning FiveM player server-id
 local function netToPlayer(netId)
     local entity = NetworkGetEntityFromNetworkId(netId)
     if not entity or entity == 0 then return nil end
     return NetworkGetEntityOwner(entity)
 end
 
-local Dispatcher = {}
+Dispatcher = {}
 
 -- 0x1001  ENTITY:SET_COORDS  — teleport ped to world coordinates
 Dispatcher[0x1001] = function(netId, args)
@@ -368,6 +363,7 @@ AddEventHandler("onResourceStart", function(resourceName)
                 TriggerClientEvent("stdb:reconnect", src)
             end
         end
+            _flushPendingRegistrations()
     end)
 end)
 

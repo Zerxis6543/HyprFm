@@ -12,17 +12,17 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void OnPlayerDisconnectHandler(ReducerEventContext ctx, string steamHex);
-        public event OnPlayerDisconnectHandler? OnOnPlayerDisconnect;
+        public delegate void SetAccountMaxCharactersHandler(ReducerEventContext ctx, string steamHex, uint max);
+        public event SetAccountMaxCharactersHandler? OnSetAccountMaxCharacters;
 
-        public void OnPlayerDisconnect(string steamHex)
+        public void SetAccountMaxCharacters(string steamHex, uint max)
         {
-            conn.InternalCallReducer(new Reducer.OnPlayerDisconnect(steamHex));
+            conn.InternalCallReducer(new Reducer.SetAccountMaxCharacters(steamHex, max));
         }
 
-        public bool InvokeOnPlayerDisconnect(ReducerEventContext ctx, Reducer.OnPlayerDisconnect args)
+        public bool InvokeSetAccountMaxCharacters(ReducerEventContext ctx, Reducer.SetAccountMaxCharacters args)
         {
-            if (OnOnPlayerDisconnect == null)
+            if (OnSetAccountMaxCharacters == null)
             {
                 if (InternalOnUnhandledReducerError != null)
                 {
@@ -34,9 +34,10 @@ namespace SpacetimeDB.Types
                 }
                 return false;
             }
-            OnOnPlayerDisconnect(
+            OnSetAccountMaxCharacters(
                 ctx,
-                args.SteamHex
+                args.SteamHex,
+                args.Max
             );
             return true;
         }
@@ -46,22 +47,28 @@ namespace SpacetimeDB.Types
     {
         [SpacetimeDB.Type]
         [DataContract]
-        public sealed partial class OnPlayerDisconnect : Reducer, IReducerArgs
+        public sealed partial class SetAccountMaxCharacters : Reducer, IReducerArgs
         {
             [DataMember(Name = "steam_hex")]
             public string SteamHex;
+            [DataMember(Name = "max")]
+            public uint Max;
 
-            public OnPlayerDisconnect(string SteamHex)
+            public SetAccountMaxCharacters(
+                string SteamHex,
+                uint Max
+            )
             {
                 this.SteamHex = SteamHex;
+                this.Max = Max;
             }
 
-            public OnPlayerDisconnect()
+            public SetAccountMaxCharacters()
             {
                 this.SteamHex = "";
             }
 
-            string IReducerArgs.ReducerName => "on_player_disconnect";
+            string IReducerArgs.ReducerName => "set_account_max_characters";
         }
     }
 }

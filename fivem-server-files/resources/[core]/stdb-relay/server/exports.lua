@@ -289,9 +289,6 @@ exports("HasItem", function(serverId, itemId, quantity, cb)
     end
 end)
 
---- Register a persistent world stash. Idempotent — safe to call on restart.
---- The Rust reducer skips insertion if stash_id already exists.
----
 --- @param stashId   string   Unique stash identifier
 --- @param label     string   Display label shown in NUI
 --- @param maxSlots  number
@@ -311,23 +308,64 @@ exports("RegisterStash", function(stashId, label, maxSlots, maxWeight, x, y, z)
     )
 end)
 
--- ─────────────────────────────────────────────────────────────────────────────
--- USAGE SUMMARY FOR THIRD-PARTY RESOURCE DEVELOPERS:
---
---  State mutations (always Commit):
---    exports['stdb-relay']:Commit("give_item_to_player",
---        { server_id = src, item_id = "medkit", quantity = 1 },
---        function(ok, result) end)
---
---    exports['stdb-relay']:Commit("use_item",
---        { slot_id = slotId, net_id = netId })
---
---  Cosmetic / volatile (InvokeNative, ENGINE domain only):
---    exports['stdb-relay']:InvokeNative(Opcode.Effect.Heal, netId, { 40 })
---    exports['stdb-relay']:InvokeNative(Opcode.Engine.CallLocalNative, netId,
---        { "PLAY_SOUND_FRONTEND", -1, "Beep_Red", "DLC_HEIST_HACKING_SNAKE_SOUNDS" })
---
---  Convenience shortcuts:
---    exports['stdb-relay']:AddItemToPlayer(src, "lockpick", 1, cb)
---    exports['stdb-relay']:HasItem(src, "lockpick", 1, function(has, count) end)
--- ─────────────────────────────────────────────────────────────────────────────
+-- ── OPCODE REGISTRATION ───────────────────────────────────────────────────────
+exports("RegisterOpcode", function(label, handler, cb)
+    if not _syncReady then
+        table.insert(_pendingRegistrations, { label = label, handler = handler, cb = cb })
+        return
+    end
+
+    PerformHttpRequest(SIDECAR_URL .. "reducer",
+        function(status, body, _)
+            if status ~= 200 or not body then
+                print(("[hyprfm] RegisterOpcode: sidecar unreachable for label '%s'"):format(label))
+                return
+            end
+            local ok, data = pcall(json.decode, body)
+            if not ok or not data or not data.ok then
+                print(("[hyprfm] RegisterOpcode: allocation failed for '%s': %s"):format(
+                    label, (ok and data and data.error) or "unknown"))
+                return
+            end
+
+            local opcode = data.opcode
+
+            -- Wire into the live Dispatcher — the poll loop routes here immediately
+            Dispatcher[opcode] = function(netId, args)
+                local ok2, err = pcall(handler, netId, args)
+                if not ok2 then
+                    print(("[hyprfm] RegisterOpcode handler error [%s / 0x%04X]: %s"):format(
+                        label, opcode, tostring(err)))
+                end
+            end
+
+            print(("[hyprfm] RegisterOpcode: '%s' → 0x%04X"):format(label, opcode))
+            if cb then cb(opcode) end
+        end,
+        "POST",
+        json.encode({ name = "allocate_opcode", args = {
+            context     = label,   -- label is the context; Rust idempotency guards duplicates
+            steam_hex   = "",      -- server-owned, not player-bound
+            net_id      = 0,
+            ttl_seconds = 0,       -- permanent — Reaper skips u64::MAX rows
+        }}),
+        { ["Content-Type"] = "application/json" }
+    )
+end)
+
+-- Explicit deregistration — use when a resource is unloaded cleanly.
+-- The Reaper never touches permanent rows, so this is the only way to free
+-- a RegisterOpcode slot without restarting SpacetimeDB.
+exports("DeregisterOpcode", function(label, cb)
+    Dispatcher = Dispatcher or {}
+    -- Remove from local Dispatcher (find by label via a reverse scan)
+    -- We don't store label→opcode locally, so we let the sidecar/Rust handle it
+    PerformHttpRequest(SIDECAR_URL .. "reducer",
+        function(status, _, _)
+            if cb then cb(status == 200) end
+        end,
+        "POST",
+        json.encode({ name = "deregister_opcode", args = { label = label } }),
+        { ["Content-Type"] = "application/json" }
+    )
+end)

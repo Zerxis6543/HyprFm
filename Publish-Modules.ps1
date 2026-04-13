@@ -30,8 +30,8 @@ dotnet build
 if ($LASTEXITCODE -ne 0) { Write-Host "[Publish] Sidecar build failed." -ForegroundColor Red; exit 1 }
 
 Write-Host "[Publish] Building NUI..." -ForegroundColor Cyan
-Set-Location -LiteralPath "G:\FivemSTDBProject\HyprFm\fivem-server-files\resources\[core]\stdb-inventory\web"
+Set-Location -LiteralPath "G:\FivemSTDBProject\HyprFm\fivem-server-files\resources\[core]\hyprfm-ui\web"
 npm run build
 if ($LASTEXITCODE -ne 0) { Write-Host "[Publish] NUI build failed." -ForegroundColor Red; exit 1 }
 
-Write-Host "[Publish] All done. Restart stdb-inventory in the FiveM console." -ForegroundColor Green
+Write-Host "[Publish] All done. Restart hyprfm-ui in the FiveM console." -ForegroundColor Green

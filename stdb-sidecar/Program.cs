@@ -29,6 +29,26 @@ class Program
     static long     _deltaFireCount = 0;
     static DateTime _lastDeltaTime  = DateTime.MinValue;
 
+    // ── DYNAMIC OPCODE CACHE ──────────────────────────────────────────────────────
+    // Mirrors the SpacetimeDB dynamic_opcode table. Populated/evicted by delta
+    // callbacks. ValidateDynamicOpcode() is the nanosecond fast-path gate.
+
+    record DynamicOpcodeEntry(
+        string Context,
+        string OwnerSteamHex,
+        uint   NetId,
+        ulong  ExpiresAtMicros   // u64::MAX = permanent RegisterOpcode label
+    );
+
+    static readonly ConcurrentDictionary<ushort, DynamicOpcodeEntry>
+        _dynamicOpcodes = new();
+
+    // Correlation map: context label → TCS resolved by OnInsert delta.
+    // HTTP allocate_opcode handler registers before calling the reducer so
+    // the delta cannot arrive before the TCS is in place.
+    static readonly ConcurrentDictionary<string, TaskCompletionSource<ushort>>
+        _pendingAllocations = new();
+
     // ─────────────────────────────────────────────────────────────────────────
     // IDENTITY REGISTRY
     //
@@ -114,24 +134,25 @@ class Program
         }
     }
 
-    static void OnConnected(DbConnection conn, Identity identity, string token)
-    {
-        Console.WriteLine($"[Sidecar] Connected. Identity: {identity}");
-        conn.SubscriptionBuilder()
-            .OnApplied(OnSubscriptionReady)
-            .Subscribe(new[]
-            {
-                "SELECT * FROM instruction_queue WHERE consumed = false",
-                "SELECT * FROM char_session",
-                "SELECT * FROM account",
-                "SELECT * FROM character",
-                "SELECT * FROM character_appearance",
-                "SELECT * FROM inventory_slot",
-                "SELECT * FROM item_definition",
-                "SELECT * FROM vehicle_inventory",
-                "SELECT * FROM stash_definition",
-            });
-    }
+        static void OnConnected(DbConnection conn, Identity identity, string token)
+        {
+            Console.WriteLine($"[Sidecar] Connected. Identity: {identity}");
+            conn.SubscriptionBuilder()
+                .OnApplied(OnSubscriptionReady)
+                .Subscribe(new[]
+                {
+                    "SELECT * FROM instruction_queue WHERE consumed = false",
+                    "SELECT * FROM char_session",
+                    "SELECT * FROM account",
+                    "SELECT * FROM character",
+                    "SELECT * FROM character_appearance",
+                    "SELECT * FROM inventory_slot",
+                    "SELECT * FROM item_definition",
+                    "SELECT * FROM vehicle_inventory",
+                    "SELECT * FROM stash_definition",
+                    "SELECT * FROM dynamic_opcode",
+                });
+        }
 
     // ─────────────────────────────────────────────────────────────────────────
     // SUBSCRIPTION CALLBACKS
@@ -199,6 +220,69 @@ class Program
         var charCount   = _db!.Db.Character.Iter().Count();
         var sessionCount = _db!.Db.CharSession.Iter().Count();
         Console.WriteLine($"[Sidecar] Hydrated: chars={charCount} sessions={sessionCount} slots={slotCount}");
+
+        WireDynamicOpcodeDeltas();
+
+        // ─────────────────────────────────────────────────────────────────────────────
+
+        static void WireDynamicOpcodeDeltas()
+        {
+            _db!.Db.DynamicOpcode.OnInsert += (_, row) =>
+            {
+                _dynamicOpcodes[(ushort)row.Opcode] = new DynamicOpcodeEntry(
+                    row.Context, row.OwnerSteamHex, row.NetId, row.ExpiresAtMicros);
+
+                Console.WriteLine($"[Opcode] ALLOCATED 0x{row.Opcode:X4} ctx='{row.Context}' permanent={row.ExpiresAtMicros == ulong.MaxValue}");
+
+                // Resolve any HTTP caller awaiting this allocation
+                if (_pendingAllocations.TryRemove(row.Context, out var tcs))
+                    tcs.TrySetResult((ushort)row.Opcode);
+            };
+
+            _db!.Db.DynamicOpcode.OnUpdate += (_, _, newRow) =>
+            {
+                // is_consumed = true → proactive eviction before the Reaper's OnDelete
+                if (newRow.IsConsumed)
+                {
+                    _dynamicOpcodes.TryRemove((ushort)newRow.Opcode, out _);
+                    Console.WriteLine($"[Opcode] CONSUMED  0x{newRow.Opcode:X4} — evicted");
+                }
+                else
+                {
+                    // Update in place (e.g. expiry extension, context change)
+                    _dynamicOpcodes[(ushort)newRow.Opcode] = new DynamicOpcodeEntry(
+                        newRow.Context, newRow.OwnerSteamHex, newRow.NetId, newRow.ExpiresAtMicros);
+                }
+            };
+
+            _db!.Db.DynamicOpcode.OnDelete += (_, row) =>
+            {
+                _dynamicOpcodes.TryRemove((ushort)row.Opcode, out _);
+                Console.WriteLine($"[Opcode] RECYCLED  0x{row.Opcode:X4} ctx='{row.Context}'");
+            };
+
+            // Hydrate from any opcodes that pre-existed this sidecar instance
+            foreach (var row in _db!.Db.DynamicOpcode.Iter())
+                _dynamicOpcodes[(ushort)row.Opcode] = new DynamicOpcodeEntry(
+                    row.Context, row.OwnerSteamHex, row.NetId, row.ExpiresAtMicros);
+
+            Console.WriteLine($"[Opcode] Cache hydrated — {_dynamicOpcodes.Count} active opcodes");
+        }
+
+        /// Fast-path validation. Returns false if unknown OR expiring within 500ms.
+        /// Permanent rows (ExpiresAtMicros == ulong.MaxValue) always pass the time check.
+        static bool ValidateDynamicOpcode(ushort opcode, out DynamicOpcodeEntry? entry)
+        {
+            if (!_dynamicOpcodes.TryGetValue(opcode, out entry)) return false;
+            if (entry.ExpiresAtMicros == ulong.MaxValue) return true; // permanent label
+            var nowMicros = (ulong)(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1_000L);
+            if (entry.ExpiresAtMicros <= nowMicros + 500_000UL)
+            {
+                _dynamicOpcodes.TryRemove(opcode, out _);
+                return false;
+            }
+            return true;
+        }
 
         _syncGate.Release();
     }
@@ -1040,12 +1124,139 @@ class Program
                         return;
                     }
 
+                    case "allocate_opcode":
+                    {
+                        var steamHex = args.TryGetProperty("steam_hex", out var sh) ? sh.GetString() ?? "" : "";
+                        if (string.IsNullOrEmpty(steamHex) && args.TryGetProperty("server_id", out var sidEl2))
+                            steamHex = ResolveSession(sidEl2.GetUInt32())?.SteamHex ?? "";
+
+                        uint  netId      = args.TryGetProperty("net_id",      out var ni) ? ni.GetUInt32() : 0;
+                        ulong ttlSeconds = args.TryGetProperty("ttl_seconds", out var ts) ? ts.GetUInt64() : 3600;
+                        string label     = args.TryGetProperty("context",     out var cl) ? cl.GetString() ?? "unnamed" : "unnamed";
+
+                        // For permanent RegisterOpcode calls the label is already unique.
+                        // For player-session allocations prefix a UUID so concurrent requests
+                        // for the same logical label don't collide in the context guard.
+                        string context = ttlSeconds == 0
+                            ? label
+                            : $"{Guid.NewGuid().ToString("N")[..12]}:{label}";
+
+                        var tcs = new TaskCompletionSource<ushort>(TaskCreationOptions.RunContinuationsAsynchronously);
+                        _pendingAllocations[context] = tcs;
+
+                        try
+                        {
+                            _db!.Reducers.AllocateOpcode(context, steamHex, netId, ttlSeconds);
+                        }
+                        catch (Exception ex)
+                        {
+                            _pendingAllocations.TryRemove(context, out _);
+                            await WriteJson(ctx, new { ok = false, error = ex.Message });
+                            return;
+                        }
+
+                        // For permanent labels the Rust idempotency path may skip insertion
+                        // entirely and fire no OnInsert — resolve via cache lookup as fallback.
+                        var winner = await Task.WhenAny(tcs.Task, Task.Delay(2000));
+                        if (winner == tcs.Task && tcs.Task.IsCompleted)
+                        {
+                            await WriteJson(ctx, new
+                            {
+                                ok                 = true,
+                                opcode             = tcs.Task.Result,
+                                context,
+                                permanent          = ttlSeconds == 0,
+                                expires_in_seconds = ttlSeconds,
+                            });
+                        }
+                        else
+                        {
+                            // Fallback: the Rust idempotency branch returned Ok without inserting.
+                            // Look up the existing row directly from the live cache.
+                            var existing = _dynamicOpcodes
+                                .FirstOrDefault(kv => kv.Value.Context == context);
+                            if (existing.Value != null)
+                            {
+                                _pendingAllocations.TryRemove(context, out _);
+                                await WriteJson(ctx, new
+                                {
+                                    ok      = true,
+                                    opcode  = existing.Key,
+                                    context,
+                                    permanent          = true,
+                                    expires_in_seconds = ttlSeconds,
+                                });
+                            }
+                            else
+                            {
+                                _pendingAllocations.TryRemove(context, out _);
+                                await WriteJson(ctx, new { ok = false, error = "allocation_timeout" });
+                            }
+                        }
+                        return;
+                    }
+
+                    case "consume_opcode":
+                    {
+                        var rawOpcode = (ushort)args.GetProperty("opcode").GetUInt16();
+                        if (!ValidateDynamicOpcode(rawOpcode, out _))
+                        {
+                            await WriteJson(ctx, new { ok = false, error = "OPCODE_INVALID_OR_EXPIRED" });
+                            return;
+                        }
+                        try
+                        {
+                            _db!.Reducers.ConsumeOpcode(rawOpcode);
+                            await WriteJson(ctx, new { ok = true });
+                        }
+                        catch (Exception ex)
+                        {
+                            await WriteJson(ctx, new { ok = false, error = ex.Message });
+                        }
+                        return;
+                    }
+
+                    case "release_opcode":
+                    {
+                        var rawOpcode = (ushort)args.GetProperty("opcode").GetUInt16();
+                        _db!.Reducers.ReleaseOpcode(rawOpcode);
+                        await WriteJson(ctx, new { ok = true });
+                        return;
+                    }
+
+                    case "deregister_opcode":
+                    {
+                        var label2 = args.GetProperty("label").GetString() ?? "";
+                        _db!.Reducers.DeregisterOpcode(label2);
+                        await WriteJson(ctx, new { ok = true });
+                        return;
+                    }
+
                     default:
                         Console.WriteLine($"[Sidecar] Unknown reducer: {name}");
                         ctx.Response.StatusCode = 400; ctx.Response.Close(); return;
                 }
 
                 ctx.Response.StatusCode = 200; ctx.Response.Close();
+                return;
+            }
+
+            // ── GET /validate-opcode?opcode=16385 ────────────────────────────────────────
+            if (ctx.Request.HttpMethod == "GET" && path == "/validate-opcode")
+            {
+                var qs = System.Web.HttpUtility.ParseQueryString(ctx.Request.Url?.Query ?? "");
+                if (!ushort.TryParse(qs["opcode"], out var op))
+                { ctx.Response.StatusCode = 400; ctx.Response.Close(); return; }
+                var valid = ValidateDynamicOpcode(op, out var entry);
+                await WriteJson(ctx, new
+                {
+                    valid,
+                    opcode    = op,
+                    context   = entry?.Context,
+                    owner     = entry?.OwnerSteamHex,
+                    net_id    = entry?.NetId,
+                    permanent = entry?.ExpiresAtMicros == ulong.MaxValue,
+                });
                 return;
             }
 

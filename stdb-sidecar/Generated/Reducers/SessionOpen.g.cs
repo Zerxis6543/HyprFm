@@ -12,17 +12,17 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void SetPlayerMaxWeightHandler(ReducerEventContext ctx, string ownerId, float maxKg);
-        public event SetPlayerMaxWeightHandler? OnSetPlayerMaxWeight;
+        public delegate void SessionOpenHandler(ReducerEventContext ctx, string steamHex, string displayName);
+        public event SessionOpenHandler? OnSessionOpen;
 
-        public void SetPlayerMaxWeight(string ownerId, float maxKg)
+        public void SessionOpen(string steamHex, string displayName)
         {
-            conn.InternalCallReducer(new Reducer.SetPlayerMaxWeight(ownerId, maxKg));
+            conn.InternalCallReducer(new Reducer.SessionOpen(steamHex, displayName));
         }
 
-        public bool InvokeSetPlayerMaxWeight(ReducerEventContext ctx, Reducer.SetPlayerMaxWeight args)
+        public bool InvokeSessionOpen(ReducerEventContext ctx, Reducer.SessionOpen args)
         {
-            if (OnSetPlayerMaxWeight == null)
+            if (OnSessionOpen == null)
             {
                 if (InternalOnUnhandledReducerError != null)
                 {
@@ -34,10 +34,10 @@ namespace SpacetimeDB.Types
                 }
                 return false;
             }
-            OnSetPlayerMaxWeight(
+            OnSessionOpen(
                 ctx,
-                args.OwnerId,
-                args.MaxKg
+                args.SteamHex,
+                args.DisplayName
             );
             return true;
         }
@@ -47,28 +47,29 @@ namespace SpacetimeDB.Types
     {
         [SpacetimeDB.Type]
         [DataContract]
-        public sealed partial class SetPlayerMaxWeight : Reducer, IReducerArgs
+        public sealed partial class SessionOpen : Reducer, IReducerArgs
         {
-            [DataMember(Name = "owner_id")]
-            public string OwnerId;
-            [DataMember(Name = "max_kg")]
-            public float MaxKg;
+            [DataMember(Name = "steam_hex")]
+            public string SteamHex;
+            [DataMember(Name = "display_name")]
+            public string DisplayName;
 
-            public SetPlayerMaxWeight(
-                string OwnerId,
-                float MaxKg
+            public SessionOpen(
+                string SteamHex,
+                string DisplayName
             )
             {
-                this.OwnerId = OwnerId;
-                this.MaxKg = MaxKg;
+                this.SteamHex = SteamHex;
+                this.DisplayName = DisplayName;
             }
 
-            public SetPlayerMaxWeight()
+            public SessionOpen()
             {
-                this.OwnerId = "";
+                this.SteamHex = "";
+                this.DisplayName = "";
             }
 
-            string IReducerArgs.ReducerName => "set_player_max_weight";
+            string IReducerArgs.ReducerName => "session_open";
         }
     }
 }

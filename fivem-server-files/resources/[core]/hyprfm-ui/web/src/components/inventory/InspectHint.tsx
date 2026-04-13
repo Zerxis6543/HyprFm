@@ -1,5 +1,5 @@
-import { useInventoryStore } from '../store'
-import { itemIcon } from '../types'
+import { useInventoryStore } from '../../store'
+import { itemIcon } from '../../types'
 
 export function InspectHint() {
   const inspectMode = useInventoryStore(s => s.inspectMode)
@@ -33,11 +33,11 @@ export function InspectHint() {
       </div>
       <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
       {[
-        { key: 'E', label: 'PLACE' },
-        { key: 'G', label: 'GIVE' },
+        { key: 'E',    label: 'PLACE' },
+        { key: 'G',    label: 'GIVE' },
         ...(isThrowable ? [
-          { key: 'RMB', label: 'AIM' },
-          { key: 'LMB', label: 'THROW' },
+          { key: 'RMB',  label: 'AIM' },
+          { key: 'LMB',  label: 'THROW' },
         ] : []),
         { key: 'BKSP', label: 'CANCEL' },
       ].map(({ key, label }) => (

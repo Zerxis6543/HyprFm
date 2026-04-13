@@ -1,34 +1,26 @@
 use spacetimedb::{ReducerContext, Table};
 use crate::tables::*;
 use serde_json::json;
-use stdb_core::opcodes;
+use stdb_core::opcodes::{self, dynamic::{DOMAIN_MIN, DOMAIN_MAX}};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTS
 // ─────────────────────────────────────────────────────────────────────────────
 
-const DEFAULT_SPAWN_X:      f32 = -269.0;
-const DEFAULT_SPAWN_Y:      f32 = -955.0;
-const DEFAULT_SPAWN_Z:      f32 =   31.0;
-const DEFAULT_HEADING:      f32 =  205.0;
+const DEFAULT_SPAWN_X:        f32 = -269.0;
+const DEFAULT_SPAWN_Y:        f32 = -955.0;
+const DEFAULT_SPAWN_Z:        f32 =   31.0;
+const DEFAULT_HEADING:        f32 =  205.0;
 const DEFAULT_MAX_CHARACTERS: u32 = 3;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OWNER ID HELPERS
-//
-// These are the ONLY places that construct owner_id strings for player inventory.
-// All reducers call these functions — never format! owner strings inline.
-// Changing the format here updates every callsite in one compile pass.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Canonical owner_id for a character's pocket inventory slots.
-/// e.g. character_id 42 → "42"
 fn char_owner_id(character_id: u64) -> String {
     format!("{}", character_id)
 }
 
-/// Canonical owner_id for a character's equipment slot.
-/// e.g. character_id 42, key "weapon_primary" → "42_equip_weapon_primary"
 fn char_equip_owner_id(character_id: u64, equip_key: &str) -> String {
     format!("{}_equip_{}", character_id, equip_key)
 }
@@ -53,6 +45,205 @@ fn build_starter_metadata(ctx: &ReducerContext, def: &ItemDefinition, suffix: u3
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// MODULE INITIALISATION
+// Runs once when the SpacetimeDB module is first published.
+// Seeds the allocator cursor and arms the 12-hour Reaper.
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[spacetimedb::reducer(init)]
+pub fn init(ctx: &ReducerContext) {
+    if ctx.db.opcode_allocator().id().find(0).is_none() {
+        ctx.db.opcode_allocator().insert(OpcodeAllocator {
+            id:             0,
+            next_candidate: DOMAIN_MIN,
+        });
+    }
+    ctx.db.reaper_schedule().insert(ReaperSchedule {
+        scheduled_id: 0,
+        scheduled_at: spacetimedb::ScheduleAt::Interval(
+            std::time::Duration::from_secs(12 * 3600)
+        ),
+    });
+    log::info!("[init] Opcode allocator seeded. Reaper scheduled every 12h.");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DYNAMIC OPCODE — ALLOCATE
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[spacetimedb::reducer]
+pub fn allocate_opcode(
+    ctx:             &ReducerContext,
+    context:         String,
+    owner_steam_hex: String,
+    net_id:          u32,
+    ttl_seconds:     u64,
+) -> Result<(), String> {
+    // Idempotent for permanent label registrations: if the label already has
+    // a permanent slot (expires_at == u64::MAX), return success without
+    // allocating a second number. This makes RegisterOpcode safe to call on
+    // every resource restart without leaking slots.
+    if let Some(existing) = ctx.db.dynamic_opcode().iter().find(|o| o.context == context) {
+        if existing.expires_at_micros == u64::MAX {
+            log::info!("[opcode] Label '{}' already registered at 0x{:04X} — skipping", context, existing.opcode);
+            return Ok(());
+        }
+        // Non-permanent context collision — reject
+        return Err(format!("OPCODE_CONTEXT_CONFLICT|context '{}' already active", context));
+    }
+
+    let mut alloc = ctx.db.opcode_allocator().id().find(0)
+        .ok_or("ALLOCATOR_NOT_SEEDED")?;
+
+    let scan_start = alloc.next_candidate;
+    let mut candidate = scan_start;
+    let mut found: Option<u16> = None;
+
+    loop {
+        if ctx.db.dynamic_opcode().opcode().find(candidate).is_none() {
+            found = Some(candidate);
+            alloc.next_candidate = if candidate >= DOMAIN_MAX {
+                DOMAIN_MIN
+            } else {
+                candidate + 1
+            };
+            break;
+        }
+        candidate = if candidate >= DOMAIN_MAX { DOMAIN_MIN } else { candidate + 1 };
+        if candidate == scan_start {
+            return Err("OPCODE_POOL_EXHAUSTED|all 16384 dynamic slots are active".to_string());
+        }
+    }
+
+    let opcode = found.unwrap();
+
+    let now_micros = ctx.timestamp.to_micros_since_unix_epoch() as u64;
+
+    // ttl_seconds = 0 → permanent registration (RegisterOpcode path).
+    // Reaper skips rows where expires_at_micros == u64::MAX.
+    let expires_at = if ttl_seconds == 0 {
+        u64::MAX
+    } else {
+        now_micros.saturating_add(ttl_seconds * 1_000_000)
+    };
+
+    ctx.db.dynamic_opcode().insert(DynamicOpcode {
+        opcode,
+        context,
+        owner_steam_hex,
+        net_id,
+        allocated_at:      ctx.timestamp,
+        expires_at_micros: expires_at,
+        is_consumed:       false,
+    });
+
+    ctx.db.opcode_allocator().id().update(alloc);
+
+    log::info!(
+        "[opcode] Allocated 0x{:04X} ttl={}s permanent={}",
+        opcode, ttl_seconds, ttl_seconds == 0
+    );
+    Ok(())
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DYNAMIC OPCODE — CONSUME
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[spacetimedb::reducer]
+pub fn consume_opcode(ctx: &ReducerContext, opcode: u16) -> Result<(), String> {
+    let mut entry = ctx.db.dynamic_opcode().opcode().find(opcode)
+        .ok_or("OPCODE_NOT_FOUND")?;
+
+    if entry.is_consumed {
+        return Err("OPCODE_ALREADY_CONSUMED".to_string());
+    }
+
+    // Permanent registrations (RegisterOpcode) are never consumed — they are
+    // only called, not used up. Guard against accidental consumption.
+    if entry.expires_at_micros == u64::MAX {
+        return Err("OPCODE_PERMANENT|registered opcodes cannot be consumed".to_string());
+    }
+
+    let now_micros = ctx.timestamp.to_micros_since_unix_epoch() as u64;
+    if entry.expires_at_micros <= now_micros {
+        ctx.db.dynamic_opcode().opcode().delete(opcode);
+        return Err("OPCODE_EXPIRED".to_string());
+    }
+
+    entry.is_consumed = true;
+    ctx.db.dynamic_opcode().opcode().update(entry);
+    log::info!("[opcode] Consumed 0x{:04X}", opcode);
+    Ok(())
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DYNAMIC OPCODE — RELEASE (explicit early cleanup)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[spacetimedb::reducer]
+pub fn release_opcode(ctx: &ReducerContext, opcode: u16) {
+    // Guard: never release a permanent registration via this path
+    if let Some(entry) = ctx.db.dynamic_opcode().opcode().find(opcode) {
+        if entry.expires_at_micros == u64::MAX {
+            log::warn!("[opcode] release_opcode: 0x{:04X} is permanent — use deregister_opcode to remove it", opcode);
+            return;
+        }
+    }
+    if ctx.db.dynamic_opcode().opcode().find(opcode).is_some() {
+        ctx.db.dynamic_opcode().opcode().delete(opcode);
+        log::info!("[opcode] Released 0x{:04X} (explicit)", opcode);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DYNAMIC OPCODE — DEREGISTER (remove a permanent RegisterOpcode label)
+// Called if a resource is unloaded and its labels should be freed.
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[spacetimedb::reducer]
+pub fn deregister_opcode(ctx: &ReducerContext, label: String) {
+    if let Some(entry) = ctx.db.dynamic_opcode().iter().find(|o| o.context == label) {
+        let opcode = entry.opcode;
+        ctx.db.dynamic_opcode().opcode().delete(opcode);
+        log::info!("[opcode] Deregistered '{}' 0x{:04X}", label, opcode);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// REAPER SWEEP (12-hour scheduled)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[spacetimedb::reducer]
+pub fn opcode_reaper_sweep(ctx: &ReducerContext, _schedule: ReaperSchedule) {
+    let now_micros = ctx.timestamp.to_micros_since_unix_epoch() as u64;
+
+    let expired: Vec<DynamicOpcode> = ctx.db.dynamic_opcode().iter()
+        .filter(|o| {
+            // Never reap permanent registrations
+            if o.expires_at_micros == u64::MAX { return false; }
+            o.expires_at_micros <= now_micros || o.is_consumed
+        })
+        .collect();
+
+    let count = expired.len();
+    for entry in expired {
+        let reason = if entry.is_consumed { "consumed" } else { "ttl_expired" };
+        log::warn!(
+            "[reaper] Recycling 0x{:04X} ctx='{}' reason={} owner={}",
+            entry.opcode, entry.context, reason, entry.owner_steam_hex
+        );
+        ctx.db.dynamic_opcode().opcode().delete(entry.opcode);
+    }
+
+    if count > 0 {
+        log::info!("[reaper] Sweep complete — recycled {} opcode(s)", count);
+    } else {
+        log::info!("[reaper] Sweep complete — pool clean");
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CORE
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -68,10 +259,6 @@ pub fn mark_instruction_consumed(ctx: &ReducerContext, id: u64) {
 // SESSION LIFECYCLE
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Step 1 of 2 in the connect flow.
-/// Validates the account and updates display name.
-/// Does NOT create a CharSession — that happens in select_character (step 2).
-/// Returns Err("BANNED|reason") if the account is banned.
 #[spacetimedb::reducer]
 pub fn session_open(
     ctx:          &ReducerContext,
@@ -100,9 +287,6 @@ pub fn session_open(
     Ok(())
 }
 
-/// Step 2 of 2 in the connect flow.
-/// Called after the player confirms character selection in the NUI.
-/// Writes the CharSession row and the sidecar can then fetch inventory + spawn.
 #[spacetimedb::reducer]
 pub fn select_character(
     ctx:          &ReducerContext,
@@ -111,7 +295,6 @@ pub fn select_character(
     server_id:    u32,
     net_id:       u32,
 ) -> Result<(), String> {
-    // Verify ownership and active status
     let character = ctx.db.character().id().find(character_id)
         .ok_or("CHAR_NOT_FOUND")?;
     if character.steam_hex != steam_hex {
@@ -120,8 +303,6 @@ pub fn select_character(
     if character.is_deleted {
         return Err("CHAR_DELETED|Character has been deleted".to_string());
     }
-
-    // Clear any stale session (dirty disconnect guard)
     if let Some(stale) = ctx.db.char_session().steam_hex().find(&steam_hex) {
         log::warn!(
             "[session] Clearing stale session for {} (char_id={}, server_id={})",
@@ -129,7 +310,6 @@ pub fn select_character(
         );
         ctx.db.char_session().steam_hex().delete(steam_hex.clone());
     }
-
     ctx.db.char_session().insert(CharSession {
         steam_hex:     steam_hex.clone(),
         character_id,
@@ -138,7 +318,6 @@ pub fn select_character(
         connected_at:  ctx.timestamp,
         inventory_ack: false,
     });
-
     log::info!(
         "[session] {} selected char_id={} '{}' (slot {})",
         steam_hex, character_id, character.name, character.slot_index
@@ -146,21 +325,15 @@ pub fn select_character(
     Ok(())
 }
 
-/// Called after get_player_inventory succeeds on the sidecar.
-/// Marks session hydrated and distributes the starter kit to brand-new characters.
 #[spacetimedb::reducer]
 pub fn session_inventory_ack(ctx: &ReducerContext, steam_hex: String) -> Result<(), String> {
     let mut session = ctx.db.char_session().steam_hex().find(&steam_hex)
         .ok_or_else(|| format!("No session for {}", steam_hex))?;
-
     if session.inventory_ack { return Ok(()); }
-
     let char_id  = session.character_id;
     let owner_id = char_owner_id(char_id);
-
     let has_items = ctx.db.inventory_slot().iter()
         .any(|s| s.owner_id == owner_id && s.owner_type == "player");
-
     if !has_items {
         let starters: Vec<StarterKitEntry> = ctx.db.starter_kit_entry().iter().collect();
         for (idx, entry) in starters.iter().enumerate() {
@@ -183,14 +356,11 @@ pub fn session_inventory_ack(ctx: &ReducerContext, steam_hex: String) -> Result<
         }
         log::info!("[session] Starter kit distributed to char_id={}", char_id);
     }
-
     session.inventory_ack = true;
     ctx.db.char_session().steam_hex().update(session);
     Ok(())
 }
 
-/// Clean disconnect — persists final vitals and tears down the session.
-/// If this reducer never fires (crash), the Reaper detects the orphan.
 #[spacetimedb::reducer]
 pub fn session_close(
     ctx:       &ReducerContext,
@@ -198,16 +368,13 @@ pub fn session_close(
     pos_x: f32, pos_y: f32, pos_z: f32, heading: f32,
     health: u32, hunger: u32, thirst: u32,
 ) -> Result<(), String> {
-    // Persist final vitals
     if let Some(mut char) = ctx.db.character().iter().find(|c| c.steam_hex == steam_hex) {
-        char.pos_x    = pos_x;   char.pos_y  = pos_y;  char.pos_z = pos_z;
+        char.pos_x    = pos_x;  char.pos_y  = pos_y;  char.pos_z = pos_z;
         char.heading  = heading; char.health = health;
         char.hunger   = hunger;  char.thirst = thirst;
         char.updated_at = ctx.timestamp;
         ctx.db.character().id().update(char);
     }
-
-    // Write clean disconnect log (upsert)
     let session = ctx.db.char_session().steam_hex().find(&steam_hex);
     if let Some(s) = &session {
         if ctx.db.disconnect_log().steam_hex().find(&steam_hex).is_some() {
@@ -223,14 +390,11 @@ pub fn session_close(
             logged_at:      ctx.timestamp,
         });
     }
-
     ctx.db.char_session().steam_hex().delete(steam_hex.clone());
     log::info!("[session] {} closed cleanly", steam_hex);
     Ok(())
 }
 
-/// Periodic vital checkpoint. Called by the sidecar every 60 seconds.
-/// Bounds data loss to ≤60 seconds on a dirty disconnect.
 #[spacetimedb::reducer]
 pub fn checkpoint_vitals(
     ctx:       &ReducerContext,
@@ -247,14 +411,10 @@ pub fn checkpoint_vitals(
     }
 }
 
-/// 12-hour Reaper. Detects CharSession rows older than threshold_seconds,
-/// treats them as dirty disconnects, and clears them.
-/// No inventory is modified — InventorySlot rows are durable.
 #[spacetimedb::reducer]
 pub fn reaper_sweep(ctx: &ReducerContext, stale_threshold_seconds: u64) {
     let now_micros       = ctx.timestamp.to_micros_since_unix_epoch() as u64;
     let threshold_micros = stale_threshold_seconds * 1_000_000;
-
     let stale: Vec<CharSession> = ctx.db.char_session().iter()
         .filter(|s| {
             let age = now_micros.saturating_sub(
@@ -263,7 +423,6 @@ pub fn reaper_sweep(ctx: &ReducerContext, stale_threshold_seconds: u64) {
             age > threshold_micros
         })
         .collect();
-
     let mut swept = 0u32;
     for s in stale {
         log::warn!("[reaper] Sweeping stale session: {} (server_id={})", s.steam_hex, s.server_id);
@@ -292,8 +451,6 @@ pub fn reaper_sweep(ctx: &ReducerContext, stale_threshold_seconds: u64) {
 // CHARACTER MANAGEMENT
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Create a new character in the given slot (0-based).
-/// Enforces: name length, slot availability, account character cap.
 #[spacetimedb::reducer]
 pub fn create_character(
     ctx:        &ReducerContext,
@@ -306,17 +463,14 @@ pub fn create_character(
     if name.is_empty() || name.len() > 32 {
         return Err("NAME_INVALID|Character name must be 1–32 characters".to_string());
     }
-
     let account = ctx.db.account().steam_hex().find(&steam_hex)
         .ok_or("ACCOUNT_NOT_FOUND")?;
     if account.is_banned {
         return Err(format!("BANNED|{}", account.ban_reason));
     }
-
     let existing_chars: Vec<Character> = ctx.db.character().iter()
         .filter(|c| c.steam_hex == steam_hex && !c.is_deleted)
         .collect();
-
     let max_chars = account.max_characters.max(DEFAULT_MAX_CHARACTERS);
     if existing_chars.len() as u32 >= max_chars {
         return Err(format!("SLOT_LIMIT|Max {} characters per account", max_chars));
@@ -324,7 +478,6 @@ pub fn create_character(
     if existing_chars.iter().any(|c| c.slot_index == slot_index) {
         return Err(format!("SLOT_OCCUPIED|Slot {} is already in use", slot_index));
     }
-
     let new_char = ctx.db.character().insert(Character {
         id:         0,
         steam_hex:  steam_hex.clone(),
@@ -346,15 +499,12 @@ pub fn create_character(
         created_at: ctx.timestamp,
         updated_at: ctx.timestamp,
     });
-
-    // Insert blank appearance row — NUI fills this after creation
     ctx.db.character_appearance().insert(CharacterAppearance {
         character_id:    new_char.id,
         components_json: "{}".to_string(),
         overlays_json:   "{}".to_string(),
         updated_at:      ctx.timestamp,
     });
-
     log::info!(
         "[character] Created '{}' id={} slot={} for {}",
         name, new_char.id, slot_index, steam_hex
@@ -362,8 +512,6 @@ pub fn create_character(
     Ok(())
 }
 
-/// Soft-delete a character. Cannot delete a character with an active session.
-/// Inventory slots are retained for 7 days — the Reaper purges them.
 #[spacetimedb::reducer]
 pub fn delete_character(
     ctx:          &ReducerContext,
@@ -381,17 +529,13 @@ pub fn delete_character(
     if ctx.db.char_session().iter().any(|s| s.character_id == character_id) {
         return Err("CHAR_ACTIVE|Cannot delete a character that is currently online".to_string());
     }
-
     character.is_deleted = true;
     character.updated_at = ctx.timestamp;
     ctx.db.character().id().update(character.clone());
-
     log::info!("[character] Soft-deleted char_id={} '{}' for {}", character_id, character.name, steam_hex);
     Ok(())
 }
 
-/// Persist ped appearance from the NUI creator or barber shop.
-/// The JSON blobs are opaque — server does not validate their structure.
 #[spacetimedb::reducer]
 pub fn save_appearance(
     ctx:             &ReducerContext,
@@ -418,7 +562,6 @@ pub fn save_appearance(
     Ok(())
 }
 
-/// Set per-account max character cap (admin / VIP tool).
 #[spacetimedb::reducer]
 pub fn set_account_max_characters(ctx: &ReducerContext, steam_hex: String, max: u32) {
     if let Some(mut acct) = ctx.db.account().steam_hex().find(&steam_hex) {
@@ -462,10 +605,8 @@ pub fn request_spawn(
 
 // ─────────────────────────────────────────────────────────────────────────────
 // INVENTORY — ITEM MANAGEMENT
-// All operations keyed by character_id via char_owner_id().
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Seed the item catalog. Idempotent — skips if item_id already exists.
 #[spacetimedb::reducer]
 pub fn seed_item(
     ctx: &ReducerContext,
@@ -481,7 +622,6 @@ pub fn seed_item(
     });
 }
 
-/// Update an existing item definition, or insert if it doesn't exist.
 #[spacetimedb::reducer]
 pub fn update_item(
     ctx: &ReducerContext,
@@ -511,8 +651,6 @@ pub fn update_item(
     }
 }
 
-/// Add items to any inventory by owner_id. No weight gate — use give_item_to_character
-/// for player inventory so the weight limit is enforced.
 #[spacetimedb::reducer]
 pub fn add_item(
     ctx:        &ReducerContext,
@@ -543,7 +681,6 @@ pub fn add_item(
     });
 }
 
-/// Remove items from any inventory by owner_id.
 #[spacetimedb::reducer]
 pub fn remove_item(ctx: &ReducerContext, owner_id: String, item_id: String, quantity: u32) {
     let slot = match ctx.db.inventory_slot().iter()
@@ -561,8 +698,6 @@ pub fn remove_item(ctx: &ReducerContext, owner_id: String, item_id: String, quan
     }
 }
 
-/// Give an item directly to a character with weight gate enforcement.
-/// This is the authoritative grant path for all player-facing item grants.
 #[spacetimedb::reducer]
 pub fn give_item_to_character(
     ctx:          &ReducerContext,
@@ -572,10 +707,8 @@ pub fn give_item_to_character(
     metadata:     String,
 ) -> Result<(), String> {
     let owner_id = char_owner_id(character_id);
-
     let def = ctx.db.item_definition().item_id().find(&item_id)
         .ok_or_else(|| format!("Unknown item: {}", item_id))?;
-
     let resolved_metadata = if (metadata == "{}" || metadata.is_empty()) && def.category == "weapon" {
         let serial = format!("WPN-{:08X}", ctx.timestamp.to_micros_since_unix_epoch() as u32);
         format!(
@@ -585,23 +718,19 @@ pub fn give_item_to_character(
     } else {
         metadata
     };
-
     let current_weight: f32 = ctx.db.inventory_slot().iter()
         .filter(|s| s.owner_id == owner_id && s.owner_type == "player")
         .map(|s| ctx.db.item_definition().item_id().find(&s.item_id)
             .map(|d| d.weight * s.quantity as f32).unwrap_or(0.0))
         .sum();
-
     let max_weight: f32 = ctx.db.player_config()
         .steam_hex().find(&owner_id)
         .map(|c| c.max_carry_weight)
         .unwrap_or(85.0);
-
     let incoming = def.weight * quantity as f32;
     if current_weight + incoming > max_weight {
         return Err(format!("WEIGHT_LIMIT|{:.2}|{:.2}", current_weight + incoming, max_weight));
     }
-
     if def.stackable {
         if let Some(mut existing) = ctx.db.inventory_slot().iter()
             .find(|s| s.owner_id == owner_id && s.item_id == item_id)
@@ -611,13 +740,11 @@ pub fn give_item_to_character(
             return Ok(());
         }
     }
-
     let used: std::collections::HashSet<u32> = ctx.db.inventory_slot().iter()
         .filter(|s| s.owner_id == owner_id && s.owner_type == "player")
         .map(|s| s.slot_index)
         .collect();
     let slot_index = (0u32..).find(|i| !used.contains(i)).unwrap_or(0);
-
     ctx.db.inventory_slot().insert(InventorySlot {
         id: 0,
         owner_id,
@@ -630,8 +757,6 @@ pub fn give_item_to_character(
     Ok(())
 }
 
-/// Legacy alias kept for sidecar compatibility. Resolves steam_hex → active
-/// character_id then calls give_item_to_character.
 #[spacetimedb::reducer]
 pub fn give_item_to_identity(
     ctx:                &ReducerContext,
@@ -645,7 +770,6 @@ pub fn give_item_to_identity(
     give_item_to_character(ctx, session.character_id, item_id, quantity, metadata)
 }
 
-/// Move a slot to a new index within the same owner.
 #[spacetimedb::reducer]
 pub fn move_item(ctx: &ReducerContext, slot_id: u64, new_slot_index: u32) {
     let owner_id = ctx.sender().to_hex().to_string();
@@ -735,14 +859,12 @@ pub fn use_item(ctx: &ReducerContext, slot_id: u64, net_id: u32) {
         Some(d) => d, None => return,
     };
     if !def.usable { log::warn!("[inventory] use_item: {} not usable", slot.item_id); return; }
-
     let consume = |ctx: &ReducerContext, slot_id: u64| {
         if let Some(mut s) = ctx.db.inventory_slot().id().find(slot_id) {
             if s.quantity <= 1 { ctx.db.inventory_slot().id().delete(slot_id); }
             else { s.quantity -= 1; ctx.db.inventory_slot().id().update(s); }
         }
     };
-
     match slot.item_id.as_str() {
         "bandage" => {
             ctx.db.instruction_queue().insert(InstructionQueue {
@@ -784,7 +906,6 @@ pub fn use_item(ctx: &ReducerContext, slot_id: u64, net_id: u32) {
     }
 }
 
-/// Set a character's max carry weight (admin / job perk tool).
 #[spacetimedb::reducer]
 pub fn set_player_max_weight(ctx: &ReducerContext, owner_id: String, max_kg: f32) {
     if let Some(mut cfg) = ctx.db.player_config().steam_hex().find(&owner_id) {
@@ -876,7 +997,6 @@ pub fn drop_item_to_ground(
 ) -> Result<(), String> {
     let slot = ctx.db.inventory_slot().id().find(slot_id)
         .ok_or_else(|| format!("Slot {} not found", slot_id))?;
-
     let search_radius_sq: f32 = 25.0;
     let nearby_stash = ctx.db.stash_definition().iter()
         .filter(|s| s.stash_type == "ground")
@@ -886,7 +1006,6 @@ pub fn drop_item_to_ground(
             let db = (b.pos_x-x).powi(2) + (b.pos_y-y).powi(2);
             da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
         });
-
     let stash_id = match nearby_stash {
         Some(existing) => existing.stash_id,
         None => {
@@ -899,15 +1018,11 @@ pub fn drop_item_to_ground(
             new_id
         }
     };
-
     let actual_qty = if quantity > 0 && quantity < slot.quantity { quantity } else { slot.quantity };
-
     let used_indices: std::collections::HashSet<u32> = ctx.db.inventory_slot().iter()
         .filter(|s| s.owner_id == stash_id).map(|s| s.slot_index).collect();
     let new_slot_index = (0u32..).find(|i| !used_indices.contains(i)).unwrap_or(0);
-
     let logged_item_id = slot.item_id.clone();
-
     if actual_qty == slot.quantity {
         ctx.db.inventory_slot().id().update(InventorySlot {
             owner_id:   stash_id.clone(),
@@ -925,7 +1040,6 @@ pub fn drop_item_to_ground(
             metadata: slot.metadata, slot_index: new_slot_index,
         });
     }
-
     log::info!("[stash] Dropped {}x {} to {} at ({:.1},{:.1})", actual_qty, logged_item_id, stash_id, x, y);
     Ok(())
 }
@@ -941,7 +1055,6 @@ pub fn find_or_create_ground_stash(ctx: &ReducerContext, x: f32, y: f32, z: f32)
             let db = (b.pos_x-x).powi(2) + (b.pos_y-y).powi(2);
             da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
         });
-
     if nearby.is_none() {
         let new_id = format!("ground_{}", ctx.timestamp.to_micros_since_unix_epoch());
         ctx.db.stash_definition().insert(StashDefinition {

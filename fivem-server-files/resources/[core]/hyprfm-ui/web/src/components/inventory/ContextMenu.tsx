@@ -1,33 +1,24 @@
 import { useEffect, useRef, useState } from 'react'
-import { useInventoryStore } from '../store'
-import { itemIcon } from '../types'
+import { useInventoryStore } from '../../store'
+import { itemIcon } from '../../types'
 
 function GetParentResourceName(): string {
   if (typeof window !== 'undefined' && (window as any).GetParentResourceName) {
     return (window as any).GetParentResourceName()
   }
-  return 'stdb-inventory'
+  return 'hyprfm-ui'
 }
 
-// ── Optimistic helper ─────────────────────────────────────────────────────────
-// Removes or reduces a slot immediately in the store without waiting for the
-// server delta. The delta arrives ~150ms later and is a no-op (slot already gone).
 function optimisticConsume(slotId: number, consumeQty: number) {
   const state = useInventoryStore.getState()
 
   const applyToArr = (arr: typeof state.slots) => {
     const slot = arr.find(s => s.id === slotId)
-    if (!slot) return arr                               // slot not in this panel
-    if (slot.quantity <= consumeQty) {
-      return arr.filter(s => s.id !== slotId)          // fully consumed
-    }
-    return arr.map(s => s.id === slotId                // partial consume
-      ? { ...s, quantity: s.quantity - consumeQty }
-      : s
-    )
+    if (!slot) return arr
+    if (slot.quantity <= consumeQty) return arr.filter(s => s.id !== slotId)
+    return arr.map(s => s.id === slotId ? { ...s, quantity: s.quantity - consumeQty } : s)
   }
 
-  // Check and update every panel independently
   const inPockets   = state.slots.some(s => s.id === slotId)
   const inSecondary = state.secondary.slots.some(s => s.id === slotId)
   const inBackpack  = state.backpack?.slots.some(s => s.id === slotId)
@@ -42,23 +33,20 @@ function optimisticConsume(slotId: number, consumeQty: number) {
 
 export function ContextMenu() {
   const { contextMenu, slots, secondary, itemDefs, hideContext, splitStack } = useInventoryStore()
-  const backpack = useInventoryStore(s => s.backpack)
+  const backpack               = useInventoryStore(s => s.backpack)
   const contextMenuInitialSplit = useInventoryStore(s => s.contextMenuInitialSplit)
 
   const ref = useRef<HTMLDivElement>(null)
-  const [dropQty, setDropQty]     = useState<number | null>(null)
-  const [inspecting, setInspecting] = useState(false)
-  const [splitting, setSplitting]  = useState(false)
-  const [splitAmt, setSplitAmt]    = useState(1)
+  const [dropQty,     setDropQty]     = useState<number | null>(null)
+  const [inspecting,  setInspecting]  = useState(false)
+  const [splitting,   setSplitting]   = useState(false)
+  const [splitAmt,    setSplitAmt]    = useState(1)
 
   useEffect(() => {
     if (!contextMenu) {
       setDropQty(null); setInspecting(false); setSplitting(false); setSplitAmt(1)
     } else if (contextMenuInitialSplit) {
-      setSplitting(true)
-      setSplitAmt(1)
-      setDropQty(null)
-      setInspecting(false)
+      setSplitting(true); setSplitAmt(1); setDropQty(null); setInspecting(false)
     }
   }, [contextMenu, contextMenuInitialSplit])
 
@@ -78,8 +66,6 @@ export function ContextMenu() {
   const itemDef = slot ? itemDefs[slot.item_id] : null
   if (!slot || !itemDef) return null
 
-  const qty = dropQty ?? slot.quantity
-
   const weaponMeta = (() => {
     try { return slot.metadata ? JSON.parse(slot.metadata) : null } catch { return null }
   })()
@@ -96,24 +82,16 @@ export function ContextMenu() {
   const x = Math.min(contextMenu.x, window.innerWidth  - 200)
   const y = Math.min(contextMenu.y, window.innerHeight - menuH)
 
-  // ── Action helpers (optimistic + server) ─────────────────────────────────
   const doDrop = (dropAmount: number) => {
-    // Optimistic: remove or reduce immediately so UI reflects the action at once
     optimisticConsume(slot.id, dropAmount)
     fetch(`https://${GetParentResourceName()}/dropItem`, {
       method: 'POST',
-      body: JSON.stringify({
-        slotId:   slot.id,
-        quantity: dropAmount,
-        itemId:   slot.item_id,
-        propModel: itemDef.prop_model ?? '',
-      }),
+      body: JSON.stringify({ slotId: slot.id, quantity: dropAmount, itemId: slot.item_id, propModel: itemDef.prop_model ?? '' }),
     })
     hideContext()
   }
 
   const doUse = () => {
-    // Optimistic: consume one immediately
     optimisticConsume(slot.id, 1)
     fetch(`https://${GetParentResourceName()}/useItem`, {
       method: 'POST',
@@ -146,7 +124,7 @@ export function ContextMenu() {
         </div>
       </div>
 
-      {/* Weapon metadata block */}
+      {/* Weapon metadata */}
       {isWeapon && (<>
         <div className="ctx-divider" />
         <div style={{ padding: '6px 12px 4px' }}>
@@ -230,10 +208,8 @@ export function ContextMenu() {
       {/* Main actions */}
       {!inspecting && dropQty === null && !splitting && (<>
         {itemDef.usable && (
-          <button className="ctx-action" style={{ color: 'var(--accent)' }}
-            onClick={doUse}>USE</button>
+          <button className="ctx-action" style={{ color: 'var(--accent)' }} onClick={doUse}>USE</button>
         )}
-
         <button className="ctx-action" onClick={() => {
           useInventoryStore.getState().startInspect(slot)
           fetch(`https://${GetParentResourceName()}/inspectItem`, {
@@ -242,20 +218,14 @@ export function ContextMenu() {
           })
           hideContext()
         }}>INSPECT</button>
-
         {slot.quantity > 1 && !splitting && (
           <button className="ctx-action" style={{ color: '#facc15' }} onClick={() => {
-            setSplitting(true)
-            setSplitAmt(Math.floor(slot.quantity / 2))
+            setSplitting(true); setSplitAmt(Math.floor(slot.quantity / 2))
           }}>SPLIT</button>
         )}
-
         <button className="ctx-action" style={{ color: '#f87171' }} onClick={() => {
-          if (slot.quantity === 1) {
-            doDrop(1)
-          } else {
-            setDropQty(slot.quantity)
-          }
+          if (slot.quantity === 1) doDrop(1)
+          else setDropQty(slot.quantity)
         }}>DROP</button>
       </>)}
 

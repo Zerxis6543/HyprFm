@@ -1,19 +1,13 @@
-import {
-  DragStartEvent,
-  PointerSensor,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core'
 import { useState, useRef, useEffect } from 'react'
-import { useInventoryStore } from '../store'
+import { useInventoryStore } from '../../store'
 import { ItemSlot } from './ItemSlot'
-import { InventorySlot } from '../types'
+import { InventorySlot } from '../../types'
 
 interface Props {
   title:      string
   panel:      'pockets' | 'secondary' | 'backpack'
   secondary?: boolean
-  contextOverride?: import('../store').SecondaryContext
+  contextOverride?: import('../../store').SecondaryContext
 }
 
 export function InventoryPanel({ title, panel, secondary = false, contextOverride }: Props) {
@@ -23,11 +17,9 @@ export function InventoryPanel({ title, panel, secondary = false, contextOverrid
 
   const effectiveCtx = contextOverride ?? ctx
   const activeSlots  = (secondary || panel === 'backpack') ? effectiveCtx.slots : slots
-  const panelWeight2 = panel === 'backpack' ? effectiveCtx.maxWeight : (secondary ? effectiveCtx.maxWeight : maxWeight)
-  const panelSlots2  = panel === 'backpack' ? effectiveCtx.maxSlots  : (secondary ? effectiveCtx.maxSlots  : maxSlots)
+  const panelWeight  = panel === 'backpack' ? effectiveCtx.maxWeight : (secondary ? effectiveCtx.maxWeight : maxWeight)
+  const panelSlots   = panel === 'backpack' ? effectiveCtx.maxSlots  : (secondary ? effectiveCtx.maxSlots  : maxSlots)
   const panelTitle   = contextOverride ? contextOverride.label : (secondary ? ctx.label : title)
-  const panelWeight  = panelWeight2
-  const panelSlots   = panelSlots2
 
   const [activeDropIndex, setActiveDropIndex] = useState<number | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -88,8 +80,7 @@ export function InventoryPanel({ title, panel, secondary = false, contextOverrid
               onClick={() => setCollapsed(c => !c)}
               style={{
                 background: 'none', border: 'none', cursor: 'pointer',
-                color: 'var(--text-muted)', fontSize: 14, lineHeight: 1,
-                padding: '0 2px',
+                color: 'var(--text-muted)', fontSize: 14, lineHeight: 1, padding: '0 2px',
                 transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
                 transition: 'transform 0.2s ease',
               }}>∨</button>
@@ -137,15 +128,9 @@ export function InventoryPanel({ title, panel, secondary = false, contextOverrid
           width: 520px;
         }
         .inv-header { padding: 12px 14px 8px; border-bottom: 1px solid var(--border); }
-        .inv-title-row {
-          display: flex; align-items: center;
-          justify-content: space-between; margin-bottom: 7px;
-        }
+        .inv-title-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; }
         .inv-title { font-size: 15px; font-weight: 700; letter-spacing: 0.08em; color: var(--text-primary); }
-        .inv-weight-badge {
-          display: flex; align-items: center;
-          font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary);
-        }
+        .inv-weight-badge { display: flex; align-items: center; font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
         .inv-weight-bar { height: 3px; background: rgba(255,255,255,0.06); border-radius: 2px; overflow: hidden; }
         .inv-weight-fill { height: 100%; border-radius: 2px; transition: width 0.3s ease, background 0.3s ease; }
         .inv-grid-wrap { overflow-y: scroll; overflow-x: hidden; border-bottom: 2px solid var(--border); }
@@ -158,9 +143,7 @@ export function InventoryPanel({ title, panel, secondary = false, contextOverrid
           from { transform: scale(0.75); opacity: 0.5; }
           to   { transform: scale(1);    opacity: 1; }
         }
-        .item-slot.occupied:not(.dragging) {
-          animation: slot-place 0.15s ease-out;
-        }
+        .item-slot.occupied:not(.dragging) { animation: slot-place 0.15s ease-out; }
       `}</style>
     </div>
   )

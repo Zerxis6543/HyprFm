@@ -11,31 +11,39 @@ namespace SpacetimeDB.Types
 {
     [SpacetimeDB.Type]
     [DataContract]
-    public sealed partial class ActiveSession
+    public sealed partial class CharSession
     {
         [DataMember(Name = "steam_hex")]
         public string SteamHex;
+        [DataMember(Name = "character_id")]
+        public ulong CharacterId;
         [DataMember(Name = "server_id")]
         public uint ServerId;
         [DataMember(Name = "net_id")]
         public uint NetId;
         [DataMember(Name = "connected_at")]
         public SpacetimeDB.Timestamp ConnectedAt;
+        [DataMember(Name = "inventory_ack")]
+        public bool InventoryAck;
 
-        public ActiveSession(
+        public CharSession(
             string SteamHex,
+            ulong CharacterId,
             uint ServerId,
             uint NetId,
-            SpacetimeDB.Timestamp ConnectedAt
+            SpacetimeDB.Timestamp ConnectedAt,
+            bool InventoryAck
         )
         {
             this.SteamHex = SteamHex;
+            this.CharacterId = CharacterId;
             this.ServerId = ServerId;
             this.NetId = NetId;
             this.ConnectedAt = ConnectedAt;
+            this.InventoryAck = InventoryAck;
         }
 
-        public ActiveSession()
+        public CharSession()
         {
             this.SteamHex = "";
         }

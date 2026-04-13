@@ -12,17 +12,17 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void SetPlayerMaxWeightHandler(ReducerEventContext ctx, string ownerId, float maxKg);
-        public event SetPlayerMaxWeightHandler? OnSetPlayerMaxWeight;
+        public delegate void DeleteCharacterHandler(ReducerEventContext ctx, string steamHex, ulong characterId);
+        public event DeleteCharacterHandler? OnDeleteCharacter;
 
-        public void SetPlayerMaxWeight(string ownerId, float maxKg)
+        public void DeleteCharacter(string steamHex, ulong characterId)
         {
-            conn.InternalCallReducer(new Reducer.SetPlayerMaxWeight(ownerId, maxKg));
+            conn.InternalCallReducer(new Reducer.DeleteCharacter(steamHex, characterId));
         }
 
-        public bool InvokeSetPlayerMaxWeight(ReducerEventContext ctx, Reducer.SetPlayerMaxWeight args)
+        public bool InvokeDeleteCharacter(ReducerEventContext ctx, Reducer.DeleteCharacter args)
         {
-            if (OnSetPlayerMaxWeight == null)
+            if (OnDeleteCharacter == null)
             {
                 if (InternalOnUnhandledReducerError != null)
                 {
@@ -34,10 +34,10 @@ namespace SpacetimeDB.Types
                 }
                 return false;
             }
-            OnSetPlayerMaxWeight(
+            OnDeleteCharacter(
                 ctx,
-                args.OwnerId,
-                args.MaxKg
+                args.SteamHex,
+                args.CharacterId
             );
             return true;
         }
@@ -47,28 +47,28 @@ namespace SpacetimeDB.Types
     {
         [SpacetimeDB.Type]
         [DataContract]
-        public sealed partial class SetPlayerMaxWeight : Reducer, IReducerArgs
+        public sealed partial class DeleteCharacter : Reducer, IReducerArgs
         {
-            [DataMember(Name = "owner_id")]
-            public string OwnerId;
-            [DataMember(Name = "max_kg")]
-            public float MaxKg;
+            [DataMember(Name = "steam_hex")]
+            public string SteamHex;
+            [DataMember(Name = "character_id")]
+            public ulong CharacterId;
 
-            public SetPlayerMaxWeight(
-                string OwnerId,
-                float MaxKg
+            public DeleteCharacter(
+                string SteamHex,
+                ulong CharacterId
             )
             {
-                this.OwnerId = OwnerId;
-                this.MaxKg = MaxKg;
+                this.SteamHex = SteamHex;
+                this.CharacterId = CharacterId;
             }
 
-            public SetPlayerMaxWeight()
+            public DeleteCharacter()
             {
-                this.OwnerId = "";
+                this.SteamHex = "";
             }
 
-            string IReducerArgs.ReducerName => "set_player_max_weight";
+            string IReducerArgs.ReducerName => "delete_character";
         }
     }
 }

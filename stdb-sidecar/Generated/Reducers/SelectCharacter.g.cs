@@ -12,17 +12,17 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void OnPlayerConnectHandler(ReducerEventContext ctx, string steamHex, string displayName, uint serverId, uint netId, float heading);
-        public event OnPlayerConnectHandler? OnOnPlayerConnect;
+        public delegate void SelectCharacterHandler(ReducerEventContext ctx, string steamHex, ulong characterId, uint serverId, uint netId);
+        public event SelectCharacterHandler? OnSelectCharacter;
 
-        public void OnPlayerConnect(string steamHex, string displayName, uint serverId, uint netId, float heading)
+        public void SelectCharacter(string steamHex, ulong characterId, uint serverId, uint netId)
         {
-            conn.InternalCallReducer(new Reducer.OnPlayerConnect(steamHex, displayName, serverId, netId, heading));
+            conn.InternalCallReducer(new Reducer.SelectCharacter(steamHex, characterId, serverId, netId));
         }
 
-        public bool InvokeOnPlayerConnect(ReducerEventContext ctx, Reducer.OnPlayerConnect args)
+        public bool InvokeSelectCharacter(ReducerEventContext ctx, Reducer.SelectCharacter args)
         {
-            if (OnOnPlayerConnect == null)
+            if (OnSelectCharacter == null)
             {
                 if (InternalOnUnhandledReducerError != null)
                 {
@@ -34,13 +34,12 @@ namespace SpacetimeDB.Types
                 }
                 return false;
             }
-            OnOnPlayerConnect(
+            OnSelectCharacter(
                 ctx,
                 args.SteamHex,
-                args.DisplayName,
+                args.CharacterId,
                 args.ServerId,
-                args.NetId,
-                args.Heading
+                args.NetId
             );
             return true;
         }
@@ -50,41 +49,36 @@ namespace SpacetimeDB.Types
     {
         [SpacetimeDB.Type]
         [DataContract]
-        public sealed partial class OnPlayerConnect : Reducer, IReducerArgs
+        public sealed partial class SelectCharacter : Reducer, IReducerArgs
         {
             [DataMember(Name = "steam_hex")]
             public string SteamHex;
-            [DataMember(Name = "display_name")]
-            public string DisplayName;
+            [DataMember(Name = "character_id")]
+            public ulong CharacterId;
             [DataMember(Name = "server_id")]
             public uint ServerId;
             [DataMember(Name = "net_id")]
             public uint NetId;
-            [DataMember(Name = "heading")]
-            public float Heading;
 
-            public OnPlayerConnect(
+            public SelectCharacter(
                 string SteamHex,
-                string DisplayName,
+                ulong CharacterId,
                 uint ServerId,
-                uint NetId,
-                float Heading
+                uint NetId
             )
             {
                 this.SteamHex = SteamHex;
-                this.DisplayName = DisplayName;
+                this.CharacterId = CharacterId;
                 this.ServerId = ServerId;
                 this.NetId = NetId;
-                this.Heading = Heading;
             }
 
-            public OnPlayerConnect()
+            public SelectCharacter()
             {
                 this.SteamHex = "";
-                this.DisplayName = "";
             }
 
-            string IReducerArgs.ReducerName => "on_player_connect";
+            string IReducerArgs.ReducerName => "select_character";
         }
     }
 }

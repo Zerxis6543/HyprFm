@@ -11,47 +11,47 @@ namespace SpacetimeDB.Types
 {
     [SpacetimeDB.Type]
     [DataContract]
-    public sealed partial class Player
+    public sealed partial class Account
     {
         [DataMember(Name = "steam_hex")]
         public string SteamHex;
         [DataMember(Name = "display_name")]
         public string DisplayName;
-        [DataMember(Name = "money_cash")]
-        public long MoneyCash;
-        [DataMember(Name = "money_bank")]
-        public long MoneyBank;
-        [DataMember(Name = "job")]
-        public string Job;
         [DataMember(Name = "created_at")]
         public SpacetimeDB.Timestamp CreatedAt;
         [DataMember(Name = "last_seen")]
         public SpacetimeDB.Timestamp LastSeen;
+        [DataMember(Name = "is_banned")]
+        public bool IsBanned;
+        [DataMember(Name = "ban_reason")]
+        public string BanReason;
+        [DataMember(Name = "max_characters")]
+        public uint MaxCharacters;
 
-        public Player(
+        public Account(
             string SteamHex,
             string DisplayName,
-            long MoneyCash,
-            long MoneyBank,
-            string Job,
             SpacetimeDB.Timestamp CreatedAt,
-            SpacetimeDB.Timestamp LastSeen
+            SpacetimeDB.Timestamp LastSeen,
+            bool IsBanned,
+            string BanReason,
+            uint MaxCharacters
         )
         {
             this.SteamHex = SteamHex;
             this.DisplayName = DisplayName;
-            this.MoneyCash = MoneyCash;
-            this.MoneyBank = MoneyBank;
-            this.Job = Job;
             this.CreatedAt = CreatedAt;
             this.LastSeen = LastSeen;
+            this.IsBanned = IsBanned;
+            this.BanReason = BanReason;
+            this.MaxCharacters = MaxCharacters;
         }
 
-        public Player()
+        public Account()
         {
             this.SteamHex = "";
             this.DisplayName = "";
-            this.Job = "";
+            this.BanReason = "";
         }
     }
 }

@@ -1,13 +1,13 @@
 import { useDraggable, useDroppable } from '@dnd-kit/core'
 import { CSSProperties, useCallback } from 'react'
-import { InventorySlot, ItemDefinition, itemIcon, ITEM_RARITY } from '../types'
-import { useInventoryStore } from '../store'
+import { InventorySlot, ItemDefinition, itemIcon, ITEM_RARITY } from '../../types'
+import { useInventoryStore } from '../../store'
 
 interface Props {
-  slotIndex:    number
-  slot:         InventorySlot | null
-  itemDef:      ItemDefinition | null
-  panel:        'pockets' | 'secondary' | 'backpack'
+  slotIndex:     number
+  slot:          InventorySlot | null
+  itemDef:       ItemDefinition | null
+  panel:         'pockets' | 'secondary' | 'backpack'
   isDropTarget?: boolean
 }
 
@@ -16,7 +16,6 @@ export function ItemSlot({ slotIndex, slot, itemDef, panel, isDropTarget = false
   const showContextSplit = useInventoryStore(s => s.showContextSplit)
   const moveSlot         = useInventoryStore(s => s.moveSlot)
 
-  // Fully intact — never split or wrap listeners; dnd-kit owns them completely
   const { attributes, listeners, setNodeRef: setDragRef, isDragging } = useDraggable({
     id:       slot ? `slot-${slot.id}` : `empty-${panel}-${slotIndex}`,
     disabled: !slot,
@@ -47,16 +46,12 @@ export function ItemSlot({ slotIndex, slot, itemDef, panel, isDropTarget = false
     moveSlot(slot.id, nextFree, panel, targetPanel)
   }, [slot, panel, moveSlot])
 
-  // Right-click → normal context menu
-  // Shift + Right-click → open straight to split-amount picker
+  // Right-click → context menu; Shift + Right-click → split picker
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     if (!slot) return
     e.preventDefault()
-    if (e.shiftKey && slot.quantity > 1) {
-      showContextSplit(slot.id, e.clientX, e.clientY)
-    } else {
-      showContext(slot.id, e.clientX, e.clientY)
-    }
+    if (e.shiftKey && slot.quantity > 1) showContextSplit(slot.id, e.clientX, e.clientY)
+    else showContext(slot.id, e.clientX, e.clientY)
   }, [slot, showContext, showContextSplit])
 
   const style: CSSProperties = { opacity: isDragging ? 0.3 : 1 }
@@ -104,35 +99,14 @@ export function ItemSlot({ slotIndex, slot, itemDef, panel, isDropTarget = false
         .item-slot.occupied:hover { border-color: rgba(255,255,255,0.15); background: var(--bg-slot-hover); }
         .item-slot.occupied:hover .slot-name { color: var(--accent); }
         .item-slot.dragging { border-color: var(--accent); background: var(--accent-dim); }
-        .item-slot.drop-target {
-          border-color: var(--accent);
-          background: var(--accent-dim);
-          box-shadow: inset 0 0 0 1px var(--accent);
-        }
+        .item-slot.drop-target { border-color: var(--accent); background: var(--accent-dim); box-shadow: inset 0 0 0 1px var(--accent); }
         .slot-rarity-bar { position: absolute; top: 0; left: 0; right: 0; height: 2px; opacity: 0.7; }
-        .slot-rarity-badge {
-          position: absolute; top: 5px; right: 4px;
-          font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.05em; opacity: 0.8;
-        }
+        .slot-rarity-badge { position: absolute; top: 5px; right: 4px; font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.05em; opacity: 0.8; }
         .qty-num { font-family: var(--font-mono); font-size: 10px; color: var(--text-secondary); }
-        .slot-name {
-          font-size: 9px; font-weight: 600; letter-spacing: 0.06em;
-          color: var(--text-secondary); text-align: center; padding: 0 4px;
-          line-height: 1.2; transition: color var(--transition);
-        }
-        .slot-weight {
-          position: absolute; bottom: 3px; right: 4px;
-          font-family: var(--font-mono); font-size: 7px; color: var(--text-muted);
-        }
-        .slot-icon {
-          width: 52px; height: 52px; margin-bottom: 3px; margin-top: 10px;
-          display: flex; align-items: center; justify-content: center;
-        }
-        .slot-icon img {
-          width: 100%; height: 100%; object-fit: contain;
-          filter: drop-shadow(0 0 6px rgba(74,222,128,0.15));
-          transition: filter var(--transition);
-        }
+        .slot-name { font-size: 9px; font-weight: 600; letter-spacing: 0.06em; color: var(--text-secondary); text-align: center; padding: 0 4px; line-height: 1.2; transition: color var(--transition); }
+        .slot-weight { position: absolute; bottom: 3px; right: 4px; font-family: var(--font-mono); font-size: 7px; color: var(--text-muted); }
+        .slot-icon { width: 52px; height: 52px; margin-bottom: 3px; margin-top: 10px; display: flex; align-items: center; justify-content: center; }
+        .slot-icon img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 0 6px rgba(74,222,128,0.15)); transition: filter var(--transition); }
         .item-slot.occupied:hover .slot-icon img { filter: drop-shadow(0 0 8px rgba(74,222,128,0.35)); }
       `}</style>
     </div>
