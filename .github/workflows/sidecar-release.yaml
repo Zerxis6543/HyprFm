@@ -127,19 +127,19 @@ jobs:
       #                                used by the SpacetimeDB SDK) so the binary
       #                                works on fresh Linux VMs without libc extras.
       - name: Publish self-contained binary
-        shell: bash
-        run: |
-          dotnet publish "${{ env.SIDECAR_PROJECT }}" \
-            --configuration Release \
-            --runtime ${{ matrix.rid }} \
-            --self-contained true \
-            /p:PublishSingleFile=true \
-            /p:PublishTrimmed=true \
-            /p:EnableCompressionInSingleFile=true \
-            /p:DebugType=none \
-            /p:IncludeNativeLibrariesForSelfExtract=true \
-            --output "${{ env.BUILD_OUTPUT_DIR }}/${{ matrix.rid }}" \
-            --verbosity normal
+              shell: bash
+              run: |
+                dotnet publish ${{ env.SIDECAR_PROJECT }} \
+                  --configuration Release \
+                  --runtime ${{ matrix.rid }} \
+                  --self-contained true \
+                  /p:PublishSingleFile=true \
+                  /p:PublishTrimmed=true \
+                  /p:EnableCompressionInSingleFile=true \
+                  /p:DebugType=none \
+                  /p:IncludeNativeLibrariesForSelfExtract=true \
+                  --output "${{ env.BUILD_OUTPUT_DIR }}/${{ matrix.rid }}" \
+                  --verbosity normal
 
           echo ""
           echo "── Publish output contents ──────────────────"
