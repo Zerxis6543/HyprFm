@@ -129,21 +129,21 @@ jobs:
       - name: Publish self-contained binary
         shell: bash
         run: |
-          dotnet publish ${{ env.SIDECAR_PROJECT }} \
+          dotnet publish ${{env.SIDECAR_PROJECT}} \
             --configuration Release \
-            --runtime ${{ matrix.rid }} \
+            --runtime ${{matrix.rid}} \
             --self-contained true \
             /p:PublishSingleFile=true \
             /p:PublishTrimmed=true \
             /p:EnableCompressionInSingleFile=true \
             /p:DebugType=none \
             /p:IncludeNativeLibrariesForSelfExtract=true \
-            --output "${{ env.BUILD_OUTPUT_DIR }}/${{ matrix.rid }}" \
+            --output "${{env.BUILD_OUTPUT_DIR}}/${{matrix.rid}}" \
             --verbosity normal
 
           echo ""
           echo "── Publish output contents ──────────────────"
-          ls -lh "${{ env.BUILD_OUTPUT_DIR }}/${{ matrix.rid }}/"
+          ls -lh "${{env.BUILD_OUTPUT_DIR}}/${{matrix.rid}}/"
 
       # ── 6. Rename Binary to Release Asset Name ────────────────────────────
       # GitHub Release asset names must be unique and human-readable.
