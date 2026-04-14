@@ -1239,7 +1239,7 @@ class Program
                 return;
             }
 
-            // ── GET /validate-opcode?opcode=16385 ────────────────────────────────────────
+            // ── GET /validate-opcode
             if (ctx.Request.HttpMethod == "GET" && path == "/validate-opcode")
             {
                 var qs = System.Web.HttpUtility.ParseQueryString(ctx.Request.Url?.Query ?? "");
