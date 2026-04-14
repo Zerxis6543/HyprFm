@@ -1,17 +1,11 @@
 local SIDECAR_URL = "http://127.0.0.1:27200/"
 
--- ═════════════════════════════════════════════════════════════════════════════
--- BRIDGE 1: Commit — Zero-Trust Sovereign Path
--- ═════════════════════════════════════════════════════════════════════════════
+local _hooks         = { before = {}, after = {} }
+local _registeredItems = {}
 
---- Trigger a SpacetimeDB reducer via the C# sidecar.
---- All game state mutations MUST use this — never write state in Lua.
----
---- @param reducerName  string         Snake_case reducer name ("give_item_to_player")
---- @param args         table          Named argument table matching the reducer
---- @param cb           function|nil   cb(success: bool, result: table|nil)
-
-local _hooks = { before = {}, after = {} }
+-- ─────────────────────────────────────────────────────────────────────────────
+-- INTERNAL HELPERS
+-- ─────────────────────────────────────────────────────────────────────────────
 
 local function _fireHooks(phase, name, args, result)
     local handlers = _hooks[phase] and _hooks[phase][name]
@@ -19,19 +13,108 @@ local function _fireHooks(phase, name, args, result)
     for _, fn in ipairs(handlers) do
         local ok, err = pcall(fn, name, args, result)
         if not ok then
-            print(("[hyprfm] OnReducer %s hook error '%s': %s"):format(phase, name, tostring(err)))
+            print(("[hyprfm] hook error [%s/%s]: %s"):format(phase, name, tostring(err)))
         end
     end
 end
 
+-- ─────────────────────────────────────────────────────────────────────────────
+-- OPCODE REGISTRATION
+-- RegisterOpcode: the public API for third-party resources to claim a label.
+-- Core opcodes use _registerCoreOpcodes (in main.lua) which bypasses this gate.
+--
+-- Usage:
+--   exports['stdb-relay']:RegisterOpcode("robbery_begin",
+--       function(netId, args)
+--           local pid = NetworkGetEntityOwner(NetworkGetEntityFromNetworkId(netId))
+--           TriggerClientEvent("robbery:start", pid, args[1])
+--       end,
+--       function(opcode)
+--           print("robbery_begin -> " .. Opcode.Format(opcode))
+--       end)
+-- ─────────────────────────────────────────────────────────────────────────────
+
+exports("RegisterOpcode", function(label, handler, cb)
+    if not _syncReady then
+        table.insert(_pendingRegistrations, { label = label, handler = handler, cb = cb })
+        return
+    end
+
+    PerformHttpRequest(SIDECAR_URL .. "reducer",
+        function(status, body, _)
+            if status ~= 200 or not body then
+                print(("[hyprfm] RegisterOpcode: sidecar unreachable for '%s'"):format(label))
+                return
+            end
+            local ok, data = pcall(json.decode, body)
+            if not ok or not data or not data.ok then
+                print(("[hyprfm] RegisterOpcode: failed for '%s': %s"):format(
+                    label, (ok and data and data.error) or "unknown"))
+                return
+            end
+
+            local opcode = data.opcode
+
+            -- Wire into the live Dispatcher
+            if handler then
+                Dispatcher[opcode] = function(netId, args)
+                    local ok2, err = pcall(handler, netId, args)
+                    if not ok2 then
+                        print(("[hyprfm] RegisterOpcode handler error ['%s' %s]: %s"):format(
+                            label, Opcode.Format(opcode), tostring(err)))
+                    end
+                end
+            end
+
+            -- Reverse map for logging
+            _opcodeToLabel[opcode] = label
+
+            print(("[hyprfm] RegisterOpcode: '%s' -> %s"):format(label, Opcode.Format(opcode)))
+            if cb then cb(opcode) end
+        end,
+        "POST",
+        json.encode({ name = "allocate_opcode", args = {
+            context     = label,
+            steam_hex   = "",
+            net_id      = 0,
+            ttl_seconds = 0,   -- permanent
+        }}),
+        { ["Content-Type"] = "application/json" }
+    )
+end)
+
+-- Deregister a label — use only when a resource is unloaded cleanly.
+exports("DeregisterOpcode", function(label, cb)
+    PerformHttpRequest(SIDECAR_URL .. "reducer",
+        function(status, _, _)
+            if cb then cb(status == 200) end
+        end,
+        "POST",
+        json.encode({ name = "deregister_opcode", args = { label = label } }),
+        { ["Content-Type"] = "application/json" }
+    )
+end)
+
+-- Returns the live Opcode table. Values are populated after resource start.
+-- Use this when you need to pass the registry to another resource at runtime.
+exports("GetOpcodeRegistry", function()
+    return Opcode
+end)
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- USABLE ITEM REGISTRATION
+-- Mirrors ESX.RegisterUsableItem / QBCore.Functions.CreateUseableItem.
+-- Registered items bypass the Rust use_item reducer entirely.
+-- ─────────────────────────────────────────────────────────────────────────────
+
 exports("RegisterItem", function(def)
     if type(def) ~= "table" or not def.item_id or not def.label then
-        print("[hyprfm] RegisterItem: def must include item_id (string) and label (string)"); return
+        print("[hyprfm] RegisterItem: def must include item_id and label"); return
     end
     PerformHttpRequest(SIDECAR_URL .. "seed-item",
         function(status, _, _)
             if status ~= 200 then
-                print(("[hyprfm] RegisterItem: failed to register '%s' — sidecar returned HTTP %d"):format(
+                print(("[hyprfm] RegisterItem: failed for '%s' — HTTP %d"):format(
                     tostring(def.item_id), status or 0))
             end
         end,
@@ -53,6 +136,70 @@ exports("RegisterItem", function(def)
     )
 end)
 
+exports("RegisterUsableItem", function(itemId, cb)
+    _registeredItems[itemId] = cb
+end)
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- COMMIT — state mutation path
+-- ─────────────────────────────────────────────────────────────────────────────
+
+exports("Commit", function(reducerName, args, cb)
+    if type(reducerName) ~= "string" or #reducerName == 0 then
+        local result = { ok = false, error_code = "BAD_CALL",
+            message = "reducerName must be a non-empty string" }
+        if cb then cb(false, result) end
+        return
+    end
+    _fireHooks("before", reducerName, args or {}, nil)
+    PerformHttpRequest(SIDECAR_URL .. "reducer",
+        function(status, body, _)
+            if status ~= 200 then
+                local result = { ok = false, error_code = "HTTP_ERROR",
+                    message = ("sidecar returned HTTP %d for '%s'"):format(status or 0, reducerName) }
+                if cb then cb(false, result) end
+                return
+            end
+            local parseOk, parsed = pcall(json.decode, body or "")
+            if not parseOk or type(parsed) ~= "table" then
+                local result = { ok = false, error_code = "PARSE_ERROR",
+                    message = ("non-JSON for '%s'"):format(reducerName) }
+                if cb then cb(false, result) end
+                return
+            end
+            if parsed.ok == nil then parsed.ok = true end
+            _fireHooks("after", reducerName, args or {}, parsed)
+            if cb then cb(parsed.ok == true, parsed) end
+        end,
+        "POST",
+        json.encode({ name = reducerName, args = args or {} }),
+        { ["Content-Type"] = "application/json" }
+    )
+end)
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- INVOKE NATIVE — volatile express path (no SpacetimeDB round-trip)
+-- Validates opcode is in range AND registered before enqueuing.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+exports("InvokeNative", function(opcode, netId, args)
+    if type(opcode) ~= "number" or opcode < 0x1000 or opcode > 0x8FFF
+       or math.floor(opcode) ~= opcode then
+        print(("[hyprfm] InvokeNative: invalid opcode '%s'"):format(tostring(opcode)))
+        return false
+    end
+    if not _opcodeToLabel[opcode] then
+        print(("[hyprfm] InvokeNative: %s is not a registered opcode"):format(Opcode.Format(opcode)))
+        return false
+    end
+    _volatileQueue[#_volatileQueue + 1] = {
+        target_entity_net_id = netId,
+        opcode               = opcode,
+        payload              = json.encode(args or {}),
+    }
+    return true
+end)
+
 exports("GetAPIVersion", function(cb)
     PerformHttpRequest(SIDECAR_URL .. "version",
         function(status, body, _)
@@ -66,108 +213,10 @@ exports("GetAPIVersion", function(cb)
     )
 end)
 
-exports("Commit", function(reducerName, args, cb)
-    -- Guard: catch bad calls immediately with a descriptive error
-    if type(reducerName) ~= "string" or #reducerName == 0 then
-        local result = { ok = false, error_code = "BAD_CALL", message = "reducerName must be a non-empty string" }
-        if cb then cb(false, result) end
-        return
-    end
+-- ─────────────────────────────────────────────────────────────────────────────
+-- CONVENIENCE WRAPPERS
+-- ─────────────────────────────────────────────────────────────────────────────
 
-    _fireHooks("before", reducerName, args or {}, nil)
-
-    PerformHttpRequest(SIDECAR_URL .. "reducer",
-        function(status, body, _)
-            -- HTTP-level failure (sidecar down, wrong port, etc.)
-            if status ~= 200 then
-                local result = {
-                    ok         = false,
-                    error_code = "HTTP_ERROR",
-                    message    = ("sidecar returned HTTP %d for reducer '%s'"):format(status or 0, reducerName),
-                }
-                if cb then cb(false, result) end
-                return
-            end
-
-            -- Parse the body
-            local parseOk, parsed = pcall(json.decode, body or "")
-            if not parseOk or type(parsed) ~= "table" then
-                local result = {
-                    ok         = false,
-                    error_code = "PARSE_ERROR",
-                    message    = ("sidecar returned non-JSON for reducer '%s'"):format(reducerName),
-                }
-                if cb then cb(false, result) end
-                return
-            end
-
-            -- Reducers that return no body (e.g. move_item) have no ok field — treat as success
-            if parsed.ok == nil then parsed.ok = true end
-
-            -- success = true ONLY when the reducer logic itself confirmed success
-            _fireHooks("after", reducerName, args or {}, parsed)
-            if cb then cb(parsed.ok == true, parsed) end
-        end,
-        "POST",
-        json.encode({ name = reducerName, args = args or {} }),
-        { ["Content-Type"] = "application/json" }
-    )
-end)
-
--- ═════════════════════════════════════════════════════════════════════════════
--- BRIDGE 2: InvokeNative — Volatile Express Path
--- ═════════════════════════════════════════════════════════════════════════════
-
---- Insert a volatile instruction directly into the poll loop's queue.
---- Processed at the next 100ms tick with ZERO HTTP round-trips.
---- Cosmetic / one-shot only. Not stored in SpacetimeDB. Not replayed.
----
---- @param opcode  integer   u16 opcode constant from constants.lua (Opcode.*)
---- @param netId   integer   GTA NetworkId of the target entity
---- @param args    table     Positional argument array for the opcode's payload schema
---- @return boolean          true if enqueued, false if validation failed
----
---- Example:
----   exports['stdb-relay']:InvokeNative(Opcode.Effect.Heal,            playerNetId, { 40 })
----   exports['stdb-relay']:InvokeNative(Opcode.Engine.CallLocalNative,  playerNetId,
----       { "PLAY_SOUND_FRONTEND", -1, "Beep_Red", "DLC_HEIST_HACKING_SNAKE_SOUNDS" })
-exports("InvokeNative", function(opcode, netId, args)
-    -- Guard: must be an integer in the u16 range
-    if type(opcode) ~= "number" or opcode < 0 or opcode > 0xFFFF
-       or math.floor(opcode) ~= opcode then
-        print(("[hyprfm] InvokeNative: invalid opcode '%s'"):format(tostring(opcode)))
-        return false
-    end
-
-    -- Guard: only recognised domains are accepted
-    local domain = opcode & 0xF000
-    if domain ~= 0x9000 and domain ~= 0x1000 and domain ~= 0x2000 then
-        print(("[hyprfm] InvokeNative: opcode 0x%04X has an unrecognised domain"):format(opcode))
-        return false
-    end
-
-    -- Append to the module-level volatile queue defined in main.lua.
-    -- The poll loop drains this before the HTTP fetch on each 100ms tick.
-    _volatileQueue[#_volatileQueue + 1] = {
-        target_entity_net_id = netId,
-        opcode               = opcode,
-        payload              = json.encode(args or {}),
-    }
-    return true
-end)
-
--- ═════════════════════════════════════════════════════════════════════════════
--- CONVENIENCE WRAPPERS  (thin facades — community dev "golden path")
--- ═════════════════════════════════════════════════════════════════════════════
-
---- Give an item to a connected player's inventory.
---- Internally calls give_item_to_identity via the sidecar's server_id lookup.
---- Weight limit errors are surfaced through the callback.
----
---- @param serverId  number
---- @param itemId    string   e.g. "weapon_pistol"
---- @param quantity  number
---- @param cb        function|nil  cb(success: bool, errorCode: string|nil)
 exports("AddItemToPlayer", function(serverId, itemId, quantity, cb)
     PerformHttpRequest(SIDECAR_URL .. "reducer",
         function(status, body, _)
@@ -180,44 +229,25 @@ exports("AddItemToPlayer", function(serverId, itemId, quantity, cb)
         end,
         "POST",
         json.encode({ name = "give_item_to_player", args = {
-            server_id = serverId,
-            item_id   = itemId,
-            quantity  = quantity,
+            server_id = serverId, item_id = itemId, quantity = quantity,
         }}),
         { ["Content-Type"] = "application/json" }
     )
 end)
 
---- Remove an item from a connected player's inventory.
---- Resolves identity hex locally from the _identityToServerId map.
----
---- @param serverId  number
---- @param itemId    string
---- @param quantity  number
---- @param cb        function|nil  cb(success: bool)
 exports("RemoveItemFromPlayer", function(serverId, itemId, quantity, cb)
-    -- Phase 1: resolve the player's identity hex via the sidecar.
-    -- This works even if the player has never opened their inventory,
-    -- because it uses the ActiveSession table not the local _identityToServerId map.
     PerformHttpRequest(SIDECAR_URL .. "reducer",
         function(pi_status, pi_body, _)
             if pi_status ~= 200 or not pi_body then
-                print(("[hyprfm] RemoveItemFromPlayer: sidecar unreachable for server_id=%d"):format(serverId))
                 if cb then cb(false, { ok = false, error_code = "SIDECAR_UNREACHABLE" }) end
                 return
             end
             local pi_ok, pi = pcall(json.decode, pi_body)
             if not pi_ok or not pi or not pi.owner_id or pi.owner_id == "" then
-                print(("[hyprfm] RemoveItemFromPlayer: no active session for server_id=%d. Is the player connected?"):format(serverId))
-                if cb then cb(false, { ok = false, error_code = "PLAYER_NOT_ONLINE",
-                    message = ("No active session for server_id=%d"):format(serverId) }) end
+                if cb then cb(false, { ok = false, error_code = "PLAYER_NOT_ONLINE" }) end
                 return
             end
-
-            -- Cache identity for future calls in this session
             _identityToServerId[pi.owner_id] = serverId
-
-            -- Phase 2: remove the item using the resolved identity
             PerformHttpRequest(SIDECAR_URL .. "reducer",
                 function(rm_status, rm_body, _)
                     local rm_ok, rm_result = pcall(json.decode, rm_body or "")
@@ -225,9 +255,7 @@ exports("RemoveItemFromPlayer", function(serverId, itemId, quantity, cb)
                 end,
                 "POST",
                 json.encode({ name = "remove_item", args = {
-                    owner_id = pi.owner_id,
-                    item_id  = itemId,
-                    quantity = quantity,
+                    owner_id = pi.owner_id, item_id = itemId, quantity = quantity,
                 }}),
                 { ["Content-Type"] = "application/json" }
             )
@@ -238,40 +266,26 @@ exports("RemoveItemFromPlayer", function(serverId, itemId, quantity, cb)
     )
 end)
 
---- Check if a player currently has at least `quantity` of an item.
----
---- @param serverId  number
---- @param itemId    string
---- @param quantity  number   Minimum required amount
---- @param cb        function  cb(hasItem: bool, actualCount: number)
 exports("HasItem", function(serverId, itemId, quantity, cb)
-    -- Resolve identity hex — use cache if available, otherwise look it up
     local identityHex = ""
     for identity, sid in pairs(_identityToServerId) do
         if sid == serverId then identityHex = identity; break end
     end
-
     local function doCheck(hex)
         PerformHttpRequest(
             ("%sitem-count?owner_id=%s&item_id=%s"):format(SIDECAR_URL, hex, itemId),
             function(status, body, _)
-                if status ~= 200 or not body then
-                    if cb then cb(false, 0) end; return
-                end
+                if status ~= 200 or not body then if cb then cb(false, 0) end; return end
                 local ok, result = pcall(json.decode, body)
-                if not ok or not result then
-                    if cb then cb(false, 0) end; return
-                end
+                if not ok or not result then if cb then cb(false, 0) end; return end
                 if cb then cb(result.count >= (quantity or 1), result.count) end
             end,
             "GET", "", {}
         )
     end
-
     if identityHex ~= "" then
         doCheck(identityHex)
     else
-        -- Identity not yet cached — resolve via session lookup first
         PerformHttpRequest(SIDECAR_URL .. "reducer",
             function(status, body, _)
                 if status ~= 200 or not body then if cb then cb(false, 0) end; return end
@@ -289,83 +303,29 @@ exports("HasItem", function(serverId, itemId, quantity, cb)
     end
 end)
 
---- @param stashId   string   Unique stash identifier
---- @param label     string   Display label shown in NUI
---- @param maxSlots  number
---- @param maxWeight number   kg
---- @param x         number   World position
---- @param y         number
---- @param z         number
 exports("RegisterStash", function(stashId, label, maxSlots, maxWeight, x, y, z)
     PerformHttpRequest(SIDECAR_URL .. "reducer", function() end, "POST",
         json.encode({ name = "create_stash", args = {
-            stash_id   = stashId,    stash_type = "world",
-            label      = label,      max_slots  = maxSlots,
-            max_weight = maxWeight,  owner_id   = "",
-            pos_x      = x,          pos_y      = y,         pos_z = z,
+            stash_id = stashId, stash_type = "world", label = label,
+            max_slots = maxSlots, max_weight = maxWeight, owner_id = "",
+            pos_x = x, pos_y = y, pos_z = z,
         }}),
         { ["Content-Type"] = "application/json" }
     )
 end)
 
--- ── OPCODE REGISTRATION ───────────────────────────────────────────────────────
-exports("RegisterOpcode", function(label, handler, cb)
-    if not _syncReady then
-        table.insert(_pendingRegistrations, { label = label, handler = handler, cb = cb })
-        return
+exports("ResetInventory", function(serverId, cb)
+    if type(serverId) ~= "number" or serverId <= 0 then
+        if cb then cb(false, "invalid server_id") end; return
     end
-
     PerformHttpRequest(SIDECAR_URL .. "reducer",
         function(status, body, _)
-            if status ~= 200 or not body then
-                print(("[hyprfm] RegisterOpcode: sidecar unreachable for label '%s'"):format(label))
-                return
-            end
-            local ok, data = pcall(json.decode, body)
-            if not ok or not data or not data.ok then
-                print(("[hyprfm] RegisterOpcode: allocation failed for '%s': %s"):format(
-                    label, (ok and data and data.error) or "unknown"))
-                return
-            end
-
-            local opcode = data.opcode
-
-            -- Wire into the live Dispatcher — the poll loop routes here immediately
-            Dispatcher[opcode] = function(netId, args)
-                local ok2, err = pcall(handler, netId, args)
-                if not ok2 then
-                    print(("[hyprfm] RegisterOpcode handler error [%s / 0x%04X]: %s"):format(
-                        label, opcode, tostring(err)))
-                end
-            end
-
-            print(("[hyprfm] RegisterOpcode: '%s' → 0x%04X"):format(label, opcode))
-            if cb then cb(opcode) end
+            local ok, data = pcall(json.decode, body or "")
+            local success   = status == 200 and ok and data and data.ok == true
+            if cb then cb(success, success and data or (data and data.error or "error")) end
         end,
         "POST",
-        json.encode({ name = "allocate_opcode", args = {
-            context     = label,   -- label is the context; Rust idempotency guards duplicates
-            steam_hex   = "",      -- server-owned, not player-bound
-            net_id      = 0,
-            ttl_seconds = 0,       -- permanent — Reaper skips u64::MAX rows
-        }}),
-        { ["Content-Type"] = "application/json" }
-    )
-end)
-
--- Explicit deregistration — use when a resource is unloaded cleanly.
--- The Reaper never touches permanent rows, so this is the only way to free
--- a RegisterOpcode slot without restarting SpacetimeDB.
-exports("DeregisterOpcode", function(label, cb)
-    Dispatcher = Dispatcher or {}
-    -- Remove from local Dispatcher (find by label via a reverse scan)
-    -- We don't store label→opcode locally, so we let the sidecar/Rust handle it
-    PerformHttpRequest(SIDECAR_URL .. "reducer",
-        function(status, _, _)
-            if cb then cb(status == 200) end
-        end,
-        "POST",
-        json.encode({ name = "deregister_opcode", args = { label = label } }),
+        json.encode({ name = "reset_player_inventory", args = { server_id = serverId } }),
         { ["Content-Type"] = "application/json" }
     )
 end)

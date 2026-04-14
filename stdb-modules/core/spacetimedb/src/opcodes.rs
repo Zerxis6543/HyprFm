@@ -10,47 +10,31 @@ pub const fn action(opcode: u16) -> u16 {
     opcode & 0x0FFF
 }
 
-// ── Domain sentinels ─────────────────────────────────────────────────────────
+pub const DOMAIN_MIN:      u16 = 0x1000;
+pub const DOMAIN_MAX:      u16 = 0x8FFF;
+pub const ALLOCATOR_START: u16 = 0x1010; // cursor seeds here; skips 0x1000–0x100F
 
-pub mod domains {
-    pub const ENTITY:  u16 = 0x1000;
-    pub const EFFECT:  u16 = 0x2000;
-    pub const ENGINE:  u16 = 0x9000;
-    pub const DYNAMIC: u16 = 0x4000;
+#[inline(always)]
+pub fn is_in_range(opcode: u16) -> bool {
+    opcode >= DOMAIN_MIN && opcode <= DOMAIN_MAX
 }
 
-// ── 0x1000 Entity domain ─────────────────────────────────────────────────────
+// ── Core opcode labels ────────────────────────────────────────────────────────
 
-pub mod entity {
-    pub const SET_COORDS: u16 = 0x1001;
-    pub const SET_FROZEN: u16 = 0x1002;
-    pub const SET_MODEL:  u16 = 0x1003;
-    pub const SET_HEALTH: u16 = 0x1004;
-    pub const GIVE_WEAPON: u16 = 0x1005;
-}
-
-// ── 0x2000 Effect domain ─────────────────────────────────────────────────────
-
-pub mod effect {
-    pub const HEAL:   u16 = 0x2001;
-    pub const HUNGER: u16 = 0x2002;
-    pub const THIRST: u16 = 0x2003;
-}
-
-// ── 0x9000 Engine domain ─────────────────────────────────────────────────────
-
-pub mod engine {
-    pub const CALL_LOCAL_NATIVE: u16 = 0x9001;
-}
-
-// ── 0x4000–0x7FFF Dynamic domain ─────────────────────────────────────────────
-
-pub mod dynamic {
-    pub const DOMAIN_MIN: u16 = 0x4000;
-    pub const DOMAIN_MAX: u16 = 0x7FFF;
-
-    #[inline(always)]
-    pub const fn is_dynamic(opcode: u16) -> bool {
-        opcode >= DOMAIN_MIN && opcode <= DOMAIN_MAX
+pub mod labels {
+    pub mod entity {
+        pub const SET_COORDS:  &str = "entity:set_coords";
+        pub const SET_FROZEN:  &str = "entity:set_frozen";
+        pub const SET_MODEL:   &str = "entity:set_model";
+        pub const SET_HEALTH:  &str = "entity:set_health";
+        pub const GIVE_WEAPON: &str = "entity:give_weapon";
+    }
+    pub mod effect {
+        pub const HEAL:   &str = "effect:heal";
+        pub const HUNGER: &str = "effect:hunger";
+        pub const THIRST: &str = "effect:thirst";
+    }
+    pub mod engine {
+        pub const CALL_LOCAL_NATIVE: &str = "engine:call_local_native";
     }
 }

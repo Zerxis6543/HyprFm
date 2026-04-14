@@ -1119,16 +1119,30 @@ class Program
                         if (string.IsNullOrEmpty(steamHex) && args.TryGetProperty("server_id", out var sidEl2))
                             steamHex = ResolveSession(sidEl2.GetUInt32())?.SteamHex ?? "";
 
-                        uint  netId      = args.TryGetProperty("net_id",      out var ni) ? ni.GetUInt32() : 0;
-                        ulong ttlSeconds = args.TryGetProperty("ttl_seconds", out var ts) ? ts.GetUInt64() : 3600;
-                        string label     = args.TryGetProperty("context",     out var cl) ? cl.GetString() ?? "unnamed" : "unnamed";
+                        uint   netId      = args.TryGetProperty("net_id",      out var ni) ? ni.GetUInt32() : 0;
+                        ulong  ttlSeconds = args.TryGetProperty("ttl_seconds", out var ts) ? ts.GetUInt64() : 3600;
+                        string label      = args.TryGetProperty("context",     out var cl) ? cl.GetString() ?? "unnamed" : "unnamed";
 
-                        // For permanent RegisterOpcode calls the label is already unique.
-                        // For player-session allocations prefix a UUID so concurrent requests
-                        // for the same logical label don't collide in the context guard.
                         string context = ttlSeconds == 0
                             ? label
                             : $"{Guid.NewGuid().ToString("N")[..12]}:{label}";
+
+                        if (ttlSeconds == 0)
+                        {
+                            var cached = _dynamicOpcodes.FirstOrDefault(kv => kv.Value.Context == context);
+                            if (cached.Value != null)
+                            {
+                                await WriteJson(ctx, new
+                                {
+                                    ok                 = true,
+                                    opcode             = cached.Key,
+                                    context            = context,
+                                    permanent          = true,
+                                    expires_in_seconds = 0UL,
+                                });
+                                return;
+                            }
+                        }
 
                         var tcs = new TaskCompletionSource<ushort>(TaskCreationOptions.RunContinuationsAsynchronously);
                         _pendingAllocations[context] = tcs;
@@ -1144,8 +1158,6 @@ class Program
                             return;
                         }
 
-                        // For permanent labels the Rust idempotency path may skip insertion
-                        // entirely and fire no OnInsert — resolve via cache lookup as fallback.
                         var winner = await Task.WhenAny(tcs.Task, Task.Delay(2000));
                         if (winner == tcs.Task && tcs.Task.IsCompleted)
                         {
@@ -1160,25 +1172,22 @@ class Program
                         }
                         else
                         {
-                            // Fallback: the Rust idempotency branch returned Ok without inserting.
-                            // Look up the existing row directly from the live cache.
-                            var existing = _dynamicOpcodes
-                                .FirstOrDefault(kv => kv.Value.Context == context);
+
+                            var existing = _dynamicOpcodes.FirstOrDefault(kv => kv.Value.Context == context);
+                            _pendingAllocations.TryRemove(context, out _);
                             if (existing.Value != null)
                             {
-                                _pendingAllocations.TryRemove(context, out _);
                                 await WriteJson(ctx, new
                                 {
-                                    ok      = true,
-                                    opcode  = existing.Key,
+                                    ok                 = true,
+                                    opcode             = existing.Key,
                                     context,
-                                    permanent          = true,
+                                    permanent          = ttlSeconds == 0,
                                     expires_in_seconds = ttlSeconds,
                                 });
                             }
                             else
                             {
-                                _pendingAllocations.TryRemove(context, out _);
                                 await WriteJson(ctx, new { ok = false, error = "allocation_timeout" });
                             }
                         }

@@ -1,7 +1,7 @@
 use spacetimedb::{ReducerContext, Table};
 use crate::tables::*;
 use serde_json::json;
-use stdb_core::opcodes::{self, dynamic::{DOMAIN_MIN, DOMAIN_MAX}};
+use stdb_core::opcodes::{DOMAIN_MIN, DOMAIN_MAX, ALLOCATOR_START, labels};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTS
@@ -13,12 +13,6 @@ const DEFAULT_SPAWN_Z:        f32 =   31.0;
 const DEFAULT_HEADING:        f32 =  205.0;
 const DEFAULT_MAX_CHARACTERS: u32 = 3;
 
-
-pub fn registered_opcode(ctx: &ReducerContext, label: &str) -> Option<u16> {
-    ctx.db.dynamic_opcode().iter()
-        .find(|o| o.context == label)
-        .map(|o| o.opcode)
-}
 // ─────────────────────────────────────────────────────────────────────────────
 // OWNER ID HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -27,8 +21,21 @@ fn char_owner_id(character_id: u64) -> String {
     format!("{}", character_id)
 }
 
-fn char_equip_owner_id(character_id: u64, equip_key: &str) -> String {
-    format!("{}_equip_{}", character_id, equip_key)
+// ─────────────────────────────────────────────────────────────────────────────
+// LABEL → OPCODE RESOLVER
+// Lives here (not in core) because DynamicOpcode is a fivem-game table.
+// Third-party crates that depend on stdb-fivem-game import this the same way.
+//
+// Example:
+//   let op = registered_opcode(ctx, labels::effect::HEAL)
+//       .ok_or("effect:heal not registered")?;
+//   ctx.db.instruction_queue().insert(InstructionQueue { opcode: op, .. });
+// ─────────────────────────────────────────────────────────────────────────────
+
+pub fn registered_opcode(ctx: &ReducerContext, label: &str) -> Option<u16> {
+    ctx.db.dynamic_opcode().iter()
+        .find(|o| o.context == label)
+        .map(|o| o.opcode)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -51,26 +58,62 @@ fn build_starter_metadata(ctx: &ReducerContext, def: &ItemDefinition, suffix: u3
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// CORE OPCODE SEED HELPER
+// Called only from init(). Inserts at a fixed numeric position, bypassing the
+// rolling allocator entirely. Idempotent — skips if the row already exists.
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn seed_core_opcode(ctx: &ReducerContext, opcode: u16, label: &str) {
+    if ctx.db.dynamic_opcode().opcode().find(opcode).is_some() { return; }
+    ctx.db.dynamic_opcode().insert(DynamicOpcode {
+        opcode,
+        context:           label.to_string(),
+        owner_steam_hex:   String::new(),
+        net_id:            0,
+        allocated_at:      ctx.timestamp,
+        expires_at_micros: u64::MAX,  // permanent — Reaper never touches this
+        is_consumed:       false,
+    });
+    log::info!("[init] Core opcode seeded: '{}' → 0x{:04X}", label, opcode);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MODULE INITIALISATION
 // Runs once when the SpacetimeDB module is first published.
-// Seeds the allocator cursor and arms the 12-hour Reaper.
+// Seeds all core opcodes at fixed positions, then arms the Reaper.
+// The allocator cursor starts ABOVE the reserved core range (0x1000–0x100F).
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[spacetimedb::reducer(init)]
 pub fn init(ctx: &ReducerContext) {
+    // Core opcodes — fixed positions, permanent, never reaped
+    seed_core_opcode(ctx, 0x1001, labels::entity::SET_COORDS);
+    seed_core_opcode(ctx, 0x1002, labels::entity::SET_FROZEN);
+    seed_core_opcode(ctx, 0x1003, labels::entity::SET_MODEL);
+    seed_core_opcode(ctx, 0x1004, labels::entity::SET_HEALTH);
+    seed_core_opcode(ctx, 0x1005, labels::entity::GIVE_WEAPON);
+    seed_core_opcode(ctx, 0x1006, labels::effect::HEAL);
+    seed_core_opcode(ctx, 0x1007, labels::effect::HUNGER);
+    seed_core_opcode(ctx, 0x1008, labels::effect::THIRST);
+    seed_core_opcode(ctx, 0x1009, labels::engine::CALL_LOCAL_NATIVE);
+
+    // Allocator cursor starts above the reserved core range
     if ctx.db.opcode_allocator().id().find(0).is_none() {
         ctx.db.opcode_allocator().insert(OpcodeAllocator {
             id:             0,
-            next_candidate: DOMAIN_MIN,
+            next_candidate: ALLOCATOR_START,
         });
     }
+
+    // 12-hour Reaper schedule
     ctx.db.reaper_schedule().insert(ReaperSchedule {
         scheduled_id: 0,
         scheduled_at: spacetimedb::ScheduleAt::Interval(
             std::time::Duration::from_secs(12 * 3600).into()
         ),
     });
-    log::info!("[init] Opcode allocator seeded. Reaper scheduled every 12h.");
+
+    log::info!("[init] Core opcodes seeded. Allocator starts at 0x{:04X}. Reaper armed.", ALLOCATOR_START);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -85,21 +128,24 @@ pub fn allocate_opcode(
     net_id:          u32,
     ttl_seconds:     u64,
 ) -> Result<(), String> {
-    // Idempotent for permanent label registrations: if the label already has
-    // a permanent slot (expires_at == u64::MAX), return success without
-    // allocating a second number. This makes RegisterOpcode safe to call on
-    // every resource restart without leaking slots.
+    // Idempotent for permanent registrations: if the label already exists as a
+    // permanent row, return Ok without allocating a new slot. This makes
+    // RegisterOpcode safe to call on every relay restart.
     if let Some(existing) = ctx.db.dynamic_opcode().iter().find(|o| o.context == context) {
         if existing.expires_at_micros == u64::MAX {
-            log::info!("[opcode] Label '{}' already registered at 0x{:04X} — skipping", context, existing.opcode);
+            log::info!("[opcode] '{}' already registered at 0x{:04X} — idempotent skip", context, existing.opcode);
             return Ok(());
         }
-        // Non-permanent context collision — reject
         return Err(format!("OPCODE_CONTEXT_CONFLICT|context '{}' already active", context));
     }
 
     let mut alloc = ctx.db.opcode_allocator().id().find(0)
         .ok_or("ALLOCATOR_NOT_SEEDED")?;
+
+    // Defensive: ensure cursor never falls into the reserved core range
+    if alloc.next_candidate < ALLOCATOR_START {
+        alloc.next_candidate = ALLOCATOR_START;
+    }
 
     let scan_start = alloc.next_candidate;
     let mut candidate = scan_start;
@@ -107,24 +153,21 @@ pub fn allocate_opcode(
     let opcode = loop {
         if ctx.db.dynamic_opcode().opcode().find(candidate).is_none() {
             alloc.next_candidate = if candidate >= DOMAIN_MAX {
-                DOMAIN_MIN
+                ALLOCATOR_START   // wrap back to start of dynamic pool, not 0
             } else {
                 candidate + 1
             };
             break candidate;
         }
-        candidate = if candidate >= DOMAIN_MAX { DOMAIN_MIN } else { candidate + 1 };
+        candidate = if candidate >= DOMAIN_MAX { ALLOCATOR_START } else { candidate + 1 };
         if candidate == scan_start {
-            return Err("OPCODE_POOL_EXHAUSTED|all 16384 dynamic slots are active".to_string());
+            return Err("OPCODE_POOL_EXHAUSTED|all dynamic slots are active".to_string());
         }
     };
 
     let now_micros = ctx.timestamp.to_micros_since_unix_epoch() as u64;
-
-    // ttl_seconds = 0 → permanent registration (RegisterOpcode path).
-    // Reaper skips rows where expires_at_micros == u64::MAX.
     let expires_at = if ttl_seconds == 0 {
-        u64::MAX
+        u64::MAX  // permanent — Reaper skips this row
     } else {
         now_micros.saturating_add(ttl_seconds * 1_000_000)
     };
@@ -160,9 +203,6 @@ pub fn consume_opcode(ctx: &ReducerContext, opcode: u16) -> Result<(), String> {
     if entry.is_consumed {
         return Err("OPCODE_ALREADY_CONSUMED".to_string());
     }
-
-    // Permanent registrations (RegisterOpcode) are never consumed — they are
-    // only called, not used up. Guard against accidental consumption.
     if entry.expires_at_micros == u64::MAX {
         return Err("OPCODE_PERMANENT|registered opcodes cannot be consumed".to_string());
     }
@@ -180,28 +220,22 @@ pub fn consume_opcode(ctx: &ReducerContext, opcode: u16) -> Result<(), String> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DYNAMIC OPCODE — RELEASE (explicit early cleanup)
+// DYNAMIC OPCODE — RELEASE / DEREGISTER
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[spacetimedb::reducer]
 pub fn release_opcode(ctx: &ReducerContext, opcode: u16) {
-    // Guard: never release a permanent registration via this path
     if let Some(entry) = ctx.db.dynamic_opcode().opcode().find(opcode) {
         if entry.expires_at_micros == u64::MAX {
-            log::warn!("[opcode] release_opcode: 0x{:04X} is permanent — use deregister_opcode to remove it", opcode);
+            log::warn!("[opcode] release_opcode: 0x{:04X} is permanent — use deregister_opcode", opcode);
             return;
         }
     }
     if ctx.db.dynamic_opcode().opcode().find(opcode).is_some() {
         ctx.db.dynamic_opcode().opcode().delete(opcode);
-        log::info!("[opcode] Released 0x{:04X} (explicit)", opcode);
+        log::info!("[opcode] Released 0x{:04X}", opcode);
     }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// DYNAMIC OPCODE — DEREGISTER (remove a permanent RegisterOpcode label)
-// Called if a resource is unloaded and its labels should be freed.
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[spacetimedb::reducer]
 pub fn deregister_opcode(ctx: &ReducerContext, label: String) {
@@ -222,8 +256,7 @@ pub fn opcode_reaper_sweep(ctx: &ReducerContext, _schedule: ReaperSchedule) {
 
     let expired: Vec<DynamicOpcode> = ctx.db.dynamic_opcode().iter()
         .filter(|o| {
-            // Never reap permanent registrations
-            if o.expires_at_micros == u64::MAX { return false; }
+            if o.expires_at_micros == u64::MAX { return false; } // skip permanent
             o.expires_at_micros <= now_micros || o.is_consumed
         })
         .collect();
@@ -238,11 +271,7 @@ pub fn opcode_reaper_sweep(ctx: &ReducerContext, _schedule: ReaperSchedule) {
         ctx.db.dynamic_opcode().opcode().delete(entry.opcode);
     }
 
-    if count > 0 {
-        log::info!("[reaper] Sweep complete — recycled {} opcode(s)", count);
-    } else {
-        log::info!("[reaper] Sweep complete — pool clean");
-    }
+    log::info!("[reaper] Sweep complete — recycled {} opcode(s)", count);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -419,9 +448,7 @@ pub fn reaper_sweep(ctx: &ReducerContext, stale_threshold_seconds: u64) {
     let threshold_micros = stale_threshold_seconds * 1_000_000;
     let stale: Vec<CharSession> = ctx.db.char_session().iter()
         .filter(|s| {
-            let age = now_micros.saturating_sub(
-                s.connected_at.to_micros_since_unix_epoch() as u64
-            );
+            let age = now_micros.saturating_sub(s.connected_at.to_micros_since_unix_epoch() as u64);
             age > threshold_micros
         })
         .collect();
@@ -446,7 +473,7 @@ pub fn reaper_sweep(ctx: &ReducerContext, stale_threshold_seconds: u64) {
         ctx.db.char_session().steam_hex().delete(s.steam_hex);
         swept += 1;
     }
-    log::info!("[reaper] Sweep complete — cleared {} stale session(s).", swept);
+    log::info!("[reaper] Session sweep complete — cleared {}", swept);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -463,7 +490,7 @@ pub fn create_character(
 ) -> Result<(), String> {
     let name = name.trim().to_string();
     if name.is_empty() || name.len() > 32 {
-        return Err("NAME_INVALID|Character name must be 1–32 characters".to_string());
+        return Err("NAME_INVALID|Character name must be 1-32 characters".to_string());
     }
     let account = ctx.db.account().steam_hex().find(&steam_hex)
         .ok_or("ACCOUNT_NOT_FOUND")?;
@@ -522,12 +549,8 @@ pub fn delete_character(
 ) -> Result<(), String> {
     let mut character = ctx.db.character().id().find(character_id)
         .ok_or("CHAR_NOT_FOUND")?;
-    if character.steam_hex != steam_hex {
-        return Err("CHAR_OWNERSHIP".to_string());
-    }
-    if character.is_deleted {
-        return Err("CHAR_ALREADY_DELETED".to_string());
-    }
+    if character.steam_hex != steam_hex { return Err("CHAR_OWNERSHIP".to_string()); }
+    if character.is_deleted             { return Err("CHAR_ALREADY_DELETED".to_string()); }
     if ctx.db.char_session().iter().any(|s| s.character_id == character_id) {
         return Err("CHAR_ACTIVE|Cannot delete a character that is currently online".to_string());
     }
@@ -548,9 +571,7 @@ pub fn save_appearance(
 ) -> Result<(), String> {
     let character = ctx.db.character().id().find(character_id)
         .ok_or("CHAR_NOT_FOUND")?;
-    if character.steam_hex != steam_hex {
-        return Err("CHAR_OWNERSHIP".to_string());
-    }
+    if character.steam_hex != steam_hex { return Err("CHAR_OWNERSHIP".to_string()); }
     if let Some(mut app) = ctx.db.character_appearance().character_id().find(character_id) {
         app.components_json = components_json;
         app.overlays_json   = overlays_json;
@@ -585,24 +606,32 @@ pub fn request_spawn(
 ) {
     let session = match ctx.db.char_session().steam_hex().find(&steam_hex) {
         Some(s) => s,
-        None => { log::warn!("[player] request_spawn: no session for {}", steam_hex); return; }
+        None => { log::warn!("[spawn] no session for {}", steam_hex); return; }
     };
     if spawn_x < -8000.0 || spawn_x > 8000.0 || spawn_y < -8000.0 || spawn_y > 8000.0 {
-        log::warn!("[player] request_spawn: coords out of bounds"); return;
+        log::warn!("[spawn] coords out of bounds"); return;
     }
+
+    let Some(set_coords_op) = registered_opcode(ctx, labels::entity::SET_COORDS) else {
+        log::warn!("[spawn] '{}' not registered", labels::entity::SET_COORDS); return;
+    };
+    let Some(set_frozen_op) = registered_opcode(ctx, labels::entity::SET_FROZEN) else {
+        log::warn!("[spawn] '{}' not registered", labels::entity::SET_FROZEN); return;
+    };
+
     ctx.db.instruction_queue().insert(InstructionQueue {
         id: 0, target_entity_net_id: session.net_id,
-        opcode:    opcodes::entity::SET_COORDS,
+        opcode:    set_coords_op,
         payload:   json!([spawn_x, spawn_y, spawn_z, false, false, true]).to_string(),
         queued_at: ctx.timestamp, consumed: false,
     });
     ctx.db.instruction_queue().insert(InstructionQueue {
         id: 0, target_entity_net_id: session.net_id,
-        opcode:    opcodes::entity::SET_FROZEN,
+        opcode:    set_frozen_op,
         payload:   json!([false]).to_string(),
         queued_at: ctx.timestamp, consumed: false,
     });
-    log::info!("[player] Spawn queued for {} at ({},{},{})", steam_hex, spawn_x, spawn_y, spawn_z);
+    log::info!("[spawn] Queued for {} at ({},{},{})", steam_hex, spawn_x, spawn_y, spawn_z);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -861,45 +890,55 @@ pub fn use_item(ctx: &ReducerContext, slot_id: u64, net_id: u32) {
         Some(d) => d, None => return,
     };
     if !def.usable { log::warn!("[inventory] use_item: {} not usable", slot.item_id); return; }
+
     let consume = |ctx: &ReducerContext, slot_id: u64| {
         if let Some(mut s) = ctx.db.inventory_slot().id().find(slot_id) {
             if s.quantity <= 1 { ctx.db.inventory_slot().id().delete(slot_id); }
             else { s.quantity -= 1; ctx.db.inventory_slot().id().update(s); }
         }
     };
+
     match slot.item_id.as_str() {
         "bandage" => {
+            let Some(op) = registered_opcode(ctx, labels::effect::HEAL) else {
+                log::warn!("[use_item] '{}' not registered", labels::effect::HEAL); return;
+            };
             ctx.db.instruction_queue().insert(InstructionQueue {
                 id: 0, target_entity_net_id: net_id,
-                opcode: opcodes::effect::HEAL,
-                payload: json!([40]).to_string(),
+                opcode: op, payload: json!([40]).to_string(),
                 queued_at: ctx.timestamp, consumed: false,
             });
             consume(ctx, slot_id);
         }
         "medkit" => {
+            let Some(op) = registered_opcode(ctx, labels::effect::HEAL) else {
+                log::warn!("[use_item] '{}' not registered", labels::effect::HEAL); return;
+            };
             ctx.db.instruction_queue().insert(InstructionQueue {
                 id: 0, target_entity_net_id: net_id,
-                opcode: opcodes::effect::HEAL,
-                payload: json!([100]).to_string(),
+                opcode: op, payload: json!([100]).to_string(),
                 queued_at: ctx.timestamp, consumed: false,
             });
             consume(ctx, slot_id);
         }
         "food_burger" => {
+            let Some(op) = registered_opcode(ctx, labels::effect::HUNGER) else {
+                log::warn!("[use_item] '{}' not registered", labels::effect::HUNGER); return;
+            };
             ctx.db.instruction_queue().insert(InstructionQueue {
                 id: 0, target_entity_net_id: net_id,
-                opcode: opcodes::effect::HUNGER,
-                payload: json!([30]).to_string(),
+                opcode: op, payload: json!([30]).to_string(),
                 queued_at: ctx.timestamp, consumed: false,
             });
             consume(ctx, slot_id);
         }
         "water_bottle" => {
+            let Some(op) = registered_opcode(ctx, labels::effect::THIRST) else {
+                log::warn!("[use_item] '{}' not registered", labels::effect::THIRST); return;
+            };
             ctx.db.instruction_queue().insert(InstructionQueue {
                 id: 0, target_entity_net_id: net_id,
-                opcode: opcodes::effect::THIRST,
-                payload: json!([30]).to_string(),
+                opcode: op, payload: json!([30]).to_string(),
                 queued_at: ctx.timestamp, consumed: false,
             });
             consume(ctx, slot_id);

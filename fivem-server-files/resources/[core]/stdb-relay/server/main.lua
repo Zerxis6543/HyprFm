@@ -1,33 +1,31 @@
+-- HyprFM Relay — thin bridge between FiveM natives and SpacetimeDB.
+-- This file NEVER decides game state. It routes instructions and nothing else.
+
 print("[stdb-relay] SERVER MAIN LOADED")
 
 local SIDECAR_URL = "http://127.0.0.1:27200/"
 
--- ═════════════════════════════════════════════════════════════════════════════
+-- ─────────────────────────────────────────────────────────────────────────────
 -- MODULE-LEVEL GLOBALS
--- Intentionally global (not local) so exports.lua, which is loaded AFTER this
--- file within the same resource, can safely reference them.
--- ═════════════════════════════════════════════════════════════════════════════
+-- Global (not local) so exports.lua, loaded after this file, can reference them.
+-- ─────────────────────────────────────────────────────────────────────────────
 
-_volatileQueue       = {}
-_identityToServerId  = {}
-_openStashToServerId = {}
-_propOwnerServerId   = {}
-_syncReady            = false   -- true once the sidecar subscription is live
-_pendingRegistrations = {}
+Dispatcher            = {}   -- opcode (number) -> handler function
+_volatileQueue        = {}   -- Instructions from InvokeNative — zero HTTP cost
+_identityToServerId   = {}   -- identity hex -> FiveM server_id
+_openStashToServerId  = {}   -- stash_id / plate -> FiveM server_id
+_propOwnerServerId    = {}   -- ground stash_id -> server_id of the player who dropped
 
-local function _flushPendingRegistrations()
-    _syncReady = true
-    for _, reg in ipairs(_pendingRegistrations) do
-        exports['stdb-relay']:RegisterOpcode(reg.label, reg.handler, reg.cb)
-    end
-    _pendingRegistrations = {}
-end
+_opcodeToLabel        = {}   -- reverse map: opcode number -> label string
+_syncReady            = false  -- true after all core opcodes are registered
+_pendingRegistrations = {}     -- third-party RegisterOpcode calls queued until ready
 
-- ═════════════════════════════════════════════════════════════════════════════
--- OPCODE DISPATCHER TABLE
--- Pre-allocated once at resource start; each entry is a pure function.
--- Mirrors opcodes.rs exactly — add entries here when new opcodes are added.
--- ═════════════════════════════════════════════════════════════════════════════
+-- ─────────────────────────────────────────────────────────────────────────────
+-- CORE OPCODE HANDLERS
+-- What to do when an instruction with each core label arrives from STDB.
+-- Entity/engine opcodes forward to the client via stdb:executeOpcode (label-keyed).
+-- Effect opcodes use stdb:applyEffect which the client handles semantically.
+-- ─────────────────────────────────────────────────────────────────────────────
 
 local function netToPlayer(netId)
     local entity = NetworkGetEntityFromNetworkId(netId)
@@ -35,98 +33,168 @@ local function netToPlayer(netId)
     return NetworkGetEntityOwner(entity)
 end
 
-Dispatcher = {}
+_coreHandlers = {
+    ["entity:set_coords"] = function(netId, args)
+        local pid = netToPlayer(netId)
+        if pid then TriggerClientEvent("stdb:executeOpcode", pid, "entity:set_coords", args) end
+    end,
+    ["entity:set_frozen"] = function(netId, args)
+        local pid = netToPlayer(netId)
+        if pid then TriggerClientEvent("stdb:executeOpcode", pid, "entity:set_frozen", args) end
+    end,
+    ["entity:set_model"] = function(netId, args)
+        local pid = netToPlayer(netId)
+        if pid then TriggerClientEvent("stdb:executeOpcode", pid, "entity:set_model", args) end
+    end,
+    ["entity:set_health"] = function(netId, args)
+        local pid = netToPlayer(netId)
+        if pid then TriggerClientEvent("stdb:executeOpcode", pid, "entity:set_health", args) end
+    end,
+    ["entity:give_weapon"] = function(netId, args)
+        local pid = netToPlayer(netId)
+        if pid then TriggerClientEvent("stdb:executeOpcode", pid, "entity:give_weapon", args) end
+    end,
+    ["effect:heal"] = function(netId, args)
+        local pid = netToPlayer(netId)
+        if pid then TriggerClientEvent("stdb:applyEffect", pid, { effect = "heal",   amount = args[1] or 40  }) end
+    end,
+    ["effect:hunger"] = function(netId, args)
+        local pid = netToPlayer(netId)
+        if pid then TriggerClientEvent("stdb:applyEffect", pid, { effect = "hunger", amount = args[1] or 30  }) end
+    end,
+    ["effect:thirst"] = function(netId, args)
+        local pid = netToPlayer(netId)
+        if pid then TriggerClientEvent("stdb:applyEffect", pid, { effect = "thirst", amount = args[1] or 30  }) end
+    end,
+    ["engine:call_local_native"] = function(netId, args)
+        local pid = netToPlayer(netId)
+        if pid then TriggerClientEvent("stdb:executeOpcode", pid, "engine:call_local_native", args) end
+    end,
+}
 
--- 0x1001  ENTITY:SET_COORDS  — teleport ped to world coordinates
-Dispatcher[0x1001] = function(netId, args)
-    local pid = netToPlayer(netId)
-    if pid then TriggerClientEvent("stdb:executeOpcode", pid, 0x1001, args) end
-end
+-- ─────────────────────────────────────────────────────────────────────────────
+-- CONSTANTS TABLE SETTERS
+-- Called once per core opcode when registration resolves to populate constants.lua.
+-- ─────────────────────────────────────────────────────────────────────────────
 
--- 0x1002  ENTITY:SET_FROZEN  — freeze / unfreeze ped position
-Dispatcher[0x1002] = function(netId, args)
-    local pid = netToPlayer(netId)
-    if pid then TriggerClientEvent("stdb:executeOpcode", pid, 0x1002, args) end
-end
+local _labelToConstantSetter = {
+    ["entity:set_coords"]       = function(n) Opcode.Entity.SetCoords       = n end,
+    ["entity:set_frozen"]       = function(n) Opcode.Entity.SetFrozen       = n end,
+    ["entity:set_model"]        = function(n) Opcode.Entity.SetModel        = n end,
+    ["entity:set_health"]       = function(n) Opcode.Entity.SetHealth       = n end,
+    ["entity:give_weapon"]      = function(n) Opcode.Entity.GiveWeapon      = n end,
+    ["effect:heal"]             = function(n) Opcode.Effect.Heal            = n end,
+    ["effect:hunger"]           = function(n) Opcode.Effect.Hunger          = n end,
+    ["effect:thirst"]           = function(n) Opcode.Effect.Thirst          = n end,
+    ["engine:call_local_native"]= function(n) Opcode.Engine.CallLocalNative = n end,
+}
 
--- 0x1003  ENTITY:SET_MODEL   — swap ped visual model
-Dispatcher[0x1003] = function(netId, args)
-    local pid = netToPlayer(netId)
-    if pid then TriggerClientEvent("stdb:executeOpcode", pid, 0x1003, args) end
-end
+-- ─────────────────────────────────────────────────────────────────────────────
+-- CORE OPCODE REGISTRATION
+-- Makes direct HTTP calls — bypasses the _syncReady gate intentionally.
+-- Third-party code uses the RegisterOpcode export which IS gated.
+-- ─────────────────────────────────────────────────────────────────────────────
 
--- 0x1004  ENTITY:SET_HEALTH  — set raw GTA health value (100–200)
-Dispatcher[0x1004] = function(netId, args)
-    local pid = netToPlayer(netId)
-    if pid then TriggerClientEvent("stdb:executeOpcode", pid, 0x1004, args) end
-end
+local _coreOpcodeLabels = {
+    "entity:set_coords",
+    "entity:set_frozen",
+    "entity:set_model",
+    "entity:set_health",
+    "entity:give_weapon",
+    "effect:heal",
+    "effect:hunger",
+    "effect:thirst",
+    "engine:call_local_native",
+}
 
--- 0x1005  ENTITY:GIVE_WEAPON — give weapon + ammo to ped
-Dispatcher[0x1005] = function(netId, args)
-    local pid = netToPlayer(netId)
-    if pid then TriggerClientEvent("stdb:executeOpcode", pid, 0x1005, args) end
-end
+local function _registerCoreOpcodes(onAllDone)
+    local total    = #_coreOpcodeLabels
+    local resolved = 0
 
--- 0x2001  EFFECT:HEAL   — restore HP with animation on owning client
-Dispatcher[0x2001] = function(netId, args)
-    local pid = netToPlayer(netId)
-    if pid then
-        TriggerClientEvent("stdb:applyEffect", pid, { effect = "heal",   amount = args[1] or 40 })
+    for _, label in ipairs(_coreOpcodeLabels) do
+        local capturedLabel = label
+        PerformHttpRequest(SIDECAR_URL .. "reducer",
+            function(status, body, _)
+                if status ~= 200 or not body then
+                    print(("[stdb-relay] Core opcode registration failed for '%s' (HTTP %d)"):format(
+                        capturedLabel, status or 0))
+                    resolved = resolved + 1
+                    if resolved >= total and onAllDone then onAllDone() end
+                    return
+                end
+                local ok, data = pcall(json.decode, body)
+                if not ok or not data or not data.ok then
+                    print(("[stdb-relay] Core opcode allocation error for '%s': %s"):format(
+                        capturedLabel, (ok and data and data.error) or "parse error"))
+                    resolved = resolved + 1
+                    if resolved >= total and onAllDone then onAllDone() end
+                    return
+                end
+
+                local opcode = data.opcode
+
+                -- Wire Dispatcher
+                if _coreHandlers[capturedLabel] then
+                    Dispatcher[opcode] = _coreHandlers[capturedLabel]
+                end
+
+                -- Populate reverse label map
+                _opcodeToLabel[opcode] = capturedLabel
+
+                -- Populate constants.lua Opcode table
+                local setter = _labelToConstantSetter[capturedLabel]
+                if setter then setter(opcode) end
+
+                print(("[stdb-relay] Core opcode ready: '%s' -> %s"):format(
+                    capturedLabel, Opcode.Format(opcode)))
+
+                resolved = resolved + 1
+                if resolved >= total and onAllDone then onAllDone() end
+            end,
+            "POST",
+            json.encode({ name = "allocate_opcode", args = {
+                context     = capturedLabel,
+                steam_hex   = "",
+                net_id      = 0,
+                ttl_seconds = 0,
+            }}),
+            { ["Content-Type"] = "application/json" }
+        )
     end
 end
 
--- 0x2002  EFFECT:HUNGER — restore hunger status
-Dispatcher[0x2002] = function(netId, args)
-    local pid = netToPlayer(netId)
-    if pid then
-        TriggerClientEvent("stdb:applyEffect", pid, { effect = "hunger", amount = args[1] or 30 })
+local function _flushPendingRegistrations()
+    _syncReady = true
+    print(("[stdb-relay] Core opcodes ready — flushing %d pending registration(s)"):format(
+        #_pendingRegistrations))
+    for _, reg in ipairs(_pendingRegistrations) do
+        exports['stdb-relay']:RegisterOpcode(reg.label, reg.handler, reg.cb)
     end
-end
-
--- 0x2003  EFFECT:THIRST — restore thirst status
-Dispatcher[0x2003] = function(netId, args)
-    local pid = netToPlayer(netId)
-    if pid then
-        TriggerClientEvent("stdb:applyEffect", pid, { effect = "thirst", amount = args[1] or 30 })
-    end
-end
-
--- 0x9001  ENGINE:CALL_LOCAL_NATIVE — cosmetic proxy (whitelist enforced client-side)
-Dispatcher[0x9001] = function(netId, args)
-    local pid = netToPlayer(netId)
-    if pid then TriggerClientEvent("stdb:executeOpcode", pid, 0x9001, args) end
+    _pendingRegistrations = {}
 end
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- INSTRUCTION DISPATCH HELPER
--- Decodes the JSON payload array and routes to the correct Dispatcher entry.
+-- INSTRUCTION DISPATCH
+-- Decodes the JSON payload and routes to the correct Dispatcher entry.
 -- ─────────────────────────────────────────────────────────────────────────────
+
 local function dispatchInstruction(instr)
     local ok, args = pcall(json.decode, instr.payload or "[]")
     if not ok or type(args) ~= "table" then args = {} end
-
     local handler = Dispatcher[instr.opcode]
     if handler then
         handler(instr.target_entity_net_id, args)
     else
-        print(("[stdb-relay] WARN: unhandled opcode 0x%04X"):format(instr.opcode or 0))
+        local label = _opcodeToLabel[instr.opcode] or "unknown"
+        print(("[stdb-relay] WARN: unhandled opcode %s label='%s'"):format(
+            Opcode.Format(instr.opcode), label))
     end
 end
 
--- ═════════════════════════════════════════════════════════════════════════════
--- INSTRUCTION POLL LOOP  (100 ms cadence)
---
--- Phase 1 — Volatile queue drain:
---   Instructions inserted by InvokeNative() are dispatched without any HTTP
---   round-trip. This is the "zero-latency" path for cosmetic effects.
---
--- Phase 2 — Sidecar fetch:
---   Persisted instructions (spawns, heals, weapon gives) are fetched from the
---   C# sidecar, dispatched to the owning client, then ACK'd via POST /consumed.
---   SpacetimeDB marks them consumed so they are never replayed.
--- ═════════════════════════════════════════════════════════════════════════════
+-- ─────────────────────────────────────────────────────────────────────────────
+-- DIAGNOSTICS LOOP (30s)
+-- ─────────────────────────────────────────────────────────────────────────────
 
--- ── DIAGNOSTICS: poll sidecar every 30s so we can see internal state ─────────
 Citizen.CreateThread(function()
     while true do
         Citizen.Wait(30000)
@@ -145,24 +213,21 @@ Citizen.CreateThread(function()
                     tostring(d.last_delta_utc),
                     d.inventory_slot_count or -1
                 ))
-                -- Key signal: if frames > 0 but deltas_fired == 0 after actions,
-                -- the SDK subscription callbacks are not firing.
-                -- If frames == 0, the FrameTick loop has stopped.
             end,
             "GET", "", {}
         )
     end
 end)
 
--- ═════════════════════════════════════════════════════════════════════════════
--- INSTRUCTION POLL LOOP  (100 ms cadence)
--- ═════════════════════════════════════════════════════════════════════════════
+-- ─────────────────────────────────────────────────────────────────────────────
+-- INSTRUCTION POLL LOOP (100ms)
+-- ─────────────────────────────────────────────────────────────────────────────
 
 Citizen.CreateThread(function()
     while true do
         Citizen.Wait(100)
 
-        -- ── Phase 1: drain volatile queue (zero HTTP cost) ────────────────────
+        -- Phase 1: drain volatile queue (zero HTTP cost)
         if #_volatileQueue > 0 then
             local batch = _volatileQueue
             _volatileQueue = {}
@@ -171,19 +236,17 @@ Citizen.CreateThread(function()
             end
         end
 
-        -- ── Phase 2: fetch persisted instructions from sidecar ────────────────
+        -- Phase 2: fetch persisted instructions from sidecar
         PerformHttpRequest(SIDECAR_URL .. "instructions",
             function(status, body, _)
                 if status ~= 200 or not body or body == "" or body == "[]" then return end
                 local ok, instructions = pcall(json.decode, body)
                 if not ok or type(instructions) ~= "table" or #instructions == 0 then return end
-
                 local consumed = {}
                 for _, instr in ipairs(instructions) do
                     dispatchInstruction(instr)
                     consumed[#consumed + 1] = instr.id
                 end
-
                 if #consumed > 0 then
                     PerformHttpRequest(SIDECAR_URL .. "consumed",
                         function() end, "POST",
@@ -197,46 +260,24 @@ Citizen.CreateThread(function()
     end
 end)
 
--- ═════════════════════════════════════════════════════════════════════════════
--- SLOT DELTA PUSH LOOP  (150 ms cadence)
---
--- The C# sidecar emits three event types to GET /slot-deltas:
---   "added"   — new slot inserted (e.g. item spawned or given)
---   "updated" — slot mutated, owner_id = NEW owner
---   "deleted" — slot removed, owner_id = OLD owner
---             ↑ also emitted for the OLD owner when owner changes (Program.cs fix)
---
--- Routing: we check BOTH lookup tables for each delta's owner_id, then group
--- by server_id so each player gets ONE batched TriggerClientEvent per tick
--- even when a single operation affects two of their panels simultaneously
--- (e.g. pickup: stash loses a slot AND pockets gains one).
--- ═════════════════════════════════════════════════════════════════════════════
+-- ─────────────────────────────────────────────────────────────────────────────
+-- SLOT DELTA PUSH LOOP (150ms)
+-- ─────────────────────────────────────────────────────────────────────────────
 
 Citizen.CreateThread(function()
     while true do
         Citizen.Wait(150)
-
         PerformHttpRequest(SIDECAR_URL .. "slot-deltas",
             function(status, body, _)
                 if status ~= 200 or not body or body == "" or body == "[]" then return end
                 local ok, deltas = pcall(json.decode, body)
                 if not ok or type(deltas) ~= "table" or #deltas == 0 then return end
 
-                -- Group by server_id (recipient) not by owner_id.
-                -- A single delta tick can produce entries for two different
-                -- owner_ids that both resolve to the same player.
                 local byServerId = {}
                 for _, delta in ipairs(deltas) do
                     local oid = delta.owner_id or ""
                     if oid == "" then goto continueDelta end
-
-                    -- Primary lookup: pre-populated maps
                     local sid = _identityToServerId[oid] or _openStashToServerId[oid]
-
-                    -- Fallback: if oid looks like a steam hex and we have no map entry,
-                    -- scan connected players to find and heal the missing entry.
-                    -- This makes routing resilient to resource restarts where the 500ms
-                    -- deferred scan hasn't finished yet when the first deltas arrive.
                     if not sid and oid:sub(1, 6) == "steam:" then
                         for _, playerSrc in ipairs(GetPlayers()) do
                             local psrc = tonumber(playerSrc)
@@ -244,8 +285,7 @@ Citizen.CreateThread(function()
                                 for _, identifier in ipairs(GetPlayerIdentifiers(psrc)) do
                                     if identifier == oid then
                                         sid = psrc
-                                        _identityToServerId[oid] = psrc  -- heal the map
-                                        print(("[stdb-relay] Delta healed identity map: %s → server_id=%d"):format(oid, psrc))
+                                        _identityToServerId[oid] = psrc
                                         break
                                     end
                                 end
@@ -253,74 +293,40 @@ Citizen.CreateThread(function()
                             if sid then break end
                         end
                     end
-
-                    -- ── DIAGNOSTIC ────────────────────────────────────────────
                     print(("[Delta] type=" .. tostring(delta.type) ..
                            " owner_id=" .. oid ..
-                           " identity_sid=" .. tostring(_identityToServerId[oid]) ..
-                           " stash_sid=" .. tostring(_openStashToServerId[oid]) ..
                            " routed_to=" .. tostring(sid)))
-
                     if not sid then goto continueDelta end
-
                     if not byServerId[sid] then byServerId[sid] = {} end
                     byServerId[sid][#byServerId[sid] + 1] = delta
-
                     ::continueDelta::
                 end
 
                 for serverId, playerDeltas in pairs(byServerId) do
-                    print(("[Delta] Sending " .. #playerDeltas .. " delta(s) to server_id=" .. serverId))
                     TriggerClientEvent("stdb:slotDeltas", serverId, playerDeltas)
                 end
 
-                -- ── Ground stash prop cleanup ─────────────────────────────────────────
-                -- When the last item is removed from a ground stash (by pickup, drop,
-                -- or any other reducer), the world prop should be deleted.
-                --
-                -- We use the EXISTING stdb:deleteWorldProp net event which already
-                -- iterates worldProps and deletes the matching object. No NUI callback
-                -- chain needed — the server owns this signal.
-                --
-                -- Guard: only check ground stashes (prefix "ground_") once per stash
-                -- per tick, so rapid multi-slot deletions don't fan out extra queries.
+                -- Ground stash prop cleanup
                 local checkedStashes = {}
                 for _, delta in ipairs(deltas) do
                     if delta.type == "deleted" then
                         local oid = delta.owner_id or ""
-                        -- Ground stash IDs are always "ground_<timestamp>" (see reducers.rs)
                         if oid:sub(1, 7) == "ground_" and not checkedStashes[oid] then
                             checkedStashes[oid] = true
-                            print(("[prop] DELTA deleted for ground stash: " .. oid))
-                            -- Use _propOwnerServerId, NOT _openStashToServerId.
-                            -- _openStashToServerId is cleared by stdb:closeInventory
-                            -- (which fires before the delta loop processes the deletion).
-                            -- _propOwnerServerId is set at drop time and persists until
-                            -- the prop is actually deleted.
                             local sid = _propOwnerServerId[oid]
-                            print(("[prop] owner lookup for " .. oid .. " = " .. tostring(sid)))
                             if sid then
-                                -- Query the sidecar for remaining slots in this stash.
-                                -- If the count is 0, fire deleteWorldProp so the client
-                                -- removes the prop from worldProps and calls DeleteObject.
                                 PerformHttpRequest(SIDECAR_URL .. "reducer",
                                     function(qs, qb, _)
                                         if qs ~= 200 or not qb then return end
                                         local qok, qdata = pcall(json.decode, qb)
-                                        local slotCount = qdata and qdata.slots and #qdata.slots or -1
-                                        print(("[prop] slot count for " .. oid .. " = " .. slotCount))
-                                        if qok and qdata and
-                                           (not qdata.slots or #qdata.slots == 0) then
-                                            print(("[prop] FIRING deleteWorldProp -> src=" .. sid .. " stash=" .. oid))
+                                        if qok and qdata and (not qdata.slots or #qdata.slots == 0) then
                                             TriggerClientEvent("stdb:deleteWorldProp", sid, oid)
-                                            -- Prop deleted — clear the owner map entry
                                             _propOwnerServerId[oid] = nil
                                         end
                                     end,
                                     "POST",
                                     json.encode({ name = "get_inventory_slots", args = {
-                                        owner_id   = oid,
-                                        owner_type = "stash",
+                                        owner_id = oid, owner_type = "stash",
                                     }}),
                                     { ["Content-Type"] = "application/json" }
                                 )
@@ -334,65 +340,51 @@ Citizen.CreateThread(function()
     end
 end)
 
--- ═════════════════════════════════════════════════════════════════════════════
+-- ─────────────────────────────────────────────────────────────────────────────
 -- PLAYER LIFECYCLE
--- ═════════════════════════════════════════════════════════════════════════════
+-- ─────────────────────────────────────────────────────────────────────────────
 
--- ── Re-populate routing maps on resource start ────────────────────────────────
--- When this resource is restarted (e.g. after deploying a new main.lua),
--- _identityToServerId is wiped. Players already in the server will not fire
--- stdb:playerConnected again because playerSpawned only fires once per session.
--- This handler re-scans all connected players and restores the map immediately.
 AddEventHandler("onResourceStart", function(resourceName)
     if resourceName ~= GetCurrentResourceName() then return end
-
     Citizen.CreateThread(function()
         Citizen.Wait(500)
 
+        -- Ask any already-connected players to re-announce their identity
         local playerList = GetPlayers()
-        if #playerList == 0 then return end
-
-        print(("[stdb-relay] Resource started — asking %d connected player(s) to re-announce"):format(#playerList))
-
-        for _, playerSrc in ipairs(playerList) do
-            local src = tonumber(playerSrc)
-            if src then
-                -- Ask the client to re-fire stdb:playerConnected.
-                -- Client-side GetPlayerIdentifiers() is always populated; server-side
-                -- GetPlayerIdentifiers() returns empty on resource start even with delays.
-                TriggerClientEvent("stdb:reconnect", src)
+        if #playerList > 0 then
+            print(("[stdb-relay] Resource started — asking %d connected player(s) to re-announce"):format(
+                #playerList))
+            for _, playerSrc in ipairs(playerList) do
+                local src = tonumber(playerSrc)
+                if src then TriggerClientEvent("stdb:reconnect", src) end
             end
         end
+
+        -- Register all core opcodes, then open the gate for third-party registrations
+        _registerCoreOpcodes(function()
             _flushPendingRegistrations()
+        end)
     end)
 end)
 
--- Fired by client/spawn.lua once the player's ped has fully spawned and its
--- net_id is valid. This is the authoritative connect signal for SpacetimeDB.
 RegisterNetEvent("stdb:playerConnected")
 AddEventHandler("stdb:playerConnected", function(netId, heading)
     local src        = source
     local playerName = GetPlayerName(src)
     local steamHex   = ""
-
     for _, id in ipairs(GetPlayerIdentifiers(src)) do
         if string.sub(id, 1, 6) == "steam:" then steamHex = id; break end
     end
-
     if steamHex ~= "" then
         _identityToServerId[steamHex] = src
-        -- Persist in FiveM state bag — survives resource restarts because
-        -- FiveM owns this storage, not our Lua globals. Any subsequent
-        -- event handler can read Player(src).state.steamHex reliably.
         Player(src).state:set("steamHex", steamHex, false)
     end
-
     PerformHttpRequest(SIDECAR_URL .. "reducer",
         function(status, _, _)
             if status == 200 then
-                print(("[stdb-relay] '%s' (server_id=%d) registered with SpacetimeDB"):format(playerName, src))
+                print(("[stdb-relay] '%s' (server_id=%d) registered"):format(playerName, src))
             else
-                print(("[stdb-relay] WARN: on_player_connect returned HTTP %d for '%s'"):format(status or 0, playerName))
+                print(("[stdb-relay] WARN: on_player_connect HTTP %d for '%s'"):format(status or 0, playerName))
             end
         end,
         "POST",
@@ -407,16 +399,12 @@ AddEventHandler("stdb:playerConnected", function(netId, heading)
     )
 end)
 
--- FiveM built-in event — fires reliably on disconnect / timeout / kick
 AddEventHandler("playerDropped", function(_reason)
     local src      = source
     local steamHex = ""
-
     for _, id in ipairs(GetPlayerIdentifiers(src)) do
         if string.sub(id, 1, 6) == "steam:" then steamHex = id; break end
     end
-
-    -- Clear all local routing maps for this server_id
     for identity, sid in pairs(_identityToServerId) do
         if sid == src then _identityToServerId[identity] = nil; break end
     end
@@ -426,25 +414,17 @@ AddEventHandler("playerDropped", function(_reason)
     for stashId, sid in pairs(_propOwnerServerId) do
         if sid == src then _propOwnerServerId[stashId] = nil end
     end
-
-    -- Pass both steam_hex and server_id so the sidecar clears the right session
     PerformHttpRequest(SIDECAR_URL .. "reducer",
         function() end, "POST",
         json.encode({ name = "on_player_disconnect", args = {
-            steam_hex = steamHex,
-            server_id = src,
+            steam_hex = steamHex, server_id = src,
         }}),
         { ["Content-Type"] = "application/json" }
     )
 end)
 
--- No-op comment preserved — actual logic below
 RegisterNetEvent("stdb:clientReady")
 AddEventHandler("stdb:clientReady", function()
-    -- clientReady fires from onClientResourceStart, which is too early for
-    -- steam authentication to be complete. Do NOT call on_player_connect here.
-    -- That is handled by stdb:playerConnected (after playerSpawned).
-    -- Only read identifiers to pre-populate local routing maps if available.
     local src      = source
     local steamHex = ""
     for _, id in ipairs(GetPlayerIdentifiers(src)) do
@@ -456,27 +436,40 @@ AddEventHandler("stdb:clientReady", function()
     end
 end)
 
--- Sent by onResourceStart to ask clients to re-fire their playerConnected event.
--- The client always has valid identifiers; server-side GetPlayerIdentifiers()
--- fails on resource start even with delays. Re-firing from the client side
--- restores _identityToServerId and _steamHexByServerId correctly.
 RegisterNetEvent("stdb:reconnect")
-AddEventHandler("stdb:reconnect", function()
-    -- No-op on server — this is sent TO the client, not received here.
-    -- The actual handler lives in client/spawn.lua (or client/main.lua).
-end)
+AddEventHandler("stdb:reconnect", function() end)
 
--- ═════════════════════════════════════════════════════════════════════════════
+-- ─────────────────────────────────────────────────────────────────────────────
+-- OWNER RESOLUTION HELPER
+-- ─────────────────────────────────────────────────────────────────────────────
+
+local function resolveOwner(rawType, rawId, playerSrc)
+    if rawType == "player" then
+        local identityHex = (rawId and rawId ~= "") and rawId or ""
+        if identityHex == "" then
+            for identity, sid in pairs(_identityToServerId) do
+                if sid == playerSrc then identityHex = identity; break end
+            end
+        end
+        return "player", identityHex
+    elseif rawType == "glovebox" then
+        return "vehicle_glovebox", rawId
+    elseif rawType == "trunk" then
+        return "vehicle_trunk", rawId
+    elseif rawType == "ground" or rawType == "backpack" then
+        return "stash", rawId
+    else
+        return rawType, rawId
+    end
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- INVENTORY: OPEN POCKETS + GROUND STASH
--- ═════════════════════════════════════════════════════════════════════════════
+-- ─────────────────────────────────────────────────────────────────────────────
 
 RegisterNetEvent("stdb:requestInventory")
 AddEventHandler("stdb:requestInventory", function(x, y, z)
     local src = source
-
-    -- State bag is populated by stdb:playerConnected (after playerSpawned)
-    -- and survives resource restarts. Fall back to GetPlayerIdentifiers if
-    -- the player connected before this resource loaded this session.
     local steamHex = Player(src).state.steamHex or ""
     if steamHex == "" then
         for _, id in ipairs(GetPlayerIdentifiers(src)) do
@@ -487,26 +480,17 @@ AddEventHandler("stdb:requestInventory", function(x, y, z)
         _identityToServerId[steamHex] = src
         Player(src).state:set("steamHex", steamHex, false)
     end
-
-    -- 1. Fetch player slots, equipped slots, and backpack data
     PerformHttpRequest(SIDECAR_URL .. "reducer",
         function(pi_status, pi_body, _)
             if pi_status ~= 200 or not pi_body then return end
             local pi_ok, pi = pcall(json.decode, pi_body)
             if not pi_ok or not pi then return end
-
-            -- Register identity → server_id so delta-push can find this player
             if pi.owner_id and pi.owner_id ~= "" then
                 _identityToServerId[pi.owner_id] = src
             end
-
-            -- 2. Concurrently fetch/create the nearby ground stash
             PerformHttpRequest(SIDECAR_URL .. "reducer",
                 function(gs_status, gs_body, _)
-                    local ground = {
-                        type = "ground", label = "GROUND",
-                        id = "", maxWeight = 999, maxSlots = 50, slots = {},
-                    }
+                    local ground = { type = "ground", label = "GROUND", id = "", maxWeight = 999, maxSlots = 50, slots = {} }
                     if gs_status == 200 and gs_body and gs_body ~= "" then
                         local gs_ok, gs = pcall(json.decode, gs_body)
                         if gs_ok and gs then
@@ -519,21 +503,13 @@ AddEventHandler("stdb:requestInventory", function(x, y, z)
                             end
                         end
                     end
-
                     if pi.backpack_data and pi.backpack_data.stash_id
                        and pi.backpack_data.stash_id ~= "" then
                         _openStashToServerId[pi.backpack_data.stash_id] = src
                     end
-
                     TriggerClientEvent("stdb:openInventory", src,
-                        pi.slots          or {},
-                        pi.item_defs       or {},
-                        pi.max_weight      or 85,
-                        ground,
-                        pi.equipped_slots  or {},
-                        pi.backpack_data,
-                        pi.owner_id        or ""
-                    )
+                        pi.slots or {}, pi.item_defs or {}, pi.max_weight or 85,
+                        ground, pi.equipped_slots or {}, pi.backpack_data, pi.owner_id or "")
                 end,
                 "POST",
                 json.encode({ name = "find_or_create_ground_stash", args = { x = x, y = y, z = z } }),
@@ -546,15 +522,14 @@ AddEventHandler("stdb:requestInventory", function(x, y, z)
     )
 end)
 
--- ═════════════════════════════════════════════════════════════════════════════
--- INVENTORY: OPEN VEHICLE GLOVEBOX
--- ═════════════════════════════════════════════════════════════════════════════
+-- ─────────────────────────────────────────────────────────────────────────────
+-- INVENTORY: VEHICLE GLOVEBOX
+-- ─────────────────────────────────────────────────────────────────────────────
 
 RegisterNetEvent("stdb:requestGlovebox")
 AddEventHandler("stdb:requestGlovebox", function(vehicleId, modelName, vehicleClass)
     local src   = source
     local plate = tostring(vehicleId)
-
     local steamHex = Player(src).state.steamHex or ""
     if steamHex == "" then
         for _, id in ipairs(GetPlayerIdentifiers(src)) do
@@ -565,72 +540,41 @@ AddEventHandler("stdb:requestGlovebox", function(vehicleId, modelName, vehicleCl
         _identityToServerId[steamHex] = src
         Player(src).state:set("steamHex", steamHex, false)
     end
-
-    -- Ensure the vehicle inventory config row exists (idempotent in Rust)
     local cfg = (VehicleConfig and VehicleConfig.GetConfig(modelName or "unknown", vehicleClass or 0))
         or { trunk_type = "rear", trunk_slots = 20, max_weight = 50 }
-
     PerformHttpRequest(SIDECAR_URL .. "reducer", function() end, "POST",
         json.encode({ name = "create_vehicle_inventory", args = {
-            plate            = plate,
-            model_hash       = 0,
-            trunk_type       = cfg.trunk_type  or "rear",
-            trunk_slots      = cfg.trunk_slots or 20,
-            trunk_max_weight = cfg.max_weight  or 50,
+            plate = plate, model_hash = 0,
+            trunk_type = cfg.trunk_type or "rear",
+            trunk_slots = cfg.trunk_slots or 20,
+            trunk_max_weight = cfg.max_weight or 50,
         }}),
         { ["Content-Type"] = "application/json" }
     )
-
-    -- Fetch player inventory
     PerformHttpRequest(SIDECAR_URL .. "reducer",
         function(pi_status, pi_body, _)
             if pi_status ~= 200 or not pi_body then return end
             local pi_ok, pi = pcall(json.decode, pi_body)
             if not pi_ok or not pi then return end
-
-            if pi.owner_id and pi.owner_id ~= "" then
-                _identityToServerId[pi.owner_id] = src
-            end
-            -- Register plate so glovebox slot deltas reach this player
+            if pi.owner_id and pi.owner_id ~= "" then _identityToServerId[pi.owner_id] = src end
             _openStashToServerId[plate] = src
-
-            -- Re-register backpack stash for the same reason as requestInventory:
-            -- close clears this entry and glovebox open must restore it so items
-            -- dragged between pockets and backpack while glovebox is open route correctly.
             if pi.backpack_data and pi.backpack_data.stash_id
                and pi.backpack_data.stash_id ~= "" then
                 _openStashToServerId[pi.backpack_data.stash_id] = src
             end
-
-            -- Fetch glovebox slots
             PerformHttpRequest(SIDECAR_URL .. "reducer",
                 function(gb_status, gb_body, _)
                     if gb_status ~= 200 or not gb_body then return end
                     local gb_ok, gb = pcall(json.decode, gb_body)
                     if not gb_ok or not gb then return end
-
                     TriggerClientEvent("stdb:openInventory", src,
-                        pi.slots          or {},
-                        pi.item_defs       or {},
-                        pi.max_weight      or 85,
-                        {
-                            type      = "glovebox",
-                            label     = "GLOVEBOX",
-                            id        = plate,
-                            maxWeight = gb.max_weight or 10,
-                            maxSlots  = gb.max_slots  or 5,
-                            slots     = gb.slots      or {},
-                        },
-                        pi.equipped_slots  or {},
-                        pi.backpack_data,
-                        pi.owner_id        or ""
-                    )
+                        pi.slots or {}, pi.item_defs or {}, pi.max_weight or 85,
+                        { type = "glovebox", label = "GLOVEBOX", id = plate,
+                          maxWeight = gb.max_weight or 10, maxSlots = gb.max_slots or 5, slots = gb.slots or {} },
+                        pi.equipped_slots or {}, pi.backpack_data, pi.owner_id or "")
                 end,
                 "POST",
-                json.encode({ name = "get_vehicle_inventory", args = {
-                    plate          = plate,
-                    inventory_type = "glovebox",
-                }}),
+                json.encode({ name = "get_vehicle_inventory", args = { plate = plate, inventory_type = "glovebox" } }),
                 { ["Content-Type"] = "application/json" }
             )
         end,
@@ -640,15 +584,14 @@ AddEventHandler("stdb:requestGlovebox", function(vehicleId, modelName, vehicleCl
     )
 end)
 
--- ═════════════════════════════════════════════════════════════════════════════
--- INVENTORY: OPEN VEHICLE TRUNK  (called from third-eye or proximity script)
--- ═════════════════════════════════════════════════════════════════════════════
+-- ─────────────────────────────────────────────────────────────────────────────
+-- INVENTORY: VEHICLE TRUNK
+-- ─────────────────────────────────────────────────────────────────────────────
 
 RegisterNetEvent("stdb:requestTrunk")
 AddEventHandler("stdb:requestTrunk", function(vehicleId, modelName, vehicleClass)
     local src   = source
     local plate = tostring(vehicleId)
-
     local steamHex = Player(src).state.steamHex or ""
     if steamHex == "" then
         for _, id in ipairs(GetPlayerIdentifiers(src)) do
@@ -659,63 +602,44 @@ AddEventHandler("stdb:requestTrunk", function(vehicleId, modelName, vehicleClass
         _identityToServerId[steamHex] = src
         Player(src).state:set("steamHex", steamHex, false)
     end
-
     local cfg = (VehicleConfig and VehicleConfig.GetConfig(modelName or "unknown", vehicleClass or 0))
         or { trunk_type = "rear", trunk_slots = 20, max_weight = 50 }
-
     PerformHttpRequest(SIDECAR_URL .. "reducer", function() end, "POST",
         json.encode({ name = "create_vehicle_inventory", args = {
-            plate            = plate, model_hash = 0,
-            trunk_type       = cfg.trunk_type  or "rear",
-            trunk_slots      = cfg.trunk_slots or 20,
-            trunk_max_weight = cfg.max_weight  or 50,
+            plate = plate, model_hash = 0,
+            trunk_type = cfg.trunk_type or "rear",
+            trunk_slots = cfg.trunk_slots or 20,
+            trunk_max_weight = cfg.max_weight or 50,
         }}),
         { ["Content-Type"] = "application/json" }
     )
-
     PerformHttpRequest(SIDECAR_URL .. "reducer",
         function(pi_status, pi_body, _)
             if pi_status ~= 200 or not pi_body then return end
             local pi_ok, pi = pcall(json.decode, pi_body)
             if not pi_ok or not pi then return end
-
-            if pi.owner_id and pi.owner_id ~= "" then
-                _identityToServerId[pi.owner_id] = src
-            end
-            -- Register plate so trunk slot deltas reach this player
+            if pi.owner_id and pi.owner_id ~= "" then _identityToServerId[pi.owner_id] = src end
             _openStashToServerId[plate] = src
-
-            -- Re-register backpack stash — same reasoning as glovebox open above.
             if pi.backpack_data and pi.backpack_data.stash_id
                and pi.backpack_data.stash_id ~= "" then
                 _openStashToServerId[pi.backpack_data.stash_id] = src
             end
-
             PerformHttpRequest(SIDECAR_URL .. "reducer",
                 function(tr_status, tr_body, _)
                     if tr_status ~= 200 or not tr_body then return end
                     local tr_ok, tr = pcall(json.decode, tr_body)
                     if not tr_ok or not tr then return end
-
                     local trunkLabel = (tr.trunk_type == "front") and "FRUNK" or "TRUNK"
                     TriggerClientEvent("stdb:openInventory", src,
                         pi.slots or {}, pi.item_defs or {}, pi.max_weight or 85,
-                        {
-                            type      = "trunk",
-                            label     = trunkLabel,
-                            id        = plate,
-                            maxWeight = tr.max_weight or cfg.max_weight  or 50,
-                            maxSlots  = tr.max_slots  or cfg.trunk_slots or 20,
-                            slots     = tr.slots      or {},
-                        },
-                        pi.equipped_slots or {}, pi.backpack_data,
-                        pi.owner_id       or ""
-                    )
+                        { type = "trunk", label = trunkLabel, id = plate,
+                          maxWeight = tr.max_weight or cfg.max_weight or 50,
+                          maxSlots  = tr.max_slots  or cfg.trunk_slots or 20,
+                          slots     = tr.slots or {} },
+                        pi.equipped_slots or {}, pi.backpack_data, pi.owner_id or "")
                 end,
                 "POST",
-                json.encode({ name = "get_vehicle_inventory", args = {
-                    plate = plate, inventory_type = "trunk",
-                }}),
+                json.encode({ name = "get_vehicle_inventory", args = { plate = plate, inventory_type = "trunk" } }),
                 { ["Content-Type"] = "application/json" }
             )
         end,
@@ -725,8 +649,6 @@ AddEventHandler("stdb:requestTrunk", function(vehicleId, modelName, vehicleClass
     )
 end)
 
--- SpacetimeDB maintains state persistently; no server action required on close.
--- Clear the open-stash map so stale stash deltas stop being forwarded after close.
 RegisterNetEvent("stdb:closeInventory")
 AddEventHandler("stdb:closeInventory", function()
     local src = source
@@ -736,146 +658,57 @@ AddEventHandler("stdb:closeInventory", function()
 end)
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- OWNER RESOLUTION / TYPE NORMALISATION
---
--- The TypeScript store uses UI-facing vocabulary for secondary.type:
---   "player" | "glovebox" | "trunk" | "ground" | "backpack" | "stash"
---
--- SpacetimeDB uses its own owner_type column values:
---   "player" | "vehicle_glovebox" | "vehicle_trunk" | "stash" | "equip"
---
--- This function is the ONLY place these two vocabularies meet.
--- Adding a new inventory panel type means one new entry here — nothing else
--- in Rust, C#, or TypeScript needs to change.
+-- INVENTORY: MOVE / TRANSFER
 -- ─────────────────────────────────────────────────────────────────────────────
-
---- Translate a UI ownerType to the SpacetimeDB column value and resolve
---- an empty ownerId to the requesting player's identity hex when needed.
----
---- @param rawType   string   UI type from store.ts secondary.type / getOwnerForPanel()
---- @param rawId     string   Owner ID from the client (empty string for player pockets)
---- @param playerSrc number   FiveM server_id of the requesting player
---- @return string, string    resolvedType, resolvedId — ready for transfer_item
-local function resolveOwner(rawType, rawId, playerSrc)
-    if rawType == "player" then
-        -- Player pockets: the TypeScript store sends ownerId = "" because it
-        -- does not know the identity hex. Resolve it from the local map,
-        -- populated the first time the player opens their inventory.
-        local identityHex = (rawId and rawId ~= "") and rawId or ""
-        if identityHex == "" then
-            for identity, sid in pairs(_identityToServerId) do
-                if sid == playerSrc then identityHex = identity; break end
-            end
-        end
-        return "player", identityHex
-
-    elseif rawType == "glovebox" then
-        -- UI calls it "glovebox"; SpacetimeDB column is "vehicle_glovebox"
-        return "vehicle_glovebox", rawId
-
-    elseif rawType == "trunk" then
-        -- UI calls it "trunk"; SpacetimeDB column is "vehicle_trunk"
-        return "vehicle_trunk", rawId
-
-    elseif rawType == "ground" then
-        -- Ground drops share the generic "stash" owner_type.
-        -- The stash_id in rawId already uniquely identifies the drop zone.
-        return "stash", rawId
-
-    elseif rawType == "backpack" then
-        -- Backpack contents also live under owner_type = "stash".
-        return "stash", rawId
-
-    else
-        -- Pass-through for types that already match the DB: "stash", "equip"
-        return rawType, rawId
-    end
-end
-
--- ═════════════════════════════════════════════════════════════════════════════
--- INVENTORY: ITEM MOVE / CROSS-PANEL TRANSFER
---
--- The TypeScript store emits TWO distinct fetch shapes to /moveItem:
---
---   Same-panel reorder:
---     { slotId, newSlotIndex }
---     → only slot_index changes; call move_item (owned-by check in Rust)
---
---   Cross-panel transfer:
---     { slotId, newSlotIndex, ownerType, ownerId }
---     → owner changes atomically; call transfer_item via resolveOwner()
---
--- We distinguish them purely by whether ownerType is present and non-empty.
--- resolveOwner() handles the UI→DB vocabulary translation for every panel type.
--- ═════════════════════════════════════════════════════════════════════════════
 
 RegisterNetEvent("stdb:moveItem")
 AddEventHandler("stdb:moveItem", function(slotId, newSlotIndex, ownerType, ownerId, _x, _y, _z, _propModel)
     local src = source
-
-    -- ── Case 1: No ownerType ─ same-panel reorder ─────────────────────────────
-    -- The TypeScript store omits ownerType entirely for same-panel moves,
-    -- so this arrives as nil/"". Only the slot_index needs updating.
     if not ownerType or ownerType == "" then
         PerformHttpRequest(SIDECAR_URL .. "reducer",
             function() end, "POST",
-            json.encode({ name = "move_item", args = {
-                slot_id        = slotId,
-                new_slot_index = newSlotIndex,
-            }}),
+            json.encode({ name = "move_item", args = { slot_id = slotId, new_slot_index = newSlotIndex } }),
             { ["Content-Type"] = "application/json" }
         )
         return
     end
-
-    -- ── Case 2: ownerType present ─ cross-panel transfer ─────────────────────
-    -- Translate the UI vocabulary to DB values and resolve the identity hex
-    -- when the destination is the player's own pockets.
     local resolvedType, resolvedId = resolveOwner(ownerType, ownerId or "", src)
-
-    -- Guard: if we couldn't resolve the player's identity (race condition on
-    -- first connect) bail out rather than writing a corrupt empty owner_id.
     if resolvedType == "player" and (resolvedId == nil or resolvedId == "") then
-        print(("[stdb-relay] stdb:moveItem: cannot resolve identity for server_id=%d; " ..
-               "player may not have opened their inventory yet"):format(src))
+        print(("[stdb-relay] stdb:moveItem: cannot resolve identity for server_id=%d"):format(src))
         return
     end
-
-    -- Register the transfer TARGET in _openStashToServerId immediately.
-    -- C# OnUpdate emits an "updated" delta with owner_id = resolvedId.
-    -- Without this registration, that delta has no route and is silently
-    -- dropped — causing the item to vanish from the destination panel.
-    -- This runs BEFORE the HTTP call so the delta loop is ready by the time
-    -- SpacetimeDB commits the change (typically ~80ms later).
     if resolvedType ~= "player" and resolvedType ~= "equip"
        and resolvedId ~= nil and resolvedId ~= "" then
         _openStashToServerId[resolvedId] = src
     end
-
     PerformHttpRequest(SIDECAR_URL .. "reducer",
         function() end, "POST",
         json.encode({ name = "transfer_item", args = {
-            slot_id        = slotId,
-            new_owner_id   = resolvedId,
-            new_owner_type = resolvedType,
-            new_slot_index = newSlotIndex,
+            slot_id = slotId, new_owner_id = resolvedId,
+            new_owner_type = resolvedType, new_slot_index = newSlotIndex,
         }}),
         { ["Content-Type"] = "application/json" }
     )
 end)
 
--- ═════════════════════════════════════════════════════════════════════════════
--- INVENTORY: USE ITEM
--- Server resolves the player's ped net_id so the Rust reducer can enqueue
--- the correct effect opcode for that specific entity.
--- ═════════════════════════════════════════════════════════════════════════════
+-- ─────────────────────────────────────────────────────────────────────────────
+-- INVENTORY: USE / EQUIP / DROP / STACK OPS / BACKPACK / GIVE
+-- (unchanged from previous version — all route through sidecar reducers)
+-- ─────────────────────────────────────────────────────────────────────────────
 
 RegisterNetEvent("stdb:useItem")
-AddEventHandler("stdb:useItem", function(slotId)
+AddEventHandler("stdb:useItem", function(slotId, itemId)
     local src   = source
     local ped   = GetPlayerPed(src)
     local netId = NetworkGetNetworkIdFromEntity(ped)
-
+    local identityHex = ""
+    for identity, sid in pairs(_identityToServerId) do
+        if sid == src then identityHex = identity; break end
+    end
+    if itemId and _registeredItems and _registeredItems[itemId] then
+        _registeredItems[itemId](src, itemId, slotId)
+        return
+    end
     PerformHttpRequest(SIDECAR_URL .. "reducer",
         function() end, "POST",
         json.encode({ name = "use_item", args = { slot_id = slotId, net_id = netId } }),
@@ -883,27 +716,21 @@ AddEventHandler("stdb:useItem", function(slotId)
     )
 end)
 
--- Use an item that is currently in an equipment slot (hotkey activation)
 RegisterNetEvent("stdb:useItemByKey")
 AddEventHandler("stdb:useItemByKey", function(equipKey)
-    local src = source
-    local ped = GetPlayerPed(src)
+    local src   = source
+    local ped   = GetPlayerPed(src)
     local netId = NetworkGetNetworkIdFromEntity(ped)
-
-    -- Resolve identity hex from our local map
     local identityHex = ""
     for identity, sid in pairs(_identityToServerId) do
         if sid == src then identityHex = identity; break end
     end
     if identityHex == "" then return end
-
-    -- Fetch the equip slot to get the slot_id, then fire use_item
     PerformHttpRequest(SIDECAR_URL .. "reducer",
         function(status, body, _)
             if status ~= 200 or not body then return end
             local ok, data = pcall(json.decode, body)
             if not ok or not data or not data.slots or #data.slots == 0 then return end
-
             local equipSlot = data.slots[1]
             PerformHttpRequest(SIDECAR_URL .. "reducer",
                 function() end, "POST",
@@ -913,61 +740,38 @@ AddEventHandler("stdb:useItemByKey", function(equipKey)
         end,
         "POST",
         json.encode({ name = "get_inventory_slots", args = {
-            owner_id   = identityHex .. "_equip_" .. equipKey,
-            owner_type = "equip",
+            owner_id = identityHex .. "_equip_" .. equipKey, owner_type = "equip",
         }}),
         { ["Content-Type"] = "application/json" }
     )
 end)
 
--- ═════════════════════════════════════════════════════════════════════════════
--- INVENTORY: DROP ITEM
--- ═════════════════════════════════════════════════════════════════════════════
-
--- Drop at the player's current position (NUI "DROP" button)
 RegisterNetEvent("stdb:dropItem")
 AddEventHandler("stdb:dropItem", function(slotId, quantity, _itemId, propModel)
     local src = source
     local pos = GetEntityCoords(GetPlayerPed(src))
-
     PerformHttpRequest(SIDECAR_URL .. "reducer",
         function(status, body, _)
             if status ~= 200 or not body then return end
             local ok, data = pcall(json.decode, body)
             if not ok or not data or not data.ok then return end
-            -- Tell the client to spawn a world prop at the drop position
-            -- Register this player as the prop owner BEFORE spawning the prop,
-            -- so the delta loop can find them even after inventory is closed.
             if data.stash_id and data.stash_id ~= "" then
-                _propOwnerServerId[data.stash_id] = src
-                -- ── CRITICAL: also register in _openStashToServerId ───────────
-                -- _propOwnerServerId is only checked by the prop-cleanup loop,
-                -- NOT by the delta router. Without this, the "added" delta for
-                -- the dropped item has no route and is silently discarded.
-                -- The item then only appears on inventory reopen, not immediately.
+                _propOwnerServerId[data.stash_id]  = src
                 _openStashToServerId[data.stash_id] = src
-                -- Notify the NUI that the ground stash ID may have changed.
-                -- This updates secondary.id in the store so applySlotDeltas
-                -- routes the incoming "added" delta to the correct panel.
                 TriggerClientEvent("stdb:groundStashUpdate", src, data.stash_id)
-                print(("[prop] DROP registered: stash=%s src=%d"):format(data.stash_id, src))
             end
             TriggerClientEvent("stdb:spawnWorldDrop", src,
                 slotId, data.stash_id or "", propModel or "prop_cs_cardbox_01",
-                pos.x, pos.y, pos.z
-            )
+                pos.x, pos.y, pos.z)
         end,
         "POST",
         json.encode({ name = "drop_item_to_ground", args = {
-            slot_id  = slotId,
-            quantity = quantity or 0,
-            x        = pos.x, y = pos.y, z = pos.z,
+            slot_id = slotId, quantity = quantity or 0, x = pos.x, y = pos.y, z = pos.z,
         }}),
         { ["Content-Type"] = "application/json" }
     )
 end)
 
--- Drop at an explicit world position (inspect-place mechanic)
 RegisterNetEvent("stdb:dropItemAt")
 AddEventHandler("stdb:dropItemAt", function(slotId, quantity, _itemId, propModel, x, y, z)
     local src = source
@@ -977,27 +781,21 @@ AddEventHandler("stdb:dropItemAt", function(slotId, quantity, _itemId, propModel
             local ok, data = pcall(json.decode, body)
             if not ok or not data or not data.ok then return end
             if data.stash_id and data.stash_id ~= "" then
-                _propOwnerServerId[data.stash_id] = src
+                _propOwnerServerId[data.stash_id]  = src
                 _openStashToServerId[data.stash_id] = src
                 TriggerClientEvent("stdb:groundStashUpdate", src, data.stash_id)
-                print(("[prop] PLACE registered: stash=%s src=%d"):format(data.stash_id, src))
             end
             TriggerClientEvent("stdb:spawnWorldDrop", src,
-                slotId, data.stash_id or "", propModel or "prop_cs_cardbox_01",
-                x, y, z
-            )
+                slotId, data.stash_id or "", propModel or "prop_cs_cardbox_01", x, y, z)
         end,
         "POST",
         json.encode({ name = "drop_item_to_ground", args = {
-            slot_id  = slotId,
-            quantity = quantity or 0,
-            x        = x, y = y, z = z,
+            slot_id = slotId, quantity = quantity or 0, x = x, y = y, z = z,
         }}),
         { ["Content-Type"] = "application/json" }
     )
 end)
 
--- Finalize thrown item — physics have settled, record final world position
 RegisterNetEvent("stdb:finalizeThrow")
 AddEventHandler("stdb:finalizeThrow", function(slotId, _itemId, propModel, x, y, z)
     local src = source
@@ -1007,38 +805,26 @@ AddEventHandler("stdb:finalizeThrow", function(slotId, _itemId, propModel, x, y,
             local ok, data = pcall(json.decode, body)
             if not ok or not data or not data.ok then return end
             if data.stash_id and data.stash_id ~= "" then
-                _propOwnerServerId[data.stash_id] = src
+                _propOwnerServerId[data.stash_id]  = src
                 _openStashToServerId[data.stash_id] = src
                 TriggerClientEvent("stdb:groundStashUpdate", src, data.stash_id)
-                print(("[prop] THROW registered: stash=%s src=%d"):format(data.stash_id, src))
             end
             TriggerClientEvent("stdb:spawnWorldDrop", src,
-                slotId, data.stash_id or "", propModel or "prop_cs_cardbox_01",
-                x, y, z
-            )
+                slotId, data.stash_id or "", propModel or "prop_cs_cardbox_01", x, y, z)
         end,
         "POST",
         json.encode({ name = "drop_item_to_ground", args = {
-            slot_id  = slotId,
-            quantity = 0,           -- 0 = drop the full stack
-            x        = x, y = y, z = z,
+            slot_id = slotId, quantity = 0, x = x, y = y, z = z,
         }}),
         { ["Content-Type"] = "application/json" }
     )
 end)
 
--- ═════════════════════════════════════════════════════════════════════════════
--- INVENTORY: STACK OPERATIONS
--- ═════════════════════════════════════════════════════════════════════════════
-
 RegisterNetEvent("stdb:mergeStacks")
 AddEventHandler("stdb:mergeStacks", function(srcSlotId, dstSlotId)
     PerformHttpRequest(SIDECAR_URL .. "reducer",
         function() end, "POST",
-        json.encode({ name = "merge_stacks", args = {
-            src_slot_id = srcSlotId,
-            dst_slot_id = dstSlotId,
-        }}),
+        json.encode({ name = "merge_stacks", args = { src_slot_id = srcSlotId, dst_slot_id = dstSlotId } }),
         { ["Content-Type"] = "application/json" }
     )
 end)
@@ -1052,12 +838,6 @@ AddEventHandler("stdb:splitStack", function(slotId, amount)
     )
 end)
 
--- ═════════════════════════════════════════════════════════════════════════════
--- INVENTORY: EQUIP / UNEQUIP
--- Equipment slots are modelled as owner_id = "<identityHex>_equip_<key>",
--- owner_type = "equip". This means equipping is just a transfer_item call.
--- ═════════════════════════════════════════════════════════════════════════════
-
 RegisterNetEvent("stdb:equipItem")
 AddEventHandler("stdb:equipItem", function(slotId, equipKey, _itemId)
     local src = source
@@ -1066,15 +846,11 @@ AddEventHandler("stdb:equipItem", function(slotId, equipKey, _itemId)
         if sid == src then identityHex = identity; break end
     end
     if identityHex == "" then return end
-
-    -- Transfer the slot into the virtual equip owner namespace
     PerformHttpRequest(SIDECAR_URL .. "reducer",
         function() end, "POST",
         json.encode({ name = "transfer_item", args = {
-            slot_id        = slotId,
-            new_owner_id   = identityHex .. "_equip_" .. equipKey,
-            new_owner_type = "equip",
-            new_slot_index = 0,
+            slot_id = slotId, new_owner_id = identityHex .. "_equip_" .. equipKey,
+            new_owner_type = "equip", new_slot_index = 0,
         }}),
         { ["Content-Type"] = "application/json" }
     )
@@ -1088,25 +864,15 @@ AddEventHandler("stdb:unequipItem", function(slotId, equipKey, targetPanel, targ
         if sid == src then identityHex = identity; break end
     end
     if identityHex == "" then return end
-
-    -- Always unequip back to player pockets.
-    -- TODO: To support unequip-to-secondary, the client should pass the full
-    --       target owner_id and owner_type in the event data.
     PerformHttpRequest(SIDECAR_URL .. "reducer",
         function() end, "POST",
         json.encode({ name = "transfer_item", args = {
-            slot_id        = slotId,
-            new_owner_id   = identityHex,
-            new_owner_type = "player",
-            new_slot_index = targetIndex or 0,
+            slot_id = slotId, new_owner_id = identityHex,
+            new_owner_type = "player", new_slot_index = targetIndex or 0,
         }}),
         { ["Content-Type"] = "application/json" }
     )
 end)
-
--- ═════════════════════════════════════════════════════════════════════════════
--- INVENTORY: BACKPACK
--- ═════════════════════════════════════════════════════════════════════════════
 
 RegisterNetEvent("stdb:openBackpack")
 AddEventHandler("stdb:openBackpack", function(bagItemId, bagSlotId)
@@ -1116,18 +882,13 @@ AddEventHandler("stdb:openBackpack", function(bagItemId, bagSlotId)
         if sid == src then identityHex = identity; break end
     end
     if identityHex == "" then return end
-
     PerformHttpRequest(SIDECAR_URL .. "reducer",
         function(status, body, _)
             if status ~= 200 or not body then return end
             local ok, data = pcall(json.decode, body)
             if not ok or not data then return end
-
-            -- Register backpack stash id so slot deltas reach this player
             local bpStashId = data.stash_id or ""
-            if bpStashId ~= "" then
-                _openStashToServerId[bpStashId] = src
-            end
+            if bpStashId ~= "" then _openStashToServerId[bpStashId] = src end
             TriggerClientEvent("stdb:openBackpackPanel", src, {
                 type      = "stash",
                 label     = data.label      or "BACKPACK",
@@ -1148,53 +909,34 @@ AddEventHandler("stdb:openBackpack", function(bagItemId, bagSlotId)
     )
 end)
 
--- ═════════════════════════════════════════════════════════════════════════════
--- INVENTORY: GIVE ITEM TO NEARBY PLAYER  (inspect-give mechanic)
--- ═════════════════════════════════════════════════════════════════════════════
-
 RegisterNetEvent("stdb:giveItem")
 AddEventHandler("stdb:giveItem", function(slotId, targetServerId)
     local src = source
-
     PerformHttpRequest(SIDECAR_URL .. "reducer",
         function(status, body, _)
             if status ~= 200 or not body then return end
             local ok, data = pcall(json.decode, body)
             if not ok or not data then return end
-
             if data.ok then
-                TriggerClientEvent("stdb:itemGiven",    src,          true)
+                TriggerClientEvent("stdb:itemGiven",    src,           true)
                 TriggerClientEvent("stdb:itemReceived", targetServerId, true)
             else
                 TriggerClientEvent("stdb:itemGiven", src, false,
-                    data.error_code or "UNKNOWN_ERROR",
-                    data.actual_kg, data.max_kg
-                )
+                    data.error_code or "UNKNOWN_ERROR", data.actual_kg, data.max_kg)
             end
         end,
         "POST",
         json.encode({ name = "transfer_item_to_player", args = {
-            slot_id   = slotId,
-            server_id = targetServerId,
+            slot_id = slotId, server_id = targetServerId,
         }}),
         { ["Content-Type"] = "application/json" }
     )
 end)
 
--- ═════════════════════════════════════════════════════════════════════════════
+-- ─────────────────────────────────────────────────────────────────────────────
 -- ADMIN: RESET PLAYER INVENTORY
--- Usage (server console or RCON):
---   resetinventory              — resets your own inventory (in-game)
---   resetinventory 1            — resets server_id 1 (admin only)
---   resetinventory steam:abc    — resets by steam hex (admin only)
---
--- Export for use in other resources:
---   exports['stdb-relay']:ResetInventory(serverId, cb)
--- ═════════════════════════════════════════════════════════════════════════════
+-- ─────────────────────────────────────────────────────────────────────────────
 
--- Resolve steam_hex from server_id using the local identity map.
--- This avoids relying on the SpacetimeDB subscription cache which may not
--- have populated yet when the command is first run after server start.
 local function resolveSteamHex(serverId)
     for hex, sid in pairs(_identityToServerId) do
         if sid == serverId then return hex end
@@ -1203,37 +945,24 @@ local function resolveSteamHex(serverId)
 end
 
 local function doResetInventory(targetSrc, invokerSrc)
-    -- invokerSrc == 0 means server console — always allowed
     if invokerSrc ~= 0 and invokerSrc ~= targetSrc then
         if not IsPlayerAceAllowed(tostring(invokerSrc), "stdb.admin") then
             TriggerClientEvent("chat:addMessage", invokerSrc, {
-                color = { 255, 80, 80 },
-                args  = { "SYSTEM", "You do not have permission to reset other players' inventories." }
+                color = { 255, 80, 80 }, args = { "SYSTEM", "Permission denied." }
             })
             return
         end
     end
-
-    -- Resolve steam_hex locally first — do not rely on sidecar DB lookup
-    local steamHex = resolveSteamHex(targetSrc)
-    local argsPayload
-
-    if steamHex and steamHex ~= "" then
-        -- Fast path: send hex directly, sidecar skips the ActiveSession lookup
-        argsPayload = { steam_hex = steamHex }
-        print(("[stdb-relay] resetinventory: resolved server_id=%d → %s"):format(targetSrc, steamHex))
-    else
-        -- Fallback: let the sidecar try to resolve via ActiveSession + _steamHexByServerId
-        argsPayload = { server_id = targetSrc }
-        print(("[stdb-relay] resetinventory: no local hex for server_id=%d, sending server_id"):format(targetSrc))
-    end
-
+    local steamHex    = resolveSteamHex(targetSrc)
+    local argsPayload = steamHex and steamHex ~= ""
+        and { steam_hex = steamHex }
+        or  { server_id = targetSrc }
     PerformHttpRequest(SIDECAR_URL .. "reducer",
         function(status, body, _)
             local ok, data = pcall(json.decode, body or "")
             if status ~= 200 or not ok or not data or not data.ok then
                 local errMsg = (ok and data and data.error) or ("HTTP " .. tostring(status))
-                print(("[stdb-relay] resetinventory failed for server_id=%d: %s"):format(targetSrc, errMsg))
+                print(("[stdb-relay] resetinventory failed: %s"):format(errMsg))
                 if invokerSrc ~= 0 then
                     TriggerClientEvent("chat:addMessage", invokerSrc, {
                         color = { 255, 80, 80 },
@@ -1242,23 +971,12 @@ local function doResetInventory(targetSrc, invokerSrc)
                 end
                 return
             end
-
-            print(("[stdb-relay] resetinventory OK: server_id=%d hex=%s removed=%d gave=%d"):format(
-                targetSrc,
-                tostring(data.steam_hex or steamHex or "?"),
-                data.removed or 0,
-                data.given   or 0
-            ))
-
-            -- Force-close the NUI for the target player so they see the fresh state
             TriggerClientEvent("stdb:forceCloseInventory", targetSrc)
-
             if invokerSrc ~= 0 then
-                local msg = ("Inventory reset — %d slot(s) cleared, %d starter item(s) given."):format(
-                    data.removed or 0, data.given or 0)
                 TriggerClientEvent("chat:addMessage", invokerSrc, {
                     color = { 80, 220, 80 },
-                    args  = { "SYSTEM", msg }
+                    args  = { "SYSTEM", ("Reset — %d cleared, %d given."):format(
+                        data.removed or 0, data.given or 0) }
                 })
             end
         end,
@@ -1269,70 +987,25 @@ local function doResetInventory(targetSrc, invokerSrc)
 end
 
 RegisterCommand("resetinventory", function(src, cmdArgs, _)
-    -- No arg: reset the caller's own inventory
-    -- Arg = number: reset that server_id (admin)
-    -- Arg = steam:...: reset by steam hex (admin)
-    local targetSrc = src  -- default: self
-
+    local targetSrc = src
     if cmdArgs[1] then
         local arg = cmdArgs[1]
-
         if arg:sub(1, 6) == "steam:" then
-            -- steam hex supplied directly — send to sidecar as-is
-            if src ~= 0 and not IsPlayerAceAllowed(tostring(src), "stdb.admin") then
-                TriggerClientEvent("chat:addMessage", src, {
-                    color = { 255, 80, 80 },
-                    args  = { "SYSTEM", "Permission denied." }
-                })
-                return
-            end
+            if src ~= 0 and not IsPlayerAceAllowed(tostring(src), "stdb.admin") then return end
             PerformHttpRequest(SIDECAR_URL .. "reducer",
-                function(status, body, _)
-                    local ok, data = pcall(json.decode, body or "")
-                    local success   = status == 200 and ok and data and data.ok == true
-                    print(("[stdb-relay] resetinventory %s: ok=%s removed=%d gave=%d"):format(
-                        arg, tostring(success),
-                        (success and data.removed or 0),
-                        (success and data.given   or 0)))
-                end,
-                "POST",
+                function() end, "POST",
                 json.encode({ name = "reset_player_inventory", args = { steam_hex = arg } }),
                 { ["Content-Type"] = "application/json" }
             )
             return
         end
-
         local parsed = tonumber(arg)
-        if not parsed then
-            print("[stdb-relay] resetinventory: invalid argument '" .. arg ..
-                  "' — use a server_id number or steam:hex")
-            return
-        end
+        if not parsed then return end
         targetSrc = math.floor(parsed)
     end
-
-    -- src == 0 means server console; require explicit target
     if targetSrc == 0 then
-        print("[stdb-relay] resetinventory: specify a server_id (e.g. resetinventory 1)")
+        print("[stdb-relay] resetinventory: specify a server_id")
         return
     end
-
     doResetInventory(targetSrc, src)
 end, true)
-
-exports("ResetInventory", function(serverId, cb)
-    if type(serverId) ~= "number" or serverId <= 0 then
-        if cb then cb(false, "invalid server_id") end
-        return
-    end
-    PerformHttpRequest(SIDECAR_URL .. "reducer",
-        function(status, body, _)
-            local ok, data = pcall(json.decode, body or "")
-            local success   = status == 200 and ok and data and data.ok == true
-            if cb then cb(success, success and data or (data and data.error or "error")) end
-        end,
-        "POST",
-        json.encode({ name = "reset_player_inventory", args = { server_id = serverId } }),
-        { ["Content-Type"] = "application/json" }
-    )
-end)
