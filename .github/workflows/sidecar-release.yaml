@@ -55,7 +55,7 @@ jobs:
                         # A half-released release is worse than no release.
       matrix:
         include:
-          - rid:        windows-x64
+          - rid:        win-x64
             runner:     windows-latest
             ext:        ".exe"
             label:      "Windows x64"
