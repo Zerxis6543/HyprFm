@@ -97,12 +97,13 @@ jobs:
           echo "  .NET SDK   : $(dotnet --version)"
           echo "════════════════════════════════════════════"
 
+      - name: Debug Workspace
+        run: |
+          echo "Current Directory: $(pwd)"
+          echo "Listing all files in root:"
+          ls -R
 
-          - name: Debug Workspace
-      run: |
-        echo "Current Directory: $(pwd)"
-        echo "Listing all files in root:"
-        ls -R
+      # ── 4. Restore Dependencies ───────────────────────────────────────────
 
       # ── 4. Restore Dependencies ───────────────────────────────────────────
       # Restoring as a separate step produces a cleaner log and allows the
