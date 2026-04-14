@@ -36,7 +36,7 @@ permissions:
 env:
   # Path to the sidecar .csproj relative to the repo root.
   # Change this if you reorganise the monorepo.
-  SIDECAR_PROJECT: "sidecar/HyprFmSidecar.csproj"
+  SIDECAR_PROJECT: "stdb-sidecar/HyprFmSidecar.csproj"
 
   # Output directory for compiled binaries (inside the runner workspace).
   BUILD_OUTPUT_DIR: "dist"
