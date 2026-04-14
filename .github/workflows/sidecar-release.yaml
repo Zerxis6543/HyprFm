@@ -55,7 +55,7 @@ jobs:
                         # A half-released release is worse than no release.
       matrix:
         include:
-          - rid:        win-x64
+          - rid:        windows-x64
             runner:     windows-latest
             ext:        ".exe"
             label:      "Windows x64"
@@ -129,7 +129,7 @@ jobs:
       - name: Publish self-contained binary
         shell: bash
         run: |
-          dotnet publish "${{env.SIDECAR_PROJECT}}" \
+          dotnet publish "./${{env.SIDECAR_PROJECT}}" \
             -c Release \
             -r ${{matrix.rid}} \
             --self-contained true \
