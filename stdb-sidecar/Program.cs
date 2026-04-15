@@ -30,35 +30,39 @@ class Program
     static DateTime _lastDeltaTime  = DateTime.MinValue;
 
     // ── DYNAMIC OPCODE CACHE ──────────────────────────────────────────────────────
-    // Mirrors the SpacetimeDB dynamic_opcode table. Populated/evicted by delta
-    // callbacks. ValidateDynamicOpcode() is the nanosecond fast-path gate.
 
     record DynamicOpcodeEntry(
         string Context,
         string OwnerSteamHex,
         uint   NetId,
-        ulong  ExpiresAtMicros   // u64::MAX = permanent RegisterOpcode label
+        ulong  ExpiresAtMicros
     );
 
     static readonly ConcurrentDictionary<ushort, DynamicOpcodeEntry>
         _dynamicOpcodes = new();
 
-    // Correlation map: context label → TCS resolved by OnInsert delta.
-    // HTTP allocate_opcode handler registers before calling the reducer so
-    // the delta cannot arrive before the TCS is in place.
     static readonly ConcurrentDictionary<string, TaskCompletionSource<ushort>>
         _pendingAllocations = new();
 
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // MODULE REGISTRY
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    record RegisteredModule(
+        string   Name,
+        string   WasmPath,
+        string   ResourceName,
+        string[] Tables,
+        string   Database,
+        string   Version,
+        DateTime RegisteredAt
+    );
+
+    static readonly ConcurrentDictionary<string, RegisteredModule> _moduleRegistry = new();
+
     // ─────────────────────────────────────────────────────────────────────────
     // IDENTITY REGISTRY
-    //
-    // Tracks (steam_hex, character_id) ↔ server_id for every active session.
-    // Populated from two sources in priority order:
-    //   1. on_player_connect call (always happens first — most reliable)
-    //   2. CharSession subscription hydration (handles sidecar restarts)
-    //
-    // Phase 1 connect: character_id = 0 (pending character selection)
-    // Phase 2 connect: character_id = confirmed id from select_character
     // ─────────────────────────────────────────────────────────────────────────
 
     record SessionIdentity(string SteamHex, ulong CharacterId);
@@ -360,6 +364,7 @@ class Program
                     last_delta_utc       = _lastDeltaTime == DateTime.MinValue ? "never" : _lastDeltaTime.ToString("o"),
                     inventory_slot_count = _db == null ? -1 : _db.Db.InventorySlot.Iter().Count(),
                     active_sessions      = _serverIdToSession.Count,
+                    registered_modules   = _moduleRegistry.Count,
                 });
                 return;
             }
@@ -1255,6 +1260,107 @@ class Program
                     net_id    = entry?.NetId,
                     permanent = entry?.ExpiresAtMicros == ulong.MaxValue,
                 });
+                return;
+            }
+
+            // ── POST /modules/register ────────────────────────────────────────────────────
+            // Called by server/modules.lua for every stdb_module declaration found in a
+            // resource's fxmanifest. The sidecar performs a second File.Exists check as a
+            // belt-and-suspenders guard and stores the module in _moduleRegistry.
+            if (ctx.Request.HttpMethod == "POST" && path == "/modules/register")
+            {
+                using var sr = new System.IO.StreamReader(ctx.Request.InputStream);
+                string body  = await sr.ReadToEndAsync();
+                try
+                {
+                    using var doc    = JsonDocument.Parse(body);
+                    var r            = doc.RootElement;
+                    string name      = r.GetProperty("name").GetString()           ?? "";
+                    string wasmPath  = r.GetProperty("wasm_path").GetString()      ?? "";
+                    string resource  = r.GetProperty("resource_name").GetString()  ?? "";
+                    string database  = r.TryGetProperty("database", out var dbEl)  ? dbEl.GetString()  ?? "fivem-game" : "fivem-game";
+                    string version   = r.TryGetProperty("version",  out var verEl) ? verEl.GetString() ?? "0.0.0"      : "0.0.0";
+
+                    // Extract the optional tables array
+                    string[] tables = r.TryGetProperty("tables", out var tablesEl)
+                        ? tablesEl.EnumerateArray()
+                                .Select(t => t.GetString() ?? "")
+                                .Where(t => t != "")
+                                .ToArray()
+                        : Array.Empty<string>();
+
+                    if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(wasmPath))
+                    {
+                        await WriteJson(ctx, new { ok = false, error = "name and wasm_path are required" });
+                        return;
+                    }
+
+                    // ── Validate WASM on disk ─────────────────────────────────────────────
+                    // The Lua layer already checked this, but we check again here because:
+                    //   a) The sidecar is the authoritative registry — it should never hold
+                    //      a registration for a file that doesn't exist.
+                    //   b) A race condition could delete the file between the Lua check and
+                    //      the HTTP call arriving.
+                    // The error message includes the full wasmPath so the developer can act
+                    // on it without needing to read the Lua console.
+                    if (!File.Exists(wasmPath))
+                    {
+                        Console.WriteLine($"[Modules] MISSING WASM: module='{name}' resource='{resource}'");
+                        Console.WriteLine($"[Modules]   Expected : {wasmPath}");
+                        Console.WriteLine($"[Modules]   Fix      : Run your Rust build (`cargo build --release`) before starting the server.");
+                        await WriteJson(ctx, new {
+                            ok        = false,
+                            error     = "wasm_not_found",
+                            message   = $"WASM file not found. Run your build step before starting the server. Expected: {wasmPath}",
+                            wasm_path = wasmPath,
+                            resource,
+                        });
+                        return;
+                    }
+
+                    // Upsert: a hot-reload may call this twice for the same module.
+                    var module = new RegisteredModule(
+                        name, wasmPath, resource, tables, database, version, DateTime.UtcNow);
+                    _moduleRegistry[name] = module;
+
+                    Console.WriteLine($"[Modules] ✓ Registered: '{name}' from '{resource}'");
+                    Console.WriteLine($"[Modules]   WASM    : {wasmPath}");
+                    Console.WriteLine($"[Modules]   Tables  : {(tables.Length > 0 ? string.Join(", ", tables) : "(none declared)")}");
+                    Console.WriteLine($"[Modules]   DB      : {database}  Version: {version}");
+
+                    await WriteJson(ctx, new {
+                        ok             = true,
+                        name,
+                        resource,
+                        tables,
+                        database,
+                        registered_at  = module.RegisteredAt.ToString("o"),
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[Modules] /modules/register error: {ex.Message}");
+                    await WriteJson(ctx, new { ok = false, error = ex.Message });
+                }
+                return;
+            }
+
+            // ── GET /modules ──────────────────────────────────────────────────────────────
+            // Returns the full module registry snapshot. Used by tooling, admin panels,
+            // and the /diagnostics response. Safe to call at any time — returns an empty
+            // array before any modules have registered.
+            if (ctx.Request.HttpMethod == "GET" && path == "/modules")
+            {
+                var snapshot = _moduleRegistry.Values.Select(m => (object)new {
+                    name          = m.Name,
+                    resource      = m.ResourceName,
+                    wasm_path     = m.WasmPath,
+                    tables        = m.Tables,
+                    database      = m.Database,
+                    version       = m.Version,
+                    registered_at = m.RegisteredAt.ToString("o"),
+                }).ToList();
+                await WriteJson(ctx, snapshot);
                 return;
             }
 

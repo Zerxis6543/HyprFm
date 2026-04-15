@@ -75,11 +75,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "G:\\FIVEMSTDBPROJECT\\HyprFm\\stdb-sidecar\\StdbSidecar.csproj",
+      "projectUniqueName": "G:\\FivemSTDBProject\\HyprFm\\stdb-sidecar\\HyprFmSidecar.csproj",
       "projectName": "StdbSidecar",
-      "projectPath": "G:\\FIVEMSTDBPROJECT\\HyprFm\\stdb-sidecar\\StdbSidecar.csproj",
+      "projectPath": "G:\\FivemSTDBProject\\HyprFm\\stdb-sidecar\\HyprFmSidecar.csproj",
       "packagesPath": "C:\\Users\\zerxi\\.nuget\\packages\\",
-      "outputPath": "G:\\FIVEMSTDBPROJECT\\HyprFm\\stdb-sidecar\\obj\\",
+      "outputPath": "G:\\FivemSTDBProject\\HyprFm\\stdb-sidecar\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\zerxi\\AppData\\Roaming\\NuGet\\NuGet.Config",
