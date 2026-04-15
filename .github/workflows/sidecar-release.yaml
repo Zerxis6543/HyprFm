@@ -126,12 +126,12 @@ jobs:
             --configuration Release \
             --runtime ${{ matrix.rid }} \
             --self-contained true \
-            /p:PublishSingleFile=true \
-            /p:PublishTrimmed=true \
-            /p:EnableCompressionInSingleFile=true \
-            /p:DebugType=none \
-            /p:IncludeNativeLibrariesForSelfExtract=true \
-            "/p:AssemblyName=${ASSEMBLY_NAME}" \
+            -p:PublishSingleFile=true \
+            -p:PublishTrimmed=true \
+            -p:EnableCompressionInSingleFile=true \
+            -p:DebugType=none \
+            -p:IncludeNativeLibrariesForSelfExtract=true \
+            "-p:AssemblyName=${ASSEMBLY_NAME}" \
             --output "dist" \
             --verbosity normal
 
