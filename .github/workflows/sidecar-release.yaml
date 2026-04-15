@@ -33,7 +33,7 @@ permissions:
 
 env:
   # ── CHANGE THIS to match the actual path of your .csproj ──────────────────
-  SIDECAR_PROJECT: "sidecar/HyprFmSidecar.csproj"
+  SIDECAR_PROJECT: "stdb-sidecar/HyprFmSidecar.csproj"
 
 jobs:
   # ── Job 1: Build Matrix ─────────────────────────────────────────────────────
