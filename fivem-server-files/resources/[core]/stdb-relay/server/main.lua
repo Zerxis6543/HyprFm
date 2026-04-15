@@ -1,30 +1,23 @@
--- HyprFM Relay — thin bridge between FiveM natives and SpacetimeDB.
--- This file NEVER decides game state. It routes instructions and nothing else.
-
 print("[stdb-relay] SERVER MAIN LOADED")
 
 local SIDECAR_URL = "http://127.0.0.1:27200/"
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- MODULE-LEVEL GLOBALS
--- Global (not local) so exports.lua, loaded after this file, can reference them.
 -- ─────────────────────────────────────────────────────────────────────────────
 
-Dispatcher            = {}   -- opcode (number) -> handler function
-_volatileQueue        = {}   -- Instructions from InvokeNative — zero HTTP cost
-_identityToServerId   = {}   -- identity hex -> FiveM server_id
-_openStashToServerId  = {}   -- stash_id / plate -> FiveM server_id
-_propOwnerServerId    = {}   -- ground stash_id -> server_id of the player who dropped
+Dispatcher            = {}
+_volatileQueue        = {}
+_identityToServerId   = {}
+_openStashToServerId  = {}
+_propOwnerServerId    = {}
 
-_opcodeToLabel        = {}   -- reverse map: opcode number -> label string
-_syncReady            = false  -- true after all core opcodes are registered
-_pendingRegistrations = {}     -- third-party RegisterOpcode calls queued until ready
+_opcodeToLabel        = {}
+_syncReady            = false
+_pendingRegistrations = {}
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- CORE OPCODE HANDLERS
--- What to do when an instruction with each core label arrives from STDB.
--- Entity/engine opcodes forward to the client via stdb:executeOpcode (label-keyed).
--- Effect opcodes use stdb:applyEffect which the client handles semantically.
 -- ─────────────────────────────────────────────────────────────────────────────
 
 local function netToPlayer(netId)
@@ -74,7 +67,6 @@ _coreHandlers = {
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- CONSTANTS TABLE SETTERS
--- Called once per core opcode when registration resolves to populate constants.lua.
 -- ─────────────────────────────────────────────────────────────────────────────
 
 local _labelToConstantSetter = {
@@ -91,8 +83,6 @@ local _labelToConstantSetter = {
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- CORE OPCODE REGISTRATION
--- Makes direct HTTP calls — bypasses the _syncReady gate intentionally.
--- Third-party code uses the RegisterOpcode export which IS gated.
 -- ─────────────────────────────────────────────────────────────────────────────
 
 local _coreOpcodeLabels = {
@@ -175,7 +165,6 @@ end
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- INSTRUCTION DISPATCH
--- Decodes the JSON payload and routes to the correct Dispatcher entry.
 -- ─────────────────────────────────────────────────────────────────────────────
 
 local function dispatchInstruction(instr)
@@ -192,7 +181,7 @@ local function dispatchInstruction(instr)
 end
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- DIAGNOSTICS LOOP (30s)
+-- DIAGNOSTICS LOOP
 -- ─────────────────────────────────────────────────────────────────────────────
 
 Citizen.CreateThread(function()
@@ -220,7 +209,7 @@ Citizen.CreateThread(function()
 end)
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- INSTRUCTION POLL LOOP (100ms)
+-- INSTRUCTION POLL LOOP
 -- ─────────────────────────────────────────────────────────────────────────────
 
 Citizen.CreateThread(function()
@@ -261,7 +250,7 @@ Citizen.CreateThread(function()
 end)
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- SLOT DELTA PUSH LOOP (150ms)
+-- SLOT DELTA PUSH LOOP
 -- ─────────────────────────────────────────────────────────────────────────────
 
 Citizen.CreateThread(function()
@@ -306,7 +295,6 @@ Citizen.CreateThread(function()
                     TriggerClientEvent("stdb:slotDeltas", serverId, playerDeltas)
                 end
 
-                -- Ground stash prop cleanup
                 local checkedStashes = {}
                 for _, delta in ipairs(deltas) do
                     if delta.type == "deleted" then
@@ -693,7 +681,6 @@ end)
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- INVENTORY: USE / EQUIP / DROP / STACK OPS / BACKPACK / GIVE
--- (unchanged from previous version — all route through sidecar reducers)
 -- ─────────────────────────────────────────────────────────────────────────────
 
 RegisterNetEvent("stdb:useItem")
