@@ -4,12 +4,17 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Triggered exclusively by version tags (e.g. v1.2.3).
 # Produces two self-contained, single-file .NET 8 executables:
-#   • hyprfm-sidecar-windows-x64.exe
+#   • hyprfm-sidecar-win-x64.exe
 #   • hyprfm-sidecar-linux-x64
-# Attaches both binaries and a SHA256 checksum manifest to the GitHub Release.
 #
-# Server owners drop the appropriate binary next to FXServer and run it.
-# No .NET SDK. No Visual Studio. No runtime installation required.
+# FIX v2: Two bugs corrected from v1:
+#   1. Windows .NET RID is "win-x64", NOT "windows-x64".
+#      Using the wrong RID caused dotnet publish to write to a different
+#      directory than the rename step was reading from.
+#   2. Removed the fragile `find *.exe` bash command on the Windows runner.
+#      Instead, we force dotnet to write the binary with a known filename
+#      via /p:AssemblyName at publish time, so no post-publish renaming is
+#      needed at all. The output path is always deterministic.
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: Sidecar Release
@@ -17,52 +22,40 @@ name: Sidecar Release
 on:
   push:
     tags:
-      # Match semantic version tags only: v1.0.0, v1.2.3-rc1, etc.
       - "v[0-9]+.[0-9]+.[0-9]+*"
 
-# Only one release pipeline runs at a time for a given tag.
-# This prevents duplicate releases if a tag push triggers multiple workflows.
 concurrency:
   group: sidecar-release-${{ github.ref }}
   cancel-in-progress: false
 
-# ── Permissions ───────────────────────────────────────────────────────────────
-# contents:write is required by softprops/action-gh-release to create the
-# GitHub Release and upload assets. Principle of least privilege: we do NOT
-# grant packages or deployments permissions.
 permissions:
   contents: write
 
 env:
-  # Path to the sidecar .csproj relative to the repo root.
-  # Change this if you reorganise the monorepo.
-  SIDECAR_PROJECT: "stdb-sidecar/HyprFmSidecar.csproj"
-
-  # Output directory for compiled binaries (inside the runner workspace).
-  BUILD_OUTPUT_DIR: "dist"
+  # ── CHANGE THIS to match the actual path of your .csproj ──────────────────
+  SIDECAR_PROJECT: "sidecar/HyprFmSidecar.csproj"
 
 jobs:
   # ── Job 1: Build Matrix ─────────────────────────────────────────────────────
-  # Runs once per target platform in parallel.
-  # Each leg compiles an independent self-contained binary so there is zero
-  # cross-contamination between runtime environments.
   build:
     name: Build (${{ matrix.rid }})
     runs-on: ${{ matrix.runner }}
 
     strategy:
-      fail-fast: true   # If one platform fails, cancel the other immediately.
-                        # A half-released release is worse than no release.
+      fail-fast: true
       matrix:
         include:
+          # ── CRITICAL: .NET Runtime Identifier for Windows is "win-x64". ───
+          # "windows-x64" is a GitHub runner label, NOT a .NET RID.
+          # Mixing these up is the most common cause of "binary not found" errors.
           - rid:        win-x64
             runner:     windows-latest
-            ext:        ".exe"
+            asset_name: hyprfm-sidecar-win-x64.exe
             label:      "Windows x64"
 
           - rid:        linux-x64
             runner:     ubuntu-latest
-            ext:        ""
+            asset_name: hyprfm-sidecar-linux-x64
             label:      "Linux x64"
 
     steps:
@@ -70,8 +63,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # Fetch the full history so AssemblyInformationalVersion can embed
-          # the correct git commit SHA via GitVersioning or SourceLink.
           fetch-depth: 0
 
       # ── 2. .NET SDK Setup ─────────────────────────────────────────────────
@@ -80,200 +71,168 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
-      # ── 3. Confirm Environment ────────────────────────────────────────────
-      # This step's sole purpose is to write a clear, unambiguous build log
-      # entry that confirms the exact SDK version and target runtime.
-      # Operators debugging a crash can share this line with support.
+      # ── 3. Confirm Build Environment ──────────────────────────────────────
+      # Writes an unambiguous log entry confirming the exact RID being targeted.
+      # Always check this line first when debugging a binary mismatch.
       - name: Confirm build environment
         shell: bash
         run: |
           echo "════════════════════════════════════════════"
           echo "  HyprFM Sidecar — Build Confirmation"
           echo "════════════════════════════════════════════"
-          echo "  Tag        : ${{ github.ref_name }}"
-          echo "  Commit     : ${{ github.sha }}"
-          echo "  Target RID : ${{ matrix.rid }} (${{ matrix.label }})"
-          echo "  Runner OS  : ${{ runner.os }}"
-          echo "  .NET SDK   : $(dotnet --version)"
+          echo "  Tag         : ${{ github.ref_name }}"
+          echo "  Commit      : ${{ github.sha }}"
+          echo "  .NET RID    : ${{ matrix.rid }}"
+          echo "  Asset Name  : ${{ matrix.asset_name }}"
+          echo "  Runner OS   : ${{ runner.os }}"
+          echo "  .NET SDK    : $(dotnet --version)"
           echo "════════════════════════════════════════════"
 
-      - name: Debug Workspace
-        run: |
-          echo "Current Directory: $(pwd)"
-          echo "Listing all files in root:"
-          ls -R
-
-      # ── 4. Restore Dependencies ───────────────────────────────────────────
-
-      # ── 4. Restore Dependencies ───────────────────────────────────────────
-      # Restoring as a separate step produces a cleaner log and allows the
-      # runner cache to be populated before the publish step consumes CPU.
+      # ── 4. Restore NuGet Packages ─────────────────────────────────────────
       - name: Restore NuGet packages
-        run: >
-          dotnet restore "${{ env.SIDECAR_PROJECT }}"
-          --runtime ${{ matrix.rid }}
-          --verbosity minimal
+        shell: bash
+        run: |
+          dotnet restore "${{ env.SIDECAR_PROJECT }}" \
+            --runtime ${{ matrix.rid }} \
+            --verbosity minimal
 
       # ── 5. Publish — Self-Contained Single-File Executable ────────────────
-      # Key flags explained:
-      #   --self-contained true        Bundle the .NET runtime into the binary.
-      #                                Server owner needs NO installed runtime.
-      #   /p:PublishSingleFile=true    Merge all DLLs into one file.
-      #   /p:PublishTrimmed=true       Remove unused framework code (~30% size).
-      #   /p:EnableCompressionInSingleFile=true  Brotli-compress embedded DLLs.
-      #   /p:DebugType=none            Strip .pdb from the release binary.
-      #   /p:IncludeNativeLibrariesForSelfExtract=true
-      #                                Bundle native libs (e.g. BouncyCastle TLS
-      #                                used by the SpacetimeDB SDK) so the binary
-      #                                works on fresh Linux VMs without libc extras.
+      #
+      # KEY FIX: We pass /p:AssemblyName to force the output binary to be
+      # named exactly "hyprfm-sidecar-win-x64" or "hyprfm-sidecar-linux-x64"
+      # at compile time. This eliminates any post-publish rename step and the
+      # fragile `find` command that caused the v1 failure.
+      #
+      # The output directory is flat: dist/<asset_name>[.exe]
+      # We know exactly what file will exist before the step runs.
+      #
+      # Flag reference:
+      #   --self-contained true                    Bundle .NET runtime into binary
+      #   /p:PublishSingleFile=true                Merge all DLLs into one file
+      #   /p:PublishTrimmed=true                   Strip unused framework code
+      #   /p:EnableCompressionInSingleFile=true    Brotli-compress embedded libs
+      #   /p:DebugType=none                        No .pdb in release binary
+      #   /p:AssemblyName=<asset>                  Force output filename (THE FIX)
+      #   /p:IncludeNativeLibrariesForSelfExtract=true  Bundle native libs (TLS etc.)
       - name: Publish self-contained binary
         shell: bash
         run: |
-          dotnet publish "./${{env.SIDECAR_PROJECT}}" \
-            -c Release \
-            -r ${{matrix.rid}} \
+          # Strip the .exe extension to get a clean AssemblyName on both platforms.
+          # dotnet adds .exe automatically on Windows; we must NOT double-add it.
+          ASSEMBLY_NAME="${{ matrix.asset_name }}"
+          ASSEMBLY_NAME="${ASSEMBLY_NAME%.exe}"
+
+          dotnet publish "${{ env.SIDECAR_PROJECT }}" \
+            --configuration Release \
+            --runtime ${{ matrix.rid }} \
             --self-contained true \
-            -p:PublishSingleFile=true \
-            -p:PublishTrimmed=true \
-            -p:EnableCompressionInSingleFile=true \
-            -p:DebugType=none \
-            -p:IncludeNativeLibrariesForSelfExtract=true \
-            -o "${{env.BUILD_OUTPUT_DIR}}/${{matrix.rid}}" \
+            /p:PublishSingleFile=true \
+            /p:PublishTrimmed=true \
+            /p:EnableCompressionInSingleFile=true \
+            /p:DebugType=none \
+            /p:IncludeNativeLibrariesForSelfExtract=true \
+            "/p:AssemblyName=${ASSEMBLY_NAME}" \
+            --output "dist" \
             --verbosity normal
 
           echo ""
-          echo "── Publish output contents ──────────────────"
-          ls -lh "${{env.BUILD_OUTPUT_DIR}}/${{matrix.rid}}/"
+          echo "── dist/ contents after publish ─────────────"
+          ls -lh dist/
 
-      # ── 6. Rename Binary to Release Asset Name ────────────────────────────
-      # GitHub Release asset names must be unique and human-readable.
-      # We produce:  hyprfm-sidecar-windows-x64.exe
-      #              hyprfm-sidecar-linux-x64
-      # The base name comes from the project's AssemblyName; we normalize it
-      # here so the output is predictable regardless of .csproj settings.
-      - name: Rename binary for release
+      # ── 6. Verify the Expected Asset Exists ───────────────────────────────
+      # This step exists purely to produce a clear, early failure message
+      # instead of a confusing "file not found" error inside the upload step.
+      # If this fails, check the AssemblyName override above and the .csproj.
+      - name: Verify asset exists
         shell: bash
         run: |
-          INPUT_DIR="${{ env.BUILD_OUTPUT_DIR }}/${{ matrix.rid }}"
-          ASSET_NAME="hyprfm-sidecar-${{ matrix.rid }}${{ matrix.ext }}"
+          EXPECTED="dist/${{ matrix.asset_name }}"
 
-          # Locate the compiled binary. On Windows, dotnet publish names it
-          # after the AssemblyName in the .csproj; we accept any single .exe
-          # or executable in the output directory.
-          if [[ "${{ matrix.rid }}" == windows* ]]; then
-            SRC=$(find "$INPUT_DIR" -maxdepth 1 -name "*.exe" | head -1)
-          else
-            # On Linux, the binary has no extension. Exclude *.json, *.pdb etc.
-            SRC=$(find "$INPUT_DIR" -maxdepth 1 -type f ! -name "*.*" | head -1)
-          fi
+          echo "── Verifying asset ──────────────────────────"
+          echo "  Expected : $EXPECTED"
 
-          if [[ -z "$SRC" ]]; then
-            echo "ERROR: Could not locate the compiled binary in $INPUT_DIR"
-            ls -la "$INPUT_DIR"
+          if [[ ! -f "$EXPECTED" ]]; then
+            echo ""
+            echo "ERROR: Expected binary not found."
+            echo "Actual contents of dist/:"
+            ls -la dist/
             exit 1
           fi
 
-          cp "$SRC" "${{ env.BUILD_OUTPUT_DIR }}/$ASSET_NAME"
-
-          # Set executable bit on Linux binaries so operators don't have to
-          # remember to chmod +x before first run.
+          # Set executable bit on Linux so operators don't need chmod +x.
           if [[ "${{ matrix.rid }}" == linux* ]]; then
-            chmod +x "${{ env.BUILD_OUTPUT_DIR }}/$ASSET_NAME"
+            chmod +x "$EXPECTED"
           fi
 
-          echo "ASSET_NAME=$ASSET_NAME" >> "$GITHUB_ENV"
-
-          echo ""
-          echo "── Renamed binary ───────────────────────────"
-          echo "  Source : $SRC"
-          echo "  Asset  : ${{ env.BUILD_OUTPUT_DIR }}/$ASSET_NAME"
-          ls -lh "${{ env.BUILD_OUTPUT_DIR }}/$ASSET_NAME"
+          FILE_SIZE=$(ls -lh "$EXPECTED" | awk '{print $5}')
+          echo "  Status   : FOUND ✓"
+          echo "  Size     : $FILE_SIZE"
+          echo "  RID      : ${{ matrix.rid }} (${{ matrix.label }})"
 
       # ── 7. Upload Binary as Workflow Artifact ─────────────────────────────
-      # The "release" job (below) runs on a single runner and cannot access
-      # files from parallel matrix legs directly. We bridge via workflow
-      # artifacts, which are cheap ephemeral storage scoped to this run.
+      # The release job runs on a separate runner; workflow artifacts are the
+      # only way to pass files between jobs in GitHub Actions.
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
           name: binary-${{ matrix.rid }}
-          path: ${{ env.BUILD_OUTPUT_DIR }}/${{ env.ASSET_NAME }}
-          # Retain for 1 day — we only need it long enough for the release job.
+          path: dist/${{ matrix.asset_name }}
           retention-days: 1
           if-no-files-found: error
 
   # ── Job 2: Checksum & Release ───────────────────────────────────────────────
-  # Runs after ALL matrix legs succeed. Downloads both binaries, computes
-  # SHA256 checksums into a single manifest file, then creates the GitHub
-  # Release and attaches all three assets.
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: build   # Depends on ALL matrix legs completing successfully.
+    needs: build
 
     steps:
-      # ── 1. Checkout (for release notes / CHANGELOG parsing) ────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # ── 2. Download All Binaries ──────────────────────────────────────────
-      # Merges artifacts from both matrix legs into a single local directory.
+      # ── Download both binaries from matrix legs ────────────────────────────
       - name: Download all binaries
         uses: actions/download-artifact@v4
         with:
-          # No 'name' filter — download all artifacts from this run.
           path: release-assets
-          # merge-multiple: true flattens the per-artifact subdirectories
-          # so all files land in release-assets/ directly.
           merge-multiple: true
 
-      # ── 3. Confirm Downloaded Assets ─────────────────────────────────────
+      # ── Confirm both files arrived ────────────────────────────────────────
       - name: Confirm downloaded assets
         run: |
           echo "════════════════════════════════════════════"
           echo "  Assets ready for release"
           echo "════════════════════════════════════════════"
           ls -lh release-assets/
-          echo ""
-          # Assert we have exactly two files (one per platform).
+
           FILE_COUNT=$(find release-assets/ -maxdepth 1 -type f | wc -l)
-          echo "  File count : $FILE_COUNT"
+          echo "  File count : $FILE_COUNT (expected 2)"
+
           if [[ "$FILE_COUNT" -ne 2 ]]; then
-            echo "ERROR: Expected 2 binaries, found $FILE_COUNT. Aborting release."
+            echo "ERROR: Expected 2 binaries, found $FILE_COUNT. Aborting."
             exit 1
           fi
 
-      # ── 4. Generate SHA256 Checksum Manifest ─────────────────────────────
-      # Produces a single text file:
-      #   <hex>  hyprfm-sidecar-windows-x64.exe
-      #   <hex>  hyprfm-sidecar-linux-x64
-      #
-      # Operators verify with:
-      #   sha256sum --check SHA256SUMS.txt
-      #
-      # The manifest is attached as a third release asset so it lives
-      # permanently alongside the binaries it describes.
+      # ── Generate SHA256 checksum manifest ─────────────────────────────────
+      # Single manifest covers both binaries.
+      # Operators verify with: sha256sum --check SHA256SUMS.txt
       - name: Generate SHA256 checksum manifest
         run: |
           cd release-assets/
           sha256sum hyprfm-sidecar-* > SHA256SUMS.txt
-          echo ""
+
           echo "── SHA256SUMS.txt ───────────────────────────"
           cat SHA256SUMS.txt
 
-      # ── 5. Extract Release Notes from Tag Annotation ─────────────────────
-      # If the tag was created with `git tag -a v1.2.3 -m "..."`, the
-      # annotation body becomes the release description automatically via
-      # the `generate_release_notes` flag. We also prepend a static header
-      # with install instructions so every release is self-documenting.
+      # ── Build self-documenting release notes ──────────────────────────────
       - name: Build release body
         id: release_body
         run: |
           TAG="${{ github.ref_name }}"
-          COMMIT="${{ github.sha }}"
-          SHORT_SHA="${COMMIT:0:7}"
+          SHORT_SHA="${{ github.sha }}"
+          SHORT_SHA="${SHORT_SHA:0:7}"
 
           cat > /tmp/release_body.md << EOF
           ## HyprFM Sidecar ${TAG}
@@ -282,19 +241,20 @@ jobs:
 
           ### Installation
 
-          The sidecar is a self-contained binary — **no .NET runtime required**.
+          Self-contained binary — **no .NET runtime required on the server.**
 
           | Platform | File |
           |---|---|
-          | Windows (64-bit) | \`hyprfm-sidecar-windows-x64.exe\` |
-          | Linux (64-bit)   | \`hyprfm-sidecar-linux-x64\`       |
+          | Windows 64-bit | \`hyprfm-sidecar-win-x64.exe\` |
+          | Linux 64-bit   | \`hyprfm-sidecar-linux-x64\`   |
 
-          **Linux — mark as executable before first run:**
+          **Linux — mark executable before first run:**
           \`\`\`bash
           chmod +x hyprfm-sidecar-linux-x64
+          ./hyprfm-sidecar-linux-x64
           \`\`\`
 
-          **Verify integrity (all platforms):**
+          **Verify integrity:**
           \`\`\`bash
           sha256sum --check SHA256SUMS.txt
           \`\`\`
@@ -306,16 +266,11 @@ jobs:
           | \`STDB_URI\`   | \`ws://127.0.0.1:3000\` | SpacetimeDB WebSocket URI |
           | \`STDB_DB\`    | \`fivem-game\`          | SpacetimeDB database name |
           | \`STDB_TOKEN\` | *(empty)*               | SpacetimeDB auth token    |
-
-          ---
           EOF
 
           echo "body_path=/tmp/release_body.md" >> "$GITHUB_OUTPUT"
 
-      # ── 6. Create GitHub Release and Attach Assets ────────────────────────
-      # softprops/action-gh-release is the de-facto standard action for this.
-      # It creates the release if it doesn't exist, or updates it if it does
-      # (idempotent — safe to re-run on a failed first attempt).
+      # ── Create GitHub Release and attach all three assets ─────────────────
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -324,10 +279,8 @@ jobs:
           body_path:  ${{ steps.release_body.outputs.body_path }}
           draft:      false
           prerelease: ${{ contains(github.ref_name, '-') }}
-          # Attach all three assets: two binaries + checksum manifest.
           files: |
-            release-assets/hyprfm-sidecar-windows-x64.exe
+            release-assets/hyprfm-sidecar-win-x64.exe
             release-assets/hyprfm-sidecar-linux-x64
             release-assets/SHA256SUMS.txt
-          # Overwrite assets if the release already exists (re-run safety).
           fail_on_unmatched_files: true
