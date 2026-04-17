@@ -56,7 +56,10 @@ class Program
         string[] Tables,
         string   Database,
         string   Version,
-        DateTime RegisteredAt
+        DateTime RegisteredAt,
+        string?   PublishError    = null,
+        string?   LiveVersion     = null,
+        DateTime? LastPublishedAt = null
     );
 
     static readonly ConcurrentDictionary<string, RegisteredModule> _moduleRegistry = new();
@@ -67,8 +70,14 @@ class Program
 
     record SessionIdentity(string SteamHex, ulong CharacterId);
 
+    static readonly ConcurrentDictionary<string, SemaphoreSlim> _publishLocks = new();
     static readonly ConcurrentDictionary<uint,   SessionIdentity> _serverIdToSession = new();
     static readonly ConcurrentDictionary<string, uint>            _hexToServerId      = new();
+
+    static string?   _spacetimeIdentity = null;
+    static bool      _cliAvailable      = false;
+    static readonly  HttpClient _stdbHttpClient    = new()
+    { Timeout = TimeSpan.FromSeconds(10) };
 
     static void RegisterSession(string steamHex, ulong characterId, uint serverId)
     {
@@ -102,6 +111,9 @@ class Program
         Console.WriteLine($"[Sidecar] SpacetimeDB : {stdbUri}/{stdbDb}");
         Console.WriteLine($"[Sidecar] HTTP port   : {_sidecarPort}");
 
+        await CheckCliAvailableAsync();
+        await LoadSpacetimeIdentityAsync();
+        // existing lines follow:
         _ = Task.Run(StartHttpListener);
         _ = Task.Run(SeedItemsWhenReady);
 
@@ -340,6 +352,8 @@ class Program
     // REQUEST HANDLER
     // ─────────────────────────────────────────────────────────────────────────
 
+    
+
     static async Task HandleRequest(HttpListenerContext ctx)
     {
         try
@@ -352,6 +366,7 @@ class Program
                 await WriteJson(ctx, new { version = API_VERSION, status = "ok" });
                 return;
             }
+
 
             // ── GET /diagnostics ──────────────────────────────────────────────
             if (ctx.Request.HttpMethod == "GET" && path == "/diagnostics")
@@ -1263,106 +1278,89 @@ class Program
                 return;
             }
 
-            // ── POST /modules/register ────────────────────────────────────────────────────
-            // Called by server/modules.lua for every stdb_module declaration found in a
-            // resource's fxmanifest. The sidecar performs a second File.Exists check as a
-            // belt-and-suspenders guard and stores the module in _moduleRegistry.
             if (ctx.Request.HttpMethod == "POST" && path == "/modules/register")
+        {
+            using var sr = new System.IO.StreamReader(ctx.Request.InputStream);
+            string body  = await sr.ReadToEndAsync();
+            try
             {
-                using var sr = new System.IO.StreamReader(ctx.Request.InputStream);
-                string body  = await sr.ReadToEndAsync();
-                try
+                using var doc    = JsonDocument.Parse(body);
+                var r            = doc.RootElement;
+                string name      = r.GetProperty("name").GetString()           ?? "";
+                string wasmPath  = r.GetProperty("wasm_path").GetString()      ?? "";
+                string resource  = r.GetProperty("resource_name").GetString()  ?? "";
+                string database  = r.TryGetProperty("database", out var dbEl)  ? dbEl.GetString()  ?? "fivem-game" : "fivem-game";
+                string version   = r.TryGetProperty("version",  out var verEl) ? verEl.GetString() ?? "0.0.0"      : "0.0.0";
+                string[] tables = r.TryGetProperty("tables", out var tablesEl)
+                    ? tablesEl.EnumerateArray()
+                            .Select(t => t.GetString() ?? "")
+                            .Where(t => t != "")
+                            .ToArray()
+                    : Array.Empty<string>();
+
+                if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(wasmPath))
                 {
-                    using var doc    = JsonDocument.Parse(body);
-                    var r            = doc.RootElement;
-                    string name      = r.GetProperty("name").GetString()           ?? "";
-                    string wasmPath  = r.GetProperty("wasm_path").GetString()      ?? "";
-                    string resource  = r.GetProperty("resource_name").GetString()  ?? "";
-                    string database  = r.TryGetProperty("database", out var dbEl)  ? dbEl.GetString()  ?? "fivem-game" : "fivem-game";
-                    string version   = r.TryGetProperty("version",  out var verEl) ? verEl.GetString() ?? "0.0.0"      : "0.0.0";
+                    await WriteJson(ctx, new { ok = false, error = "name and wasm_path are required" });
+                    return;
+                }
 
-                    // Extract the optional tables array
-                    string[] tables = r.TryGetProperty("tables", out var tablesEl)
-                        ? tablesEl.EnumerateArray()
-                                .Select(t => t.GetString() ?? "")
-                                .Where(t => t != "")
-                                .ToArray()
-                        : Array.Empty<string>();
-
-                    if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(wasmPath))
-                    {
-                        await WriteJson(ctx, new { ok = false, error = "name and wasm_path are required" });
-                        return;
-                    }
-
-                    // ── Validate WASM on disk ─────────────────────────────────────────────
-                    // The Lua layer already checked this, but we check again here because:
-                    //   a) The sidecar is the authoritative registry — it should never hold
-                    //      a registration for a file that doesn't exist.
-                    //   b) A race condition could delete the file between the Lua check and
-                    //      the HTTP call arriving.
-                    // The error message includes the full wasmPath so the developer can act
-                    // on it without needing to read the Lua console.
-                    if (!File.Exists(wasmPath))
-                    {
-                        Console.WriteLine($"[Modules] MISSING WASM: module='{name}' resource='{resource}'");
-                        Console.WriteLine($"[Modules]   Expected : {wasmPath}");
-                        Console.WriteLine($"[Modules]   Fix      : Run your Rust build (`cargo build --release`) before starting the server.");
-                        await WriteJson(ctx, new {
-                            ok        = false,
-                            error     = "wasm_not_found",
-                            message   = $"WASM file not found. Run your build step before starting the server. Expected: {wasmPath}",
-                            wasm_path = wasmPath,
-                            resource,
-                        });
-                        return;
-                    }
-
-                    // Upsert: a hot-reload may call this twice for the same module.
-                    var module = new RegisteredModule(
-                        name, wasmPath, resource, tables, database, version, DateTime.UtcNow);
-                    _moduleRegistry[name] = module;
-
-                    Console.WriteLine($"[Modules] ✓ Registered: '{name}' from '{resource}'");
-                    Console.WriteLine($"[Modules]   WASM    : {wasmPath}");
-                    Console.WriteLine($"[Modules]   Tables  : {(tables.Length > 0 ? string.Join(", ", tables) : "(none declared)")}");
-                    Console.WriteLine($"[Modules]   DB      : {database}  Version: {version}");
-
+                // ── Validate WASM on disk ─────────────────────────────────────────────
+                if (!File.Exists(wasmPath))
+                {
+                    Console.WriteLine($"[Modules] MISSING WASM: module='{name}' resource='{resource}'");
+                    Console.WriteLine($"[Modules]   Expected : {wasmPath}");
+                    Console.WriteLine($"[Modules]   Fix      : Run your Rust build (`cargo build --release`) before starting the server.");
                     await WriteJson(ctx, new {
-                        ok             = true,
-                        name,
+                        ok        = false,
+                        error     = "wasm_not_found",
+                        message   = $"WASM file not found. Run your build step before starting the server. Expected: {wasmPath}",
+                        wasm_path = wasmPath,
                         resource,
-                        tables,
-                        database,
-                        registered_at  = module.RegisteredAt.ToString("o"),
                     });
+                    return;
                 }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[Modules] /modules/register error: {ex.Message}");
-                    await WriteJson(ctx, new { ok = false, error = ex.Message });
-                }
-                return;
-            }
 
-            // ── GET /modules ──────────────────────────────────────────────────────────────
-            // Returns the full module registry snapshot. Used by tooling, admin panels,
-            // and the /diagnostics response. Safe to call at any time — returns an empty
-            // array before any modules have registered.
-            if (ctx.Request.HttpMethod == "GET" && path == "/modules")
-            {
-                var snapshot = _moduleRegistry.Values.Select(m => (object)new {
-                    name          = m.Name,
-                    resource      = m.ResourceName,
-                    wasm_path     = m.WasmPath,
-                    tables        = m.Tables,
-                    database      = m.Database,
-                    version       = m.Version,
-                    registered_at = m.RegisteredAt.ToString("o"),
-                }).ToList();
-                await WriteJson(ctx, snapshot);
-                return;
+                var module = new RegisteredModule(
+                    name, wasmPath, resource, tables, database, version, DateTime.UtcNow);
+                _moduleRegistry[name] = module;
+
+                Console.WriteLine($"[Modules] ✓ Registered: '{name}' from '{resource}'");
+                Console.WriteLine($"[Modules]   WASM    : {wasmPath}");
+                Console.WriteLine($"[Modules]   Tables  : {(tables.Length > 0 ? string.Join(", ", tables) : "(none declared)")}");
+                Console.WriteLine($"[Modules]   DB      : {database}  Version: {version}");
+
+                await WriteJson(ctx, new {
+                    ok             = true,
+                    name,
+                    resource,
+                    tables,
+                    database,
+                    registered_at  = module.RegisteredAt.ToString("o"),
+                });
             }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Modules] /modules/register error: {ex.Message}");
+                await WriteJson(ctx, new { ok = false, error = ex.Message });
+            }
+            return;
+        }
+
+        // ── GET /modules ──────────────────────────────────────────────────────────────
+        if (ctx.Request.HttpMethod == "GET" && path == "/modules")
+        {
+            var snapshot = _moduleRegistry.Values.Select(m => (object)new {
+                name          = m.Name,
+                resource      = m.ResourceName,
+                wasm_path     = m.WasmPath,
+                tables        = m.Tables,
+                database      = m.Database,
+                version       = m.Version,
+                registered_at = m.RegisteredAt.ToString("o"),
+            }).ToList();
+            await WriteJson(ctx, snapshot);
+            return;
+        }
 
             ctx.Response.StatusCode = 404; ctx.Response.Close();
         }
@@ -1370,6 +1368,138 @@ class Program
         {
             Console.WriteLine($"[Sidecar] Request error: {ex.Message}");
             try { ctx.Response.StatusCode = 500; ctx.Response.Close(); } catch { }
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // CLI + IDENTITY HELPERS
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Spawns an external process and captures stdout + stderr on concurrent
+    /// tasks. Never read either stream synchronously while the other may fill
+    /// its OS pipe buffer — that is the classic redirect deadlock.
+    static async Task<(int ExitCode, string Stdout, string Stderr)> RunProcessAsync(
+        string fileName, string arguments, TimeSpan timeout)
+    {
+        using var proc = new System.Diagnostics.Process
+        {
+            StartInfo = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName               = fileName,
+                Arguments              = arguments,
+                RedirectStandardOutput = true,
+                RedirectStandardError  = true,
+                UseShellExecute        = false,
+                CreateNoWindow         = true,
+                WorkingDirectory       = AppContext.BaseDirectory,
+            }
+        };
+
+        try { proc.Start(); }
+        catch (Exception ex)
+        { return (-1, string.Empty, $"Failed to start '{fileName}': {ex.Message}"); }
+
+        // Start both reads before waiting — the OS buffers are fixed-size and
+        // will deadlock if one fills while we block synchronously on the other.
+        var stdoutTask = proc.StandardOutput.ReadToEndAsync();
+        var stderrTask = proc.StandardError.ReadToEndAsync();
+
+        using var cts = new CancellationTokenSource(timeout);
+        try
+        {
+            await proc.WaitForExitAsync(cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            try { proc.Kill(entireProcessTree: true); } catch { }
+            return (-1, string.Empty, "Process timed out");
+        }
+
+        await Task.WhenAll(stdoutTask, stderrTask);
+        return (proc.ExitCode, stdoutTask.Result, stderrTask.Result);
+    }
+
+    static async Task CheckCliAvailableAsync()
+    {
+        var (exit, stdout, _) = await RunProcessAsync(
+            "spacetime", "--version", TimeSpan.FromSeconds(3));
+
+        if (exit == 0 && !string.IsNullOrWhiteSpace(stdout))
+        {
+            _cliAvailable = true;
+            Console.WriteLine($"[HyprFM AutoPublisher] spacetime CLI ready: {stdout.Trim()}");
+        }
+        else
+        {
+            _cliAvailable = false;
+            Console.WriteLine("[HyprFM AutoPublisher] WARNING: spacetime CLI not found on PATH — auto-publish disabled");
+            Console.WriteLine("[HyprFM AutoPublisher]   Install: https://spacetimedb.com/install");
+        }
+    }
+
+    static async Task LoadSpacetimeIdentityAsync()
+    {
+        // Fast path: reuse STDB_TOKEN already present in the environment.
+        // This is the same token passed to DbConnection in Main(), so no
+        // subprocess is needed on a correctly configured server.
+        var envToken = Environment.GetEnvironmentVariable("STDB_TOKEN");
+        if (!string.IsNullOrEmpty(envToken))
+        {
+            _spacetimeIdentity = envToken;
+            Console.WriteLine("[HyprFM Identity] Loaded identity from STDB_TOKEN env var.");
+            return;
+        }
+
+        if (!_cliAvailable) return;
+
+        // Slow path: ask the CLI. --json available in spacetime CLI 0.12+.
+        var (exit, stdout, _) = await RunProcessAsync(
+            "spacetime", "identity list --json", TimeSpan.FromSeconds(5));
+
+        if (exit != 0 || string.IsNullOrWhiteSpace(stdout))
+        {
+            Console.WriteLine("[HyprFM Identity] WARNING: no identity found — auto-publish disabled");
+            Console.WriteLine("[HyprFM Identity]   Run: spacetime identity new");
+            return;
+        }
+
+        try
+        {
+            using var doc  = JsonDocument.Parse(stdout.Trim());
+            var root       = doc.RootElement;
+            var first = root.ValueKind == JsonValueKind.Array
+                ? (root.GetArrayLength() > 0 ? (JsonElement?)root[0] : null)
+                : (JsonElement?)root;
+
+            if (first is null)
+            {
+                Console.WriteLine("[HyprFM Identity] WARNING: identity list is empty — auto-publish disabled");
+                return;
+            }
+
+            string? token = null;
+            foreach (var field in new[] { "token", "identity_token", "auth_token", "credential" })
+            {
+                if (first.Value.TryGetProperty(field, out var el) &&
+                    el.ValueKind == JsonValueKind.String)
+                { token = el.GetString(); break; }
+            }
+
+            _spacetimeIdentity = token;
+            if (string.IsNullOrEmpty(_spacetimeIdentity))
+            {
+                Console.WriteLine("[HyprFM Identity] WARNING: no token field found — auto-publish disabled");
+                return;
+            }
+
+            var shortId = _spacetimeIdentity.Length > 12
+                ? _spacetimeIdentity[..8] + "..."
+                : "****";
+            Console.WriteLine($"[HyprFM Identity] Loaded identity: {shortId}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[HyprFM Identity] WARNING: failed to parse identity ({ex.Message}) — auto-publish disabled");
         }
     }
 

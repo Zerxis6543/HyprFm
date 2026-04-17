@@ -1,28 +1,10 @@
--- server/modules.lua
--- ─────────────────────────────────────────────────────────────────────────────
--- HyprFM Module Discovery & Registration
---
--- Runs at stdb-relay resource start. Scans every started resource for
--- stdb_module metadata declarations and registers each with the C# sidecar.
---
--- IPC contract:
---   Lua  → discovers, validates JSON, checks file exists, fires HTTP
---   C#   → verifies WASM on disk (same host), stores in _moduleRegistry
---   STDB → unchanged; WASM publishing is a build-time, not runtime, concern
--- ─────────────────────────────────────────────────────────────────────────────
-
 local SIDECAR_URL = "http://127.0.0.1:27200/"
 local SELF_NAME   = GetCurrentResourceName()
 
 -- ── In-memory registry ───────────────────────────────────────────────────────
--- Keyed by module name. Status is updated asynchronously when the sidecar
--- HTTP response arrives. Prevents double-registration across hot-reloads.
---   [name] → { resource: string, wasm_path: string, status: string }
 local _moduleRegistry = {}
 
 -- ── WASM existence check (server-side Lua has full io access) ────────────────
--- We gate on this BEFORE calling the sidecar so the error message can name
--- the exact file path — not just report a generic sidecar 500.
 local function fileExists(absolutePath)
     local fh = io.open(absolutePath, "rb")
     if fh then io.close(fh); return true end
@@ -30,21 +12,16 @@ local function fileExists(absolutePath)
 end
 
 -- ── Register one validated module with the sidecar ───────────────────────────
--- Called only after JSON validation and WASM existence check pass.
 local function registerModule(resourceName, moduleDef, absoluteWasmPath)
     local key = moduleDef.name
 
-    -- Idempotent guard: skip if this module name was already registered this
-    -- session. A duplicate name across two resources is a conflict, not an
-    -- error — first-registered wins and the second emits a warning.
     if _moduleRegistry[key] then
         print(("[stdb-relay] SKIP: module '%s' already registered by resource '%s' — ignoring duplicate from '%s'"):format(
             key, _moduleRegistry[key].resource, resourceName))
         return
     end
 
-    -- Optimistically write to local registry before the async HTTP response
-    -- arrives. Status is "pending" until the sidecar confirms.
+
     _moduleRegistry[key] = {
         resource  = resourceName,
         wasm_path = absoluteWasmPath,
@@ -54,10 +31,6 @@ local function registerModule(resourceName, moduleDef, absoluteWasmPath)
     print(("[stdb-relay] Registering module '%s' from resource '%s'"):format(key, resourceName))
 
     -- ── IPC step 1: POST to sidecar ──────────────────────────────────────────
-    -- The sidecar performs a second File.Exists check so both the Lua and C#
-    -- layers have an explicit record of the failure. This is intentional
-    -- redundancy: Lua catches the error synchronously with a better message;
-    -- C# catches it if the check races (e.g. the file is deleted mid-startup).
     PerformHttpRequest(
         SIDECAR_URL .. "modules/register",
         function(status, body, _)
@@ -97,8 +70,6 @@ local function registerModule(resourceName, moduleDef, absoluteWasmPath)
 end
 
 -- ── Scan one resource for stdb_module metadata ───────────────────────────────
--- GetResourceMetadata with a sequential index is the FiveM-idiomatic way to
--- read repeated manifest keys. The loop breaks on the first nil/empty string.
 local function scanResource(resourceName)
     local idx = 0
 
@@ -133,16 +104,10 @@ local function scanResource(resourceName)
         end
 
         do
-            -- Resolve the absolute path so the sidecar (same host, different
-            -- process) can verify the file using standard .NET File.Exists().
-            -- Normalise separators: GetResourcePath may return backslashes on Windows.
             local absoluteWasm = (GetResourcePath(resourceName) .. "/" .. moduleDef.wasm)
                 :gsub("\\", "/")
 
             -- ── Guard 3: WASM existence ───────────────────────────────────────
-            -- This is the highest-value check. Fail fast here with an actionable
-            -- error before touching the network, so the developer can act on it
-            -- immediately without reading sidecar logs.
             if not fileExists(absoluteWasm) then
                 print(("[stdb-relay] ERROR: Module '%s' declared by resource '%s' — WASM not found."):format(
                     moduleDef.name, resourceName))
@@ -164,8 +129,6 @@ local function scanResource(resourceName)
 end
 
 -- ── Full sweep across all started resources ───────────────────────────────────
--- Called once on our own resource start, after a delay for other resources
--- to finish loading and for the sidecar HTTP listener to come up.
 local function discoverAllModules()
     local total = GetNumResources()
     local found = 0
@@ -200,18 +163,12 @@ end
 -- ═════════════════════════════════════════════════════════════════════════════
 
 -- ── Initial sweep: triggered when THIS resource starts ───────────────────────
--- The 3-second delay lets the sidecar HTTP listener come up and lets most
--- other resources finish their onResourceStart handlers. Without the delay,
--- GetResourceState may return "starting" for resources that haven't settled.
 AddEventHandler("onResourceStart", function(name)
     if name ~= SELF_NAME then return end
     Citizen.SetTimeout(3000, discoverAllModules)
 end)
 
 -- ── Hot-registration: triggered when ANY other resource starts ────────────────
--- Handles txAdmin hot-restarts and /start commands without requiring a full
--- relay restart. The 500ms delay ensures GetResourceMetadata returns current
--- manifest values (not stale pre-start state).
 AddEventHandler("onResourceStart", function(name)
     if name == SELF_NAME then return end
     Citizen.SetTimeout(500, function()
@@ -224,7 +181,6 @@ AddEventHandler("onResourceStart", function(name)
 end)
 
 -- ── Clean up registry on resource stop ───────────────────────────────────────
--- Removes entries so a subsequent hot-start can re-register cleanly.
 AddEventHandler("onResourceStop", function(name)
     for key, entry in pairs(_moduleRegistry) do
         if entry.resource == name then
