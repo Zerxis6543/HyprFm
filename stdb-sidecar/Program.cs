@@ -8,6 +8,9 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using SpacetimeDB;
 using SpacetimeDB.Types;
+using System.IO;                    // StreamReader in /pool/subscribe endpoints
+using System.Threading.Channels;    // ChannelReader<DatabaseEvent> in ConsumePoolEventsAsync
+using HyprFM.Sidecar.Pool;  
 
 class Program
 {
@@ -24,6 +27,11 @@ class Program
     static readonly ConcurrentQueue<InstructionQueue> _pending    = new();
     static readonly ConcurrentQueue<object>           _deltaQueue = new();
     static readonly SemaphoreSlim                     _syncGate   = new(0, 1);
+
+    // ── pool-level fields ────────────────────────────────────────────────────
+    static SubscriptionPool?          _pool;
+    static SpacetimeDbTransportFactory _transportFactory = new();
+    static int _seededOnce = 0;
 
     // ── Connection health ─────────────────────────────────────────────────────
     static volatile bool _connected  = false;          // set true in OnConnected, false on disconnect
@@ -199,74 +207,39 @@ class Program
         string stdbUri = Environment.GetEnvironmentVariable("STDB_URI")  ?? "ws://127.0.0.1:3000";
         string stdbDb  = Environment.GetEnvironmentVariable("STDB_DB")   ?? "fivem-game";
         string token   = Environment.GetEnvironmentVariable("STDB_TOKEN") ?? "";
-
-        _stdbDb = stdbDb;   // stored so /health can report it without closing over the local
+        _stdbDb = stdbDb;
 
         Console.WriteLine($"[Sidecar] SpacetimeDB : {stdbUri}/{stdbDb}");
         Console.WriteLine($"[Sidecar] HTTP port   : {_sidecarPort}");
 
         await CheckCliAvailableAsync();
         await LoadSpacetimeIdentityAsync();
-        // existing lines follow:
+
+        // ── IPC: wire ConnectionReady so we can re-subscribe typed callbacks ────
+        _transportFactory.ConnectionReady += OnTypedConnectionReady;
+
+        // ── Create the pool and subscribe to the core database ────────────────
+        _pool = new SubscriptionPool(stdbUri, token, _transportFactory);
+        _pool.AddSubscription(stdbDb);
+
+        // ── Drain the event bus for logging (replace with structured handler) ──
+        _ = Task.Run(() => ConsumePoolEventsAsync(_pool.Events));
+
         _ = Task.Run(StartHttpListener);
         _ = Task.Run(SeedItemsWhenReady);
 
-        await Connect(stdbUri, stdbDb, token);
+        // Keep the process alive — the pool's background tasks drive the ticks.
+        await Task.Delay(Timeout.Infinite);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // CONNECTION + FRAME LOOP
-    // ─────────────────────────────────────────────────────────────────────────
-
-    static async Task Connect(string uri, string dbName, string token = "")
+    // Called by the transport factory each time a (re)connection is established.
+    static void OnTypedConnectionReady(string dbName, DbConnection conn, Identity identity)
     {
-        // Backoff state: 1 s → 2 s → 4 s → 8 s → 16 s → 30 s (ceiling), ±10 % jitter.
-        const int InitialBackoffMs = 1_000;
-        const int MaxBackoffMs     = 30_000;
-        var rng = new Random();
-        int backoffMs = InitialBackoffMs;
-
-        while (true)
+        Console.WriteLine($"[Sidecar] Typed connection ready: {dbName} identity={identity}");
+        if (dbName == _stdbDb)
         {
-            try
-            {
-                Console.WriteLine("[Sidecar] Connecting to SpacetimeDB...");
-                _db = DbConnection.Builder()
-                    .WithUri(uri)
-                    .WithDatabaseName(dbName)
-                    .WithToken(token)
-                    .OnConnect(OnConnected)
-                    .OnConnectError(ex => Console.WriteLine($"[Sidecar] Connect error: {ex.Message}"))
-                    .OnDisconnect((conn, ex) =>
-                    {
-                        _connected = false;
-                        Console.WriteLine($"[Sidecar] Disconnected: {ex?.Message ?? "clean close"}");
-                    })
-                    .Build();
-
-                while (true) { _db.FrameTick(); await Task.Delay(50); }
-            }
-            catch (Exception ex)
-            {
-                _connected = false;
-                _db        = null;
-
-                // ── Jitter: ±10 % of current backoff ────────────────────────
-                int jitter = (int)(backoffMs * 0.10 * (rng.NextDouble() * 2 - 1));
-                int delay  = Math.Clamp(backoffMs + jitter, 1, MaxBackoffMs);
-
-                Console.WriteLine($"[Sidecar] Fatal: {ex.Message} — retrying in {delay / 1_000.0:F1}s");
-                await Task.Delay(delay);
-
-                // ── Advance backoff, capped at ceiling ───────────────────────
-                backoffMs = Math.Min(backoffMs * 2, MaxBackoffMs);
-            }
-        }
-    }
-
-        static void OnConnected(DbConnection conn, Identity identity, string token)
-        {
-            Console.WriteLine($"[Sidecar] Connected. Identity: {identity}");
+            // Reassign _db and re-subscribe — mirrors the old OnConnected() logic
+            _db        = conn;
             _connected = true;
             conn.SubscriptionBuilder()
                 .OnApplied(OnSubscriptionReady)
@@ -284,6 +257,20 @@ class Program
                     "SELECT * FROM dynamic_opcode",
                 });
         }
+        // Third-party module databases would be wired here via their own handlers.
+    }
+
+    static async Task ConsumePoolEventsAsync(ChannelReader<DatabaseEvent> events)
+    {
+        await foreach (var ev in events.ReadAllAsync())
+        {
+            if (ev.Kind == DatabaseEventKind.Disconnected) _connected = false;
+            if (ev.Kind == DatabaseEventKind.Error)
+                Console.WriteLine($"[Pool] ERROR {ev.DatabaseName}: {ev.Exception?.Message}");
+            else
+                Console.WriteLine($"[Pool] {ev}");
+        }
+    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // SUBSCRIPTION CALLBACKS
@@ -479,6 +466,49 @@ class Program
             if (ctx.Request.HttpMethod == "GET" && path == "/version")
             {
                 await WriteJson(ctx, new { version = API_VERSION, status = "ok" });
+                return;
+            }
+
+            // POST /pool/subscribe  { "database": "heist-game", "token": "..." }
+            if (ctx.Request.HttpMethod == "POST" && path == "/pool/subscribe")
+            {
+                using var sr   = new StreamReader(ctx.Request.InputStream);
+                using var doc  = JsonDocument.Parse(await sr.ReadToEndAsync());
+                string db      = doc.RootElement.GetProperty("database").GetString() ?? "";
+                string tok     = doc.RootElement.TryGetProperty("token", out var t) ? t.GetString() ?? "" : "";
+
+                if (string.IsNullOrEmpty(db))
+                { await WriteJson(ctx, new { ok = false, error = "database required" }); return; }
+
+                bool added = _pool!.AddSubscription(db, string.IsNullOrEmpty(tok) ? null : tok);
+                await WriteJson(ctx, new { ok = true, added, database = db, active = _pool.ActiveDatabases });
+                return;
+            }
+
+            // DELETE /pool/subscribe  { "database": "heist-game" }
+            if (ctx.Request.HttpMethod == "DELETE" && path == "/pool/subscribe")
+            {
+                using var sr  = new StreamReader(ctx.Request.InputStream);
+                using var doc = JsonDocument.Parse(await sr.ReadToEndAsync());
+                string db     = doc.RootElement.GetProperty("database").GetString() ?? "";
+
+                bool removed = await _pool!.RemoveSubscriptionAsync(db);
+                await WriteJson(ctx, new { ok = true, removed, database = db, active = _pool.ActiveDatabases });
+                return;
+            }
+
+            // GET /pool/status
+            if (ctx.Request.HttpMethod == "GET" && path == "/pool/status")
+            {
+                await WriteJson(ctx, new
+                {
+                    total_subscriptions = _pool!.Count,
+                    databases           = _pool.ActiveDatabases.Select(db => new
+                    {
+                        name      = db,
+                        connected = _pool.IsConnected(db),
+                    }),
+                });
                 return;
             }
 
