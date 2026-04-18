@@ -25,9 +25,101 @@ class Program
     static readonly ConcurrentQueue<object>           _deltaQueue = new();
     static readonly SemaphoreSlim                     _syncGate   = new(0, 1);
 
+    // ── Connection health ─────────────────────────────────────────────────────
+    static volatile bool _connected  = false;          // set true in OnConnected, false on disconnect
+    static string        _stdbDb     = "";              // captured from env var at startup
+    static readonly DateTime _processStart = DateTime.UtcNow;
+
+    // Tables subscribed in OnConnected — mirrored here so /health can report them
+    // without re-parsing the SQL strings at request time.
+    static readonly string[] _subscribedTables = new[]
+    {
+        "instruction_queue", "char_session", "account", "character",
+        "character_appearance", "inventory_slot", "item_definition",
+        "vehicle_inventory", "stash_definition", "dynamic_opcode",
+    };
+
     // ── Diagnostics ───────────────────────────────────────────────────────────
     static long     _deltaFireCount = 0;
     static DateTime _lastDeltaTime  = DateTime.MinValue;
+
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // HYPR ERROR PARSING
+    // This is the ONLY place in the sidecar that reads raw SpacetimeDB exception
+    // text. All other code consumes the structured HyprParsedError record.
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /// Structured representation of a parsed HyprError from the wire.
+    /// Wire format: "ERROR_CODE|message"  (message may contain additional '|')
+    record HyprParsedError(
+        string Code,      // e.g. "NOT_FOUND", "INVENTORY_FULL"
+        string Message,   // everything after the first pipe
+        // Weight-limit extras — only populated when Code == "INVENTORY_FULL"
+        // and the message matches "actual|max" (two float segments)
+        string? ActualKg = null,
+        string? MaxKg    = null
+    );
+
+    static HyprParsedError ParseHyprError(string raw)
+    {
+        // ── Split on first pipe only — message may itself contain pipes
+        var idx = raw.IndexOf('|');
+        if (idx < 0)
+            return new HyprParsedError(raw, string.Empty);
+
+        var code    = raw[..idx];
+        var message = raw[(idx + 1)..];
+
+        // ── INVENTORY_FULL special case: "actual|max" weight sub-format
+        // Produced by HyprError::weight_exceeded() in Rust.
+        if (code == "INVENTORY_FULL")
+        {
+            var parts = message.Split('|');
+            if (parts.Length == 2 &&
+                float.TryParse(parts[0], out _) &&
+                float.TryParse(parts[1], out _))
+            {
+                return new HyprParsedError(code, message, ActualKg: parts[0], MaxKg: parts[1]);
+            }
+        }
+
+        return new HyprParsedError(code, message);
+    }
+
+    /// Writes a standardised error JSON response from a parsed HyprError.
+    /// This is what Lua receives — the public API contract.
+    static async Task WriteHyprError(HttpListenerContext ctx, HyprParsedError err)
+    {
+        // Build base object
+        object response = err.Code switch
+        {
+            // ── Weight limit: surface actual/max as top-level fields for Lua math
+            "INVENTORY_FULL" when err.ActualKg is not null => new
+            {
+                ok         = false,
+                error_code = err.Code,
+                message    = err.Message,
+                actual_kg  = err.ActualKg,
+                max_kg     = err.MaxKg,
+            },
+            // ── Ban: preserved as BANNED for backward compat with Lua kick flow
+            "UNAUTHORISED" when err.Message.StartsWith("BANNED: ") => new
+            {
+                ok         = false,
+                error_code = "BANNED",
+                reason     = err.Message[8..], // strip "BANNED: " prefix
+            },
+            // ── All other errors: generic envelope
+            _ => new
+            {
+                ok         = false,
+                error_code = err.Code,
+                message    = err.Message,
+            },
+        };
+        await WriteJson(ctx, response);
+    }
 
     // ── DYNAMIC OPCODE CACHE ──────────────────────────────────────────────────────
 
@@ -108,6 +200,8 @@ class Program
         string stdbDb  = Environment.GetEnvironmentVariable("STDB_DB")   ?? "fivem-game";
         string token   = Environment.GetEnvironmentVariable("STDB_TOKEN") ?? "";
 
+        _stdbDb = stdbDb;   // stored so /health can report it without closing over the local
+
         Console.WriteLine($"[Sidecar] SpacetimeDB : {stdbUri}/{stdbDb}");
         Console.WriteLine($"[Sidecar] HTTP port   : {_sidecarPort}");
 
@@ -126,6 +220,12 @@ class Program
 
     static async Task Connect(string uri, string dbName, string token = "")
     {
+        // Backoff state: 1 s → 2 s → 4 s → 8 s → 16 s → 30 s (ceiling), ±10 % jitter.
+        const int InitialBackoffMs = 1_000;
+        const int MaxBackoffMs     = 30_000;
+        var rng = new Random();
+        int backoffMs = InitialBackoffMs;
+
         while (true)
         {
             try
@@ -137,15 +237,29 @@ class Program
                     .WithToken(token)
                     .OnConnect(OnConnected)
                     .OnConnectError(ex => Console.WriteLine($"[Sidecar] Connect error: {ex.Message}"))
-                    .OnDisconnect((conn, ex) => Console.WriteLine($"[Sidecar] Disconnected: {ex?.Message}"))
+                    .OnDisconnect((conn, ex) =>
+                    {
+                        _connected = false;
+                        Console.WriteLine($"[Sidecar] Disconnected: {ex?.Message ?? "clean close"}");
+                    })
                     .Build();
 
                 while (true) { _db.FrameTick(); await Task.Delay(50); }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Sidecar] Fatal: {ex.Message} — retrying in 5s");
-                await Task.Delay(5000);
+                _connected = false;
+                _db        = null;
+
+                // ── Jitter: ±10 % of current backoff ────────────────────────
+                int jitter = (int)(backoffMs * 0.10 * (rng.NextDouble() * 2 - 1));
+                int delay  = Math.Clamp(backoffMs + jitter, 1, MaxBackoffMs);
+
+                Console.WriteLine($"[Sidecar] Fatal: {ex.Message} — retrying in {delay / 1_000.0:F1}s");
+                await Task.Delay(delay);
+
+                // ── Advance backoff, capped at ceiling ───────────────────────
+                backoffMs = Math.Min(backoffMs * 2, MaxBackoffMs);
             }
         }
     }
@@ -153,6 +267,7 @@ class Program
         static void OnConnected(DbConnection conn, Identity identity, string token)
         {
             Console.WriteLine($"[Sidecar] Connected. Identity: {identity}");
+            _connected = true;
             conn.SubscriptionBuilder()
                 .OnApplied(OnSubscriptionReady)
                 .Subscribe(new[]
@@ -367,6 +482,23 @@ class Program
                 return;
             }
 
+            // ── GET /health ───────────────────────────────────────────────────
+            // 200 = connected and subscription active (readiness probe passes).
+            // 503 = disconnected / reconnecting (readiness probe fails).
+            if (ctx.Request.HttpMethod == "GET" && path == "/health")
+            {
+                bool isConnected = _connected;
+                ctx.Response.StatusCode = isConnected ? 200 : 503;
+                await WriteJson(ctx, new
+                {
+                    connected          = isConnected,
+                    database           = _stdbDb,
+                    subscribed_modules = _subscribedTables,
+                    uptime_seconds     = (int)(DateTime.UtcNow - _processStart).TotalSeconds,
+                });
+                return;
+            }
+
 
             // ── GET /diagnostics ──────────────────────────────────────────────
             if (ctx.Request.HttpMethod == "GET" && path == "/diagnostics")
@@ -578,7 +710,6 @@ class Program
                         var displayName = args.GetProperty("display_name").GetString() ?? "";
                         var netId       = args.GetProperty("net_id").GetUInt32();
 
-                        // Register immediately with characterId = 0 (pending selection)
                         if (!string.IsNullOrEmpty(steamHex))
                             RegisterSession(steamHex, 0, serverId);
 
@@ -587,10 +718,13 @@ class Program
                             _db.Reducers.SessionOpen(steamHex, displayName);
                             await WriteJson(ctx, new { ok = true, steam_hex = steamHex });
                         }
-                        catch (Exception ex) when (ex.Message.StartsWith("BANNED|"))
+                        catch (Exception ex)
                         {
-                            ClearSession(serverId);
-                            await WriteJson(ctx, new { ok = false, error_code = "BANNED", reason = ex.Message[7..] });
+                            var err = ParseHyprError(ex.Message);
+                            // If the account is banned, clear the pending session before responding
+                            if (err.Code == "UNAUTHORISED" && err.Message.StartsWith("BANNED: "))
+                                ClearSession(serverId);
+                            await WriteHyprError(ctx, err);
                         }
                         return;
                     }
@@ -604,13 +738,12 @@ class Program
                         var steamHex    = ResolveSession(serverId)?.SteamHex ?? "";
 
                         if (string.IsNullOrEmpty(steamHex))
-                        { await WriteJson(ctx, new { ok = false, error = "session_not_found" }); return; }
+                        { await WriteJson(ctx, new { ok = false, error_code = "NOT_FOUND", message = "session_not_found" }); return; }
 
                         try
                         {
                             _db.Reducers.SelectCharacter(steamHex, characterId, serverId, netId);
                             RegisterSession(steamHex, characterId, serverId);
-
                             var character = _db.Db.Character.Iter().FirstOrDefault(c => c.Id == characterId);
                             await WriteJson(ctx, new {
                                 ok           = true,
@@ -630,7 +763,7 @@ class Program
                         catch (Exception ex)
                         {
                             Console.WriteLine($"[Sidecar] select_character error: {ex.Message}");
-                            await WriteJson(ctx, new { ok = false, error = ex.Message });
+                            await WriteHyprError(ctx, ParseHyprError(ex.Message));
                         }
                         return;
                     }
@@ -648,8 +781,7 @@ class Program
                         }
                         catch (Exception ex)
                         {
-                            var parts = ex.Message.Split('|');
-                            await WriteJson(ctx, new { ok = false, error_code = parts[0], message = parts.Length > 1 ? parts[1] : ex.Message });
+                            await WriteHyprError(ctx, ParseHyprError(ex.Message));
                         }
                         return;
                     }
@@ -784,16 +916,17 @@ class Program
                         uint   gQty  = args.TryGetProperty("quantity", out var gq) ? gq.GetUInt32() : 1;
                         var    gSess = ResolveSession(gSid);
                         if (gSess == null || gSess.CharacterId == 0)
-                        { await WriteJson(ctx, new { ok = false, error = "player not found or no character selected" }); return; }
+                        { await WriteJson(ctx, new { ok = false, error_code = "NOT_FOUND", message = "player not found or no character selected" }); return; }
                         try
                         {
                             _db.Reducers.GiveItemToCharacter(gSess.CharacterId, gItem, gQty, "{}");
                             await WriteJson(ctx, new { ok = true, owner_id = CharOwnerString(gSess.CharacterId) });
                         }
-                        catch (Exception ex) when (ex.Message.Contains("WEIGHT_LIMIT"))
-                        { var p = ex.Message.Split('|'); await WriteJson(ctx, new { ok = false, error_code = "WEIGHT_LIMIT", actual_kg = p.Length > 1 ? p[1] : "?", max_kg = p.Length > 2 ? p[2] : "?" }); }
                         catch (Exception ex)
-                        { await WriteJson(ctx, new { ok = false, error_code = "REDUCER_ERROR", message = ex.Message }); }
+                        {
+                            // ParseHyprError + WriteHyprError handles INVENTORY_FULL weight data automatically
+                            await WriteHyprError(ctx, ParseHyprError(ex.Message));
+                        }
                         return;
                     }
 
@@ -1508,7 +1641,10 @@ class Program
         var json  = JsonSerializer.Serialize(data);
         var bytes = Encoding.UTF8.GetBytes(json);
         ctx.Response.ContentType = "application/json";
-        ctx.Response.StatusCode  = 200;
+        // Only default to 200 when the caller hasn't already set a status code
+        // (e.g. /health sets 503 before calling WriteJson).
+        if (ctx.Response.StatusCode == 200 || ctx.Response.StatusCode == 0)
+            ctx.Response.StatusCode = 200;
         ctx.Response.Headers["X-HyprFM-Version"] = API_VERSION;
         await ctx.Response.OutputStream.WriteAsync(bytes);
         ctx.Response.Close();

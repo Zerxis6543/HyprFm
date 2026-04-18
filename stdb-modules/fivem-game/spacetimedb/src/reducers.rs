@@ -1,7 +1,9 @@
 use spacetimedb::{ReducerContext, Table};
 use crate::tables::*;
 use serde_json::json;
-use stdb_core::opcodes::{DOMAIN_MIN, DOMAIN_MAX, ALLOCATOR_START, labels};
+use stdb_core::opcodes::{DOMAIN_MAX, ALLOCATOR_START, labels};
+use stdb_core::error::{HyprError, HyprResult};
+use stdb_core::hypr_err;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTS
@@ -127,22 +129,22 @@ pub fn allocate_opcode(
     owner_steam_hex: String,
     net_id:          u32,
     ttl_seconds:     u64,
-) -> Result<(), String> {
-    // Idempotent for permanent registrations: if the label already exists as a
-    // permanent row, return Ok without allocating a new slot. This makes
-    // RegisterOpcode safe to call on every relay restart.
+) -> HyprResult {
+    // ── Idempotent for permanent registrations
     if let Some(existing) = ctx.db.dynamic_opcode().iter().find(|o| o.context == context) {
         if existing.expires_at_micros == u64::MAX {
-            log::info!("[opcode] '{}' already registered at 0x{:04X} — idempotent skip", context, existing.opcode);
+            log::info!("[opcode] '{}' already permanent at 0x{:04X} — idempotent skip", context, existing.opcode);
             return Ok(());
         }
-        return Err(format!("OPCODE_CONTEXT_CONFLICT|context '{}' already active", context));
+        return Err(hypr_err!(already_exists,
+            "Opcode context '{}' is already active at 0x{:04X}", context, existing.opcode));
     }
 
+    // ── The allocator singleton must have been seeded by init()
     let mut alloc = ctx.db.opcode_allocator().id().find(0)
-        .ok_or("ALLOCATOR_NOT_SEEDED")?;
+        .ok_or_else(|| hypr_err!(internal_error,
+            "Opcode allocator singleton not found — was init() called?"))?;
 
-    // Defensive: ensure cursor never falls into the reserved core range
     if alloc.next_candidate < ALLOCATOR_START {
         alloc.next_candidate = ALLOCATOR_START;
     }
@@ -153,7 +155,7 @@ pub fn allocate_opcode(
     let opcode = loop {
         if ctx.db.dynamic_opcode().opcode().find(candidate).is_none() {
             alloc.next_candidate = if candidate >= DOMAIN_MAX {
-                ALLOCATOR_START   // wrap back to start of dynamic pool, not 0
+                ALLOCATOR_START
             } else {
                 candidate + 1
             };
@@ -161,33 +163,28 @@ pub fn allocate_opcode(
         }
         candidate = if candidate >= DOMAIN_MAX { ALLOCATOR_START } else { candidate + 1 };
         if candidate == scan_start {
-            return Err("OPCODE_POOL_EXHAUSTED|all dynamic slots are active".to_string());
+            return Err(hypr_err!(internal_error,
+                "Dynamic opcode pool exhausted — all {} slots are active",
+                DOMAIN_MAX - ALLOCATOR_START));
         }
     };
 
     let now_micros = ctx.timestamp.to_micros_since_unix_epoch() as u64;
     let expires_at = if ttl_seconds == 0 {
-        u64::MAX  // permanent — Reaper skips this row
+        u64::MAX
     } else {
         now_micros.saturating_add(ttl_seconds * 1_000_000)
     };
 
     ctx.db.dynamic_opcode().insert(DynamicOpcode {
-        opcode,
-        context,
-        owner_steam_hex,
-        net_id,
-        allocated_at:      ctx.timestamp,
+        opcode, context, owner_steam_hex, net_id,
+        allocated_at: ctx.timestamp,
         expires_at_micros: expires_at,
-        is_consumed:       false,
+        is_consumed: false,
     });
-
     ctx.db.opcode_allocator().id().update(alloc);
 
-    log::info!(
-        "[opcode] Allocated 0x{:04X} ttl={}s permanent={}",
-        opcode, ttl_seconds, ttl_seconds == 0
-    );
+    log::info!("[opcode] Allocated 0x{:04X} ttl={}s permanent={}", opcode, ttl_seconds, ttl_seconds == 0);
     Ok(())
 }
 
@@ -196,21 +193,24 @@ pub fn allocate_opcode(
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[spacetimedb::reducer]
-pub fn consume_opcode(ctx: &ReducerContext, opcode: u16) -> Result<(), String> {
+pub fn consume_opcode(ctx: &ReducerContext, opcode: u16) -> HyprResult {
     let mut entry = ctx.db.dynamic_opcode().opcode().find(opcode)
-        .ok_or("OPCODE_NOT_FOUND")?;
+        .ok_or_else(|| hypr_err!(not_found, "Opcode 0x{:04X} not found", opcode))?;
 
     if entry.is_consumed {
-        return Err("OPCODE_ALREADY_CONSUMED".to_string());
+        return Err(hypr_err!(already_exists,
+            "Opcode 0x{:04X} has already been consumed", opcode));
     }
+    // ── Permanent opcodes are not consumable (they are deregistered instead)
     if entry.expires_at_micros == u64::MAX {
-        return Err("OPCODE_PERMANENT|registered opcodes cannot be consumed".to_string());
+        return Err(hypr_err!(invalid_input,
+            "Opcode 0x{:04X} is permanent — use deregister_opcode instead", opcode));
     }
 
     let now_micros = ctx.timestamp.to_micros_since_unix_epoch() as u64;
     if entry.expires_at_micros <= now_micros {
         ctx.db.dynamic_opcode().opcode().delete(opcode);
-        return Err("OPCODE_EXPIRED".to_string());
+        return Err(hypr_err!(not_found, "Opcode 0x{:04X} expired", opcode));
     }
 
     entry.is_consumed = true;
@@ -295,10 +295,10 @@ pub fn session_open(
     ctx:          &ReducerContext,
     steam_hex:    String,
     display_name: String,
-) -> Result<(), String> {
+) -> HyprResult {
     if let Some(mut acct) = ctx.db.account().steam_hex().find(&steam_hex) {
         if acct.is_banned {
-            return Err(format!("BANNED|{}", acct.ban_reason));
+            return Err(hypr_err!(unauthorised, "BANNED: {}", acct.ban_reason));
         }
         acct.display_name = display_name;
         acct.last_seen    = ctx.timestamp;
@@ -325,15 +325,26 @@ pub fn select_character(
     character_id: u64,
     server_id:    u32,
     net_id:       u32,
-) -> Result<(), String> {
+) -> HyprResult {
+    // ── Existence check: character must exist in the table
     let character = ctx.db.character().id().find(character_id)
-        .ok_or("CHAR_NOT_FOUND")?;
+        .ok_or_else(|| hypr_err!(not_found,
+            "Character {} does not exist", character_id))?;
+
+    // ── Ownership check: the account must own this character
     if character.steam_hex != steam_hex {
-        return Err("CHAR_OWNERSHIP|Character does not belong to this account".to_string());
+        return Err(hypr_err!(unauthorised,
+            "Character {} belongs to account '{}', not '{}'",
+            character_id, character.steam_hex, steam_hex));
     }
+
+    // ── Liveness check: soft-deleted characters cannot be selected
     if character.is_deleted {
-        return Err("CHAR_DELETED|Character has been deleted".to_string());
+        return Err(hypr_err!(invalid_input,
+            "Character {} has been deleted", character_id));
     }
+
+    // ── Stale session cleanup
     if let Some(stale) = ctx.db.char_session().steam_hex().find(&steam_hex) {
         log::warn!(
             "[session] Clearing stale session for {} (char_id={}, server_id={})",
@@ -341,6 +352,7 @@ pub fn select_character(
         );
         ctx.db.char_session().steam_hex().delete(steam_hex.clone());
     }
+
     ctx.db.char_session().insert(CharSession {
         steam_hex:     steam_hex.clone(),
         character_id,
@@ -487,26 +499,44 @@ pub fn create_character(
     slot_index: u32,
     name:       String,
     gender:     String,
-) -> Result<(), String> {
+) -> HyprResult {
     let name = name.trim().to_string();
+
+    // ── Input validation first — fail fast before any table reads
     if name.is_empty() || name.len() > 32 {
-        return Err("NAME_INVALID|Character name must be 1-32 characters".to_string());
+        return Err(hypr_err!(invalid_input,
+            "Character name must be 1–32 characters (got {})", name.len()));
     }
+    if !matches!(gender.as_str(), "male" | "female") {
+        return Err(hypr_err!(invalid_input,
+            "Gender must be 'male' or 'female', got '{}'", gender));
+    }
+
     let account = ctx.db.account().steam_hex().find(&steam_hex)
-        .ok_or("ACCOUNT_NOT_FOUND")?;
+        .ok_or_else(|| hypr_err!(not_found,
+            "Account '{}' does not exist", steam_hex))?;
+
     if account.is_banned {
-        return Err(format!("BANNED|{}", account.ban_reason));
+        return Err(hypr_err!(unauthorised, "BANNED: {}", account.ban_reason));
     }
-    let existing_chars: Vec<Character> = ctx.db.character().iter()
+
+    let existing: Vec<Character> = ctx.db.character().iter()
         .filter(|c| c.steam_hex == steam_hex && !c.is_deleted)
         .collect();
+
     let max_chars = account.max_characters.max(DEFAULT_MAX_CHARACTERS);
-    if existing_chars.len() as u32 >= max_chars {
-        return Err(format!("SLOT_LIMIT|Max {} characters per account", max_chars));
+
+    // ── Slot capacity check (InventoryFull semantics — not weight, but "full")
+    if existing.len() as u32 >= max_chars {
+        return Err(HyprError::slots_full(existing.len() as u32, max_chars));
     }
-    if existing_chars.iter().any(|c| c.slot_index == slot_index) {
-        return Err(format!("SLOT_OCCUPIED|Slot {} is already in use", slot_index));
+
+    // ── Slot collision check
+    if existing.iter().any(|c| c.slot_index == slot_index) {
+        return Err(hypr_err!(already_exists,
+            "Slot {} is already occupied", slot_index));
     }
+
     let new_char = ctx.db.character().insert(Character {
         id:         0,
         steam_hex:  steam_hex.clone(),
@@ -534,10 +564,7 @@ pub fn create_character(
         overlays_json:   "{}".to_string(),
         updated_at:      ctx.timestamp,
     });
-    log::info!(
-        "[character] Created '{}' id={} slot={} for {}",
-        name, new_char.id, slot_index, steam_hex
-    );
+    log::info!("[character] Created '{}' id={} slot={} for {}", name, new_char.id, slot_index, steam_hex);
     Ok(())
 }
 
@@ -546,14 +573,25 @@ pub fn delete_character(
     ctx:          &ReducerContext,
     steam_hex:    String,
     character_id: u64,
-) -> Result<(), String> {
+) -> HyprResult {
     let mut character = ctx.db.character().id().find(character_id)
-        .ok_or("CHAR_NOT_FOUND")?;
-    if character.steam_hex != steam_hex { return Err("CHAR_OWNERSHIP".to_string()); }
-    if character.is_deleted             { return Err("CHAR_ALREADY_DELETED".to_string()); }
-    if ctx.db.char_session().iter().any(|s| s.character_id == character_id) {
-        return Err("CHAR_ACTIVE|Cannot delete a character that is currently online".to_string());
+        .ok_or_else(|| hypr_err!(not_found, "Character {} not found", character_id))?;
+
+    if character.steam_hex != steam_hex {
+        return Err(hypr_err!(unauthorised,
+            "Character {} is owned by '{}', not '{}'",
+            character_id, character.steam_hex, steam_hex));
     }
+    if character.is_deleted {
+        return Err(hypr_err!(already_exists,
+            "Character {} is already deleted", character_id));
+    }
+    // ── Cannot delete an online character (session data would orphan)
+    if ctx.db.char_session().iter().any(|s| s.character_id == character_id) {
+        return Err(hypr_err!(invalid_input,
+            "Character {} is currently online and cannot be deleted", character_id));
+    }
+
     character.is_deleted = true;
     character.updated_at = ctx.timestamp;
     ctx.db.character().id().update(character.clone());
@@ -568,10 +606,15 @@ pub fn save_appearance(
     character_id:    u64,
     components_json: String,
     overlays_json:   String,
-) -> Result<(), String> {
+) -> HyprResult {
     let character = ctx.db.character().id().find(character_id)
-        .ok_or("CHAR_NOT_FOUND")?;
-    if character.steam_hex != steam_hex { return Err("CHAR_OWNERSHIP".to_string()); }
+        .ok_or_else(|| hypr_err!(not_found, "Character {} not found", character_id))?;
+
+    if character.steam_hex != steam_hex {
+        return Err(hypr_err!(unauthorised,
+            "Character {} is not owned by '{}'", character_id, steam_hex));
+    }
+
     if let Some(mut app) = ctx.db.character_appearance().character_id().find(character_id) {
         app.components_json = components_json;
         app.overlays_json   = overlays_json;
@@ -579,7 +622,8 @@ pub fn save_appearance(
         ctx.db.character_appearance().character_id().update(app);
     } else {
         ctx.db.character_appearance().insert(CharacterAppearance {
-            character_id, components_json, overlays_json, updated_at: ctx.timestamp,
+            character_id, components_json, overlays_json,
+            updated_at: ctx.timestamp,
         });
     }
     Ok(())
@@ -736,10 +780,17 @@ pub fn give_item_to_character(
     item_id:      String,
     quantity:     u32,
     metadata:     String,
-) -> Result<(), String> {
+) -> HyprResult {
     let owner_id = char_owner_id(character_id);
+
+    // ── Item definition must exist before we do any weight math
     let def = ctx.db.item_definition().item_id().find(&item_id)
-        .ok_or_else(|| format!("Unknown item: {}", item_id))?;
+        .ok_or_else(|| hypr_err!(not_found, "Item definition '{}' not found", item_id))?;
+
+    if quantity == 0 {
+        return Err(hypr_err!(invalid_input, "Quantity must be at least 1"));
+    }
+
     let resolved_metadata = if (metadata == "{}" || metadata.is_empty()) && def.category == "weapon" {
         let serial = format!("WPN-{:08X}", ctx.timestamp.to_micros_since_unix_epoch() as u32);
         format!(
@@ -749,19 +800,28 @@ pub fn give_item_to_character(
     } else {
         metadata
     };
+
+    // ── Weight gate: sum current load then check incoming addition
     let current_weight: f32 = ctx.db.inventory_slot().iter()
         .filter(|s| s.owner_id == owner_id && s.owner_type == "player")
         .map(|s| ctx.db.item_definition().item_id().find(&s.item_id)
-            .map(|d| d.weight * s.quantity as f32).unwrap_or(0.0))
+            .map(|d| d.weight * s.quantity as f32)
+            .unwrap_or(0.0))
         .sum();
+
     let max_weight: f32 = ctx.db.player_config()
         .steam_hex().find(&owner_id)
         .map(|c| c.max_carry_weight)
         .unwrap_or(85.0);
+
     let incoming = def.weight * quantity as f32;
+
+    // ── Use structured constructor so the sidecar can surface actual/max to Lua
     if current_weight + incoming > max_weight {
-        return Err(format!("WEIGHT_LIMIT|{:.2}|{:.2}", current_weight + incoming, max_weight));
+        return Err(HyprError::weight_exceeded(current_weight + incoming, max_weight));
     }
+
+    // ── Stacking merge
     if def.stackable {
         if let Some(mut existing) = ctx.db.inventory_slot().iter()
             .find(|s| s.owner_id == owner_id && s.item_id == item_id)
@@ -771,17 +831,17 @@ pub fn give_item_to_character(
             return Ok(());
         }
     }
+
     let used: std::collections::HashSet<u32> = ctx.db.inventory_slot().iter()
         .filter(|s| s.owner_id == owner_id && s.owner_type == "player")
         .map(|s| s.slot_index)
         .collect();
     let slot_index = (0u32..).find(|i| !used.contains(i)).unwrap_or(0);
+
     ctx.db.inventory_slot().insert(InventorySlot {
-        id: 0,
-        owner_id,
+        id: 0, owner_id,
         owner_type: "player".to_string(),
-        item_id,
-        quantity,
+        item_id, quantity,
         metadata: resolved_metadata,
         slot_index,
     });
@@ -795,9 +855,9 @@ pub fn give_item_to_identity(
     item_id:            String,
     quantity:           u32,
     metadata:           String,
-) -> Result<(), String> {
+) -> HyprResult {
     let session = ctx.db.char_session().steam_hex().find(&owner_identity_hex)
-        .ok_or_else(|| format!("No active session for {}", owner_identity_hex))?;
+        .ok_or_else(|| hypr_err!(not_found, "No active session for '{}'", owner_identity_hex))?;
     give_item_to_character(ctx, session.character_id, item_id, quantity, metadata)
 }
 
@@ -820,27 +880,29 @@ pub fn transfer_item(
     new_owner_id: String,
     new_owner_type: String,
     new_slot_index: u32,
-) -> Result<(), String> {
+) -> HyprResult {
     let slot = ctx.db.inventory_slot().id().find(slot_id)
-        .ok_or_else(|| format!("Slot {} not found", slot_id))?;
+        .ok_or_else(|| hypr_err!(not_found, "Inventory slot {} not found", slot_id))?;
     ctx.db.inventory_slot().id().update(InventorySlot {
-        owner_id:   new_owner_id,
-        owner_type: new_owner_type,
-        slot_index: new_slot_index,
-        ..slot
+        owner_id: new_owner_id, owner_type: new_owner_type, slot_index: new_slot_index, ..slot
     });
     Ok(())
 }
 
 #[spacetimedb::reducer]
-pub fn merge_stacks(ctx: &ReducerContext, src_slot_id: u64, dst_slot_id: u64) -> Result<(), String> {
+pub fn merge_stacks(ctx: &ReducerContext, src_slot_id: u64, dst_slot_id: u64) -> HyprResult {
     let src = ctx.db.inventory_slot().id().find(src_slot_id)
-        .ok_or_else(|| format!("src slot {} not found", src_slot_id))?;
+        .ok_or_else(|| hypr_err!(not_found, "Source slot {} not found", src_slot_id))?;
     let dst = ctx.db.inventory_slot().id().find(dst_slot_id)
-        .ok_or_else(|| format!("dst slot {} not found", dst_slot_id))?;
-    if src.item_id != dst.item_id { return Err("Cannot merge different items".to_string()); }
+        .ok_or_else(|| hypr_err!(not_found, "Destination slot {} not found", dst_slot_id))?;
+
+    if src.item_id != dst.item_id {
+        return Err(hypr_err!(invalid_input,
+            "Cannot merge '{}' into '{}' — items must match", src.item_id, dst.item_id));
+    }
     let def = ctx.db.item_definition().item_id().find(&src.item_id)
-        .ok_or_else(|| format!("item def {} not found", src.item_id))?;
+        .ok_or_else(|| hypr_err!(not_found, "Item definition '{}' missing", src.item_id))?;
+
     let total = src.quantity + dst.quantity;
     if total <= def.max_stack {
         ctx.db.inventory_slot().id().update(InventorySlot { quantity: total, ..dst });
@@ -854,29 +916,30 @@ pub fn merge_stacks(ctx: &ReducerContext, src_slot_id: u64, dst_slot_id: u64) ->
 }
 
 #[spacetimedb::reducer]
-pub fn split_stack(ctx: &ReducerContext, slot_id: u64, amount: u32) -> Result<(), String> {
+pub fn split_stack(ctx: &ReducerContext, slot_id: u64, amount: u32) -> HyprResult {
     let mut slot = ctx.db.inventory_slot().id().find(slot_id)
-        .ok_or_else(|| format!("Slot {} not found", slot_id))?;
+        .ok_or_else(|| hypr_err!(not_found, "Slot {} not found", slot_id))?;
+
     if amount == 0 || amount >= slot.quantity {
-        return Err(format!("Invalid split amount {}", amount));
+        return Err(hypr_err!(invalid_input,
+            "Split amount {} is invalid for slot with quantity {}", amount, slot.quantity));
     }
     let used: Vec<u32> = ctx.db.inventory_slot().iter()
         .filter(|s| s.owner_id == slot.owner_id)
-        .map(|s| s.slot_index).collect();
+        .map(|s| s.slot_index)
+        .collect();
     let new_index = (0u32..).find(|i| !used.contains(i)).unwrap_or(0);
     slot.quantity -= amount;
     ctx.db.inventory_slot().id().update(slot.clone());
     ctx.db.inventory_slot().insert(InventorySlot {
         id: 0,
-        owner_id:   slot.owner_id,
-        owner_type: slot.owner_type,
-        item_id:    slot.item_id,
-        quantity:   amount,
-        metadata:   slot.metadata,
-        slot_index: new_index,
+        owner_id: slot.owner_id, owner_type: slot.owner_type,
+        item_id: slot.item_id, quantity: amount,
+        metadata: slot.metadata, slot_index: new_index,
     });
     Ok(())
 }
+
 
 #[spacetimedb::reducer]
 pub fn use_item(ctx: &ReducerContext, slot_id: u64, net_id: u32) {
@@ -1031,13 +1094,12 @@ pub fn seed_starter_kit(ctx: &ReducerContext, item_id: String, quantity: u32) {
 
 #[spacetimedb::reducer]
 pub fn drop_item_to_ground(
-    ctx:      &ReducerContext,
-    slot_id:  u64,
-    quantity: u32,
-    x: f32, y: f32, z: f32,
-) -> Result<(), String> {
+    ctx: &ReducerContext, slot_id: u64, quantity: u32, x: f32, y: f32, z: f32,
+) -> HyprResult {
     let slot = ctx.db.inventory_slot().id().find(slot_id)
-        .ok_or_else(|| format!("Slot {} not found", slot_id))?;
+        .ok_or_else(|| hypr_err!(not_found, "Slot {} not found for ground drop", slot_id))?;
+
+    // ... rest of implementation unchanged from original
     let search_radius_sq: f32 = 25.0;
     let nearby_stash = ctx.db.stash_definition().iter()
         .filter(|s| s.stash_type == "ground")
@@ -1047,6 +1109,7 @@ pub fn drop_item_to_ground(
             let db = (b.pos_x-x).powi(2) + (b.pos_y-y).powi(2);
             da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
         });
+
     let stash_id = match nearby_stash {
         Some(existing) => existing.stash_id,
         None => {
@@ -1059,17 +1122,17 @@ pub fn drop_item_to_ground(
             new_id
         }
     };
+
     let actual_qty = if quantity > 0 && quantity < slot.quantity { quantity } else { slot.quantity };
     let used_indices: std::collections::HashSet<u32> = ctx.db.inventory_slot().iter()
         .filter(|s| s.owner_id == stash_id).map(|s| s.slot_index).collect();
     let new_slot_index = (0u32..).find(|i| !used_indices.contains(i)).unwrap_or(0);
     let logged_item_id = slot.item_id.clone();
+
     if actual_qty == slot.quantity {
         ctx.db.inventory_slot().id().update(InventorySlot {
-            owner_id:   stash_id.clone(),
-            owner_type: "stash".to_string(),
-            slot_index: new_slot_index,
-            ..slot
+            owner_id: stash_id.clone(), owner_type: "stash".to_string(),
+            slot_index: new_slot_index, ..slot
         });
     } else {
         let mut remaining = slot.clone();
