@@ -260,17 +260,23 @@ class Program
         // Third-party module databases would be wired here via their own handlers.
     }
 
-    static async Task ConsumePoolEventsAsync(ChannelReader<DatabaseEvent> events)
-    {
-        await foreach (var ev in events.ReadAllAsync())
+        static async Task ConsumePoolEventsAsync(ChannelReader<DatabaseEvent> events)
         {
-            if (ev.Kind == DatabaseEventKind.Disconnected) _connected = false;
-            if (ev.Kind == DatabaseEventKind.Error)
-                Console.WriteLine($"[Pool] ERROR {ev.DatabaseName}: {ev.Exception?.Message}");
-            else
-                Console.WriteLine($"[Pool] {ev}");
+            await foreach (var ev in events.ReadAllAsync())
+            {
+                // Only the CORE database drives the _connected health flag
+                if (ev.DatabaseName == _stdbDb)
+                {
+                    if (ev.Kind == DatabaseEventKind.Disconnected) _connected = false;
+                    if (ev.Kind == DatabaseEventKind.Connected)    _connected = true;
+                }
+
+                if (ev.Kind == DatabaseEventKind.Error)
+                    Console.WriteLine($"[Pool] ERROR {ev.DatabaseName}: {ev.Exception?.Message}");
+                else
+                    Console.WriteLine($"[Pool] {ev}");
+            }
         }
-    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // SUBSCRIPTION CALLBACKS
@@ -340,7 +346,8 @@ class Program
         Console.WriteLine($"[Sidecar] Hydrated: chars={charCount} sessions={sessionCount} slots={slotCount}");
 
         WireDynamicOpcodeDeltas();
-                _syncGate.Release();
+        if (Interlocked.CompareExchange(ref _seededOnce, 1, 0) == 0)
+            _syncGate.Release();
             }
 
     static void WireDynamicOpcodeDeltas()
